@@ -1,0 +1,4 @@
+{"subsonic-response":{"status":"ok","version":"1.16.1","lyricsList":{"structuredLyrics":[
+ {"displayArtist":"Кино","displayTitle":"Группа крови","lang":"rus","synced":false,"line":[{"value":"Тёплое место"}]},
+ {"displayArtist":"Кино","displayTitle":"Группа крови","lang":"rus","synced":true,"offset":-100,"line":[{"start":1000,"value":"Тёплое место, но улицы ждут"},{"start":5000,"value":"Отпечатков наших ног"}]}
+]}}}

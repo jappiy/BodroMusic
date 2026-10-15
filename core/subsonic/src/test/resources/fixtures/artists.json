@@ -1,0 +1,4 @@
+{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"ignoredArticles":"The","index":[
+ {"name":"A","artist":[{"id":"ar-2","name":"Aquarium","albumCount":3,"coverArt":"ar-2"}]},
+ {"name":"К","artist":[{"id":"ar-1","name":"Кино","albumCount":5,"starred":"2024-01-01T00:00:00Z","artistImageUrl":"https://example.org/kino.jpg"}]}
+]}}}

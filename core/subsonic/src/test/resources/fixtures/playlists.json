@@ -1,0 +1,1 @@
+{"subsonic-response":{"status":"ok","version":"1.16.1","playlists":{"playlist":[{"id":"pl-1","name":"В дорогу","owner":"vasya","public":false,"songCount":2,"duration":400},{"id":"pl-2","name":"Общий","owner":"petya","public":true,"songCount":10}]}}}

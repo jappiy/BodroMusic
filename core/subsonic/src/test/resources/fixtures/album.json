@@ -1,0 +1,6 @@
+{"subsonic-response":{"status":"ok","version":"1.16.1","album":{
+ "id":"al-1","name":"Кино — Группа крови","artist":"Кино","artistId":"ar-1","coverArt":"al-1_0","songCount":2,"duration":530,"year":1988,"genre":"Rock","starred":"2024-01-02T10:00:00Z","playCount":12,"created":"2023-05-01T00:00:00Z",
+ "song":[
+  {"id":"s-1","parent":"al-1","isDir":false,"title":"Группа крови","album":"Группа крови","artist":"Кино","track":1,"year":1988,"genre":"Rock","coverArt":"al-1_0","size":10485760,"contentType":"audio/flac","suffix":"flac","duration":285,"bitRate":900,"bitDepth":16,"samplingRate":44100,"albumId":"al-1","artistId":"ar-1","type":"music","userRating":5,"starred":"2024-03-04T00:00:00Z","playCount":7},
+  {"id":"s-2","isDir":false,"title":"Закрой за мной дверь","album":"Группа крови","artist":"Кино","track":2,"coverArt":"al-1_0","suffix":"mp3","duration":245,"bitRate":320,"albumId":"al-1","artistId":"ar-1","userRating":1,"unknownField":{"nested":true}}
+ ]}}}
