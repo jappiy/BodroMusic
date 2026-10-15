@@ -34,69 +34,17 @@ class LocalWaveSource(private val library: WaveLibrary) : WaveSource {
 
     override suspend fun candidates(request: WaveRequest): List<WaveCandidate> = coroutineScope {
         val settings = request.settings
-        val seed = settings.seed
-        val random = request.random
+        val seedArtistId = seedArtistId(settings.seed)
+        val seedGenre = settings.genre ?: seedGenre(settings.seed)
+        val liked = async { likedSongs(settings.seed) }
+        val familiar = async { familiarSongs(settings.mode) }
+        val neighbors = async { neighborSongs(request, seedArtistId, seedGenre) }
+        val discovery = async { discoverySongs(request, seedGenre) }
+
         val profile = request.profile
-        val years = settings.yearRange
-
-        val seedArtistId = when (seed) {
-            is WaveSeed.Artist -> seed.artistId
-            is WaveSeed.Track -> seed.artistId
-            else -> null
-        }
-        val seedGenre = settings.genre ?: when (seed) {
-            is WaveSeed.Genre -> seed.genre
-            is WaveSeed.Track -> seed.genre
-            else -> null
-        }
-
-        val liked = async {
-            val starred = library.starredSongs()
-            when (seed) {
-                is WaveSeed.SongList -> library.songs(seed.songIds)
-                is WaveSeed.Artist -> starred.filter { it.artistId == seed.artistId }
-                is WaveSeed.Genre -> starred.filter { it.genre.equals(seed.genre, ignoreCase = true) }
-                else -> starred
-            }
-        }
-        val familiar = async {
-            if (settings.mode == WaveMode.Discover) {
-                emptyList()
-            } else {
-                val albums = if (settings.mode == WaveMode.AlbumMix) 6 else 3
-                library.albumListSongs(AlbumListType.Frequent, albums) + library.albumListSongs(AlbumListType.Recent, albums)
-            }
-        }
-        val neighborArtists = buildList {
-            seedArtistId?.let { add(it) }
-            request.currentSong?.artistId?.let { add(it) }
-            addAll(profile.topArtistIds.take(TOP_POOL).shuffled(random).take(NEIGHBOR_ARTISTS))
-        }.distinct().take(NEIGHBOR_ARTISTS + 1)
-        val neighborGenres = buildList {
-            seedGenre?.let { add(it) }
-            request.currentSong?.genre?.let { add(it) }
-            addAll(profile.topGenres.take(TOP_POOL).shuffled(random).take(NEIGHBOR_GENRES))
-        }.distinct().take(NEIGHBOR_GENRES + 1)
-
-        val neighbors = async {
-            val byArtist = neighborArtists.flatMap { library.artistSongs(it, ARTIST_SONGS) }
-            val byGenre = neighborGenres.flatMap { library.genreSongs(it, GENRE_SONGS) }
-            val similarArtist = seedArtistId ?: request.currentSong?.artistId
-            val similar = similarArtist?.let { library.similarSongs(it, SIMILAR_SONGS) }.orEmpty()
-            byArtist + byGenre + similar
-        }
-        val discovery = async {
-            val favoriteGenre = seedGenre ?: profile.topGenres.take(TOP_POOL).randomOrNull(random)
-            val byGenre = library.randomSongs(RANDOM_GENRE_SONGS, favoriteGenre, years?.first, years?.last)
-            val anything = library.randomSongs(RANDOM_SONGS, settings.genre, years?.first, years?.last)
-            val newest = if (years == null) library.albumListSongs(AlbumListType.Newest, 2) else emptyList()
-            byGenre + anything + newest
-        }
-
-        val likedIds = profile.likedSongIds
         buildList {
             liked.await().forEach { add(WaveCandidate(it, WaveBucket.Liked, 1.0)) }
-            familiar.await().forEach { add(WaveCandidate(it, WaveBucket.Familiar, if (it.id in likedIds) 1.3 else 1.0)) }
+            familiar.await().forEach { add(WaveCandidate(it, WaveBucket.Familiar, if (it.id in profile.likedSongIds) 1.3 else 1.0)) }
             neighbors.await().forEach { song ->
                 val boost = if (song.artistId != null && song.artistId == seedArtistId) 1.5 else 1.0
                 add(WaveCandidate(song, WaveBucket.Neighbors, boost))
@@ -107,6 +55,69 @@ class LocalWaveSource(private val library: WaveLibrary) : WaveSource {
                 add(WaveCandidate(song, WaveBucket.Discovery, if (unknown) 1.4 else 0.8))
             }
         }
+    }
+
+    private fun seedArtistId(seed: WaveSeed): String? = when (seed) {
+        is WaveSeed.Artist -> seed.artistId
+        is WaveSeed.Track -> seed.artistId
+        else -> null
+    }
+
+    private fun seedGenre(seed: WaveSeed): String? = when (seed) {
+        is WaveSeed.Genre -> seed.genre
+        is WaveSeed.Track -> seed.genre
+        else -> null
+    }
+
+    /** 1. Лайкнутые (или список-«семя»). */
+    private suspend fun likedSongs(seed: WaveSeed): List<Song> {
+        if (seed is WaveSeed.SongList) return library.songs(seed.songIds)
+        val starred = library.starredSongs()
+        return when (seed) {
+            is WaveSeed.Artist -> starred.filter { it.artistId == seed.artistId }
+            is WaveSeed.Genre -> starred.filter { it.genre.equals(seed.genre, ignoreCase = true) }
+            else -> starred
+        }
+    }
+
+    /** 2. Часто и недавно слушаемое. */
+    private suspend fun familiarSongs(mode: WaveMode): List<Song> {
+        if (mode == WaveMode.Discover) return emptyList()
+        val albums = if (mode == WaveMode.AlbumMix) 6 else 3
+        return library.albumListSongs(AlbumListType.Frequent, albums) + library.albumListSongs(AlbumListType.Recent, albums)
+    }
+
+    /** 3. «Соседи по вкусу»: исполнители и жанры, которые пользователь любит, + похожие (если сервер умеет). */
+    private suspend fun neighborSongs(request: WaveRequest, seedArtistId: String?, seedGenre: String?): List<Song> {
+        val profile = request.profile
+        val random = request.random
+        val artists = (
+            listOfNotNull(seedArtistId, request.currentSong?.artistId) +
+                profile.topArtistIds.take(TOP_POOL).shuffled(random).take(NEIGHBOR_ARTISTS)
+            )
+            .distinct()
+            .take(NEIGHBOR_ARTISTS + 1)
+        val genres = (
+            listOfNotNull(seedGenre, request.currentSong?.genre) +
+                profile.topGenres.take(TOP_POOL).shuffled(random).take(NEIGHBOR_GENRES)
+            )
+            .distinct()
+            .take(NEIGHBOR_GENRES + 1)
+        val byArtist = artists.flatMap { library.artistSongs(it, ARTIST_SONGS) }
+        val byGenre = genres.flatMap { library.genreSongs(it, GENRE_SONGS) }
+        val similar = (seedArtistId ?: request.currentSong?.artistId)?.let { library.similarSongs(it, SIMILAR_SONGS) }.orEmpty()
+        return byArtist + byGenre + similar
+    }
+
+    /** 4. «Открытия»: случайное по любимым жанрам, совсем случайное и новинки. */
+    private suspend fun discoverySongs(request: WaveRequest, seedGenre: String?): List<Song> {
+        val settings = request.settings
+        val years = settings.yearRange
+        val favoriteGenre = seedGenre ?: request.profile.topGenres.take(TOP_POOL).randomOrNull(request.random)
+        val byGenre = library.randomSongs(RANDOM_GENRE_SONGS, favoriteGenre, years?.first, years?.last)
+        val anything = library.randomSongs(RANDOM_SONGS, settings.genre, years?.first, years?.last)
+        val newest = if (years == null) library.albumListSongs(AlbumListType.Newest, 2) else emptyList()
+        return byGenre + anything + newest
     }
 
     private companion object {

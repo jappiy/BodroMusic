@@ -16,11 +16,7 @@ data class Lyrics(
     /** Индекс активной строки для позиции [positionMs] (только для синхронизированного текста). */
     fun activeLineIndex(positionMs: Long): Int {
         if (!synced) return -1
-        var result = -1
-        for ((index, line) in lines.withIndex()) {
-            val start = line.startMs ?: continue
-            if (start <= positionMs) result = index else break
-        }
-        return result
+        // Строки отсортированы по времени: активна последняя уже начавшаяся.
+        return lines.indexOfLast { line -> line.startMs != null && line.startMs <= positionMs }
     }
 }

@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BodroMusic</string>
+
+    <!-- Вкладки -->
+    <string name="tab_home">Главная</string>
+    <string name="tab_collection">Коллекция</string>
+    <string name="tab_search">Поиск</string>
+    <string name="tab_settings">Настройки</string>
+
+    <!-- Общие действия -->
+    <string name="action_all">Все</string>
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_clear">Очистить</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_collapse">Свернуть</string>
+    <string name="action_create">Создать</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_like">Мне нравится</string>
+    <string name="action_unlike">Убрать из «Мне нравится»</string>
+    <string name="action_dislike">Не нравится</string>
+    <string name="action_undislike">Снять «Не нравится»</string>
+    <string name="action_undislike_short">Вернуть</string>
+    <string name="action_more">Ещё</string>
+    <string name="action_next">Следующий трек</string>
+    <string name="action_previous">Предыдущий трек</string>
+    <string name="action_open_logs">Открыть логи</string>
+    <string name="action_pause">Пауза</string>
+    <string name="action_play">Слушать</string>
+    <string name="action_rename">Переименовать</string>
+    <string name="action_repeat">Повтор</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_show_less">Свернуть</string>
+    <string name="action_show_more">Показать все</string>
+    <string name="action_shuffle">Перемешать</string>
+    <string name="action_sort">Сортировка</string>
+    <string name="loading">Загрузка…</string>
+    <string name="list_empty">Здесь пока пусто</string>
+    <string name="yes">Да</string>
+    <string name="no">Нет</string>
+    <string name="now_playing">Сейчас играет</string>
+
+    <!-- Реакции -->
+    <string name="reaction_liked">Нравится</string>
+    <string name="reaction_disliked">Не нравится</string>
+
+    <!-- Состояния и ошибки -->
+    <string name="state_offline_title">Нет связи с сервером</string>
+    <string name="state_error_title">Что-то пошло не так</string>
+    <string name="error_wrong_credentials">Неверное имя пользователя или пароль.</string>
+    <string name="error_token_not_supported">Сервер не поддерживает вход по токену. Проверьте настройки Navidrome.</string>
+    <string name="error_not_authorized">Недостаточно прав для этого действия.</string>
+    <string name="error_not_found">Не найдено на сервере — возможно, уже удалено.</string>
+    <string name="error_missing_parameter">Сервер не принял запрос: не хватает параметра.</string>
+    <string name="error_version_mismatch">Версии приложения и сервера несовместимы.</string>
+    <string name="error_server_generic">Сервер вернул ошибку.</string>
+    <string name="error_not_subsonic">По этому адресу нет Navidrome (Subsonic API). Проверьте адрес и порт.</string>
+    <string name="error_server_down">Сервер недоступен или перегружен. Попробуйте позже.</string>
+    <string name="error_timeout">Сервер слишком долго не отвечает.</string>
+    <string name="error_unreachable">Не удаётся подключиться к серверу. Проверьте сеть и адрес.</string>
+    <string name="error_network">Ошибка сети.</string>
+    <string name="error_ssl">Ошибка защищённого соединения. Самоподписанные сертификаты не поддерживаются.</string>
+    <string name="error_invalid_response">Сервер прислал непонятный ответ.</string>
+    <string name="error_not_configured">Учётная запись не выбрана.</string>
+    <string name="error_cleartext">Адрес без HTTPS разрешён только в домашней сети (192.168.x.x, 10.x.x.x, *.local). Для внешнего адреса используйте https://.</string>
+    <string name="error_unknown">Неизвестная ошибка.</string>
+
+    <!-- Вход -->
+    <string name="login_subtitle">Войдите в свою учётную запись Navidrome</string>
+    <string name="login_relogin">Войдите заново: сохранённый пароль недоступен</string>
+    <string name="login_local_url">Адрес в домашней сети</string>
+    <string name="login_local_hint">Например, http://192.168.1.10:4533</string>
+    <string name="login_external_url">Внешний адрес</string>
+    <string name="login_external_hint">DDNS, например https://music.example.ru</string>
+    <string name="login_username">Имя пользователя</string>
+    <string name="login_password">Пароль</string>
+    <string name="login_show_password">Показать пароль</string>
+    <string name="login_submit">Войти</string>
+    <string name="login_error_no_address">Укажите хотя бы один адрес сервера.</string>
+    <string name="login_error_bad_address">Некорректный адрес сервера.</string>
+    <string name="login_error_credentials_empty">Введите имя пользователя и пароль.</string>
+
+    <!-- Главная -->
+    <string name="home_starred_tracks">Избранные треки</string>
+    <string name="home_newest_albums">Недавно добавленные</string>
+    <string name="home_recent_albums">Последние прослушанные</string>
+    <string name="home_frequent">Часто слушаю</string>
+    <string name="home_random_artists">Случайные исполнители</string>
+    <string name="home_playlists">Мои плейлисты</string>
+    <string name="home_empty_title">Медиатека пуста</string>
+    <string name="home_empty_message">Добавьте музыку на сервер Navidrome — она появится здесь.</string>
+
+    <!-- Волна -->
+    <string name="wave_title">Моя волна</string>
+    <string name="wave_empty">Не удалось собрать волну: мало данных. Послушайте что-нибудь и поставьте лайки.</string>
+    <string name="wave_mode_default">Для вас</string>
+    <string name="wave_mode_favorites">Любимое</string>
+    <string name="wave_mode_discover">Незнакомое</string>
+    <string name="wave_mode_popular">Популярное у меня</string>
+    <string name="mix_tracks">Микс треков</string>
+    <string name="mix_albums">Микс альбомов</string>
+    <string name="mix_decade">Микс десятилетия</string>
+    <string name="decade_label">%1$d-е</string>
+
+    <!-- Коллекция -->
+    <string name="collection_wave">Моя волна по коллекции</string>
+    <string name="collection_favorite_artists">Любимые исполнители</string>
+    <string name="collection_favorite_albums">Любимые альбомы</string>
+    <string name="collection_library">Вся библиотека</string>
+    <string name="liked_title">Мне нравится</string>
+    <string name="liked_wave">Волна по этому списку</string>
+    <string name="liked_search_hint">Поиск в «Мне нравится»</string>
+    <string name="liked_empty">Ставьте сердечко трекам — они появятся здесь</string>
+    <string name="disliked_title">Не нравится</string>
+    <string name="disliked_empty">Нет дизлайков</string>
+    <string name="disliked_hint">Эти треки не попадают в «Мою волну» и миксы, но остаются в альбомах и поиске.</string>
+    <string name="library_artists">Исполнители</string>
+    <string name="library_albums">Альбомы</string>
+    <string name="library_genres">Жанры</string>
+    <string name="library_tracks">Треки</string>
+    <string name="genre_wave">Волна по жанру</string>
+    <string name="sort_name">По названию</string>
+    <string name="sort_artist">По исполнителю</string>
+    <string name="sort_newest">Недавно добавленные</string>
+    <string name="sort_recent">Недавно прослушанные</string>
+    <string name="sort_frequent">Часто слушаю</string>
+    <string name="sort_random">Случайно</string>
+    <string name="sort_year">По году</string>
+    <string name="sort_starred">Любимые</string>
+
+    <!-- Альбом, исполнитель, плейлист -->
+    <string name="album_disc">Диск %1$d</string>
+    <string name="artist_wave">Волна</string>
+    <string name="artist_top_tracks">Популярные треки</string>
+    <string name="artist_albums">Альбомы</string>
+    <string name="playlists_title">Плейлисты</string>
+    <string name="playlists_empty">Плейлистов пока нет</string>
+    <string name="playlist_new">Новый плейлист</string>
+    <string name="playlist_name">Название</string>
+    <string name="playlist_owner">Владелец: %1$s</string>
+    <string name="playlist_read_only">Чужой плейлист — только просмотр</string>
+    <string name="playlist_delete_confirm">Удалить плейлист?</string>
+
+    <!-- Поиск -->
+    <string name="search_hint">Треки, альбомы, исполнители</string>
+    <string name="search_history">Вы искали</string>
+    <string name="search_clear_history">Очистить историю</string>
+    <string name="search_nothing">По запросу «%1$s» ничего не найдено</string>
+    <string name="search_tracks">Треки</string>
+    <string name="search_albums">Альбомы</string>
+    <string name="search_artists">Исполнители</string>
+    <string name="search_playlists">Плейлисты</string>
+
+    <!-- Меню трека -->
+    <string name="menu_play_next">Играть следующим</string>
+    <string name="menu_add_to_queue">В конец очереди</string>
+    <string name="menu_add_to_playlist">Добавить в плейлист</string>
+    <string name="menu_wave_by_track">Волна по треку</string>
+    <string name="menu_go_album">Перейти к альбому</string>
+    <string name="menu_go_artist">Перейти к исполнителю</string>
+    <string name="menu_remove_from_playlist">Удалить из плейлиста</string>
+    <string name="menu_info">Информация</string>
+    <string name="info_title">Название</string>
+    <string name="info_artist">Исполнитель</string>
+    <string name="info_album">Альбом</string>
+    <string name="info_year">Год</string>
+    <string name="info_genre">Жанр</string>
+    <string name="info_duration">Длительность</string>
+    <string name="info_quality">Качество</string>
+    <string name="info_format">Формат</string>
+    <string name="info_bitrate">Битрейт</string>
+    <string name="info_bit_depth">Разрядность</string>
+    <string name="info_sample_rate">Частота дискретизации</string>
+    <string name="info_size">Размер файла</string>
+    <string name="info_play_count">Прослушиваний</string>
+    <string name="message_play_next">Сыграет следующим</string>
+    <string name="message_added_to_queue">Добавлено в очередь</string>
+    <string name="message_added_to_playlist">Добавлено в «%1$s»</string>
+    <string name="message_removed_from_playlist">Удалено из плейлиста</string>
+    <string name="message_disliked">Больше не будет в «Моей волне»</string>
+
+    <!-- Плеер -->
+    <string name="player_queue">Очередь</string>
+    <string name="player_lyrics">Текст</string>
+    <string name="player_sleep_timer">Таймер сна</string>
+    <string name="player_wave_by_track">Волна по треку</string>
+    <string name="player_now_playing">Сейчас играет</string>
+    <string name="quality_lossless">Без потерь</string>
+    <string name="queue_drag">Перетащить</string>
+    <string name="queue_remove">Убрать из очереди</string>
+    <string name="lyrics_missing">Текста для этого трека нет</string>
+    <string name="sleep_end_of_track">До конца трека</string>
+    <string name="sleep_cancel">Выключить таймер</string>
+    <string name="sleep_remaining">Осталось %1$s</string>
+
+    <!-- Настройки -->
+    <string name="settings_accounts">Аккаунты</string>
+    <string name="settings_accounts_summary">Учётки Navidrome, адреса сервера</string>
+    <string name="settings_playback">Воспроизведение</string>
+    <string name="settings_playback_summary">Качество, кэш, восстановление очереди</string>
+    <string name="settings_wave">Волна</string>
+    <string name="settings_wave_summary">Доля открытий, статистика пропусков</string>
+    <string name="settings_appearance">Оформление</string>
+    <string name="settings_appearance_summary">Тема, цвета обложки</string>
+    <string name="settings_logs">Логи Navidrome</string>
+    <string name="settings_logs_summary">Запросы к серверу и события плеера</string>
+    <string name="settings_versions">История версий</string>
+    <string name="settings_versions_summary">Что нового в BodroMusic</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_quality_wifi">Качество по Wi-Fi</string>
+    <string name="settings_quality_mobile">Качество в мобильной сети</string>
+    <string name="settings_codec">Формат при перекодировании</string>
+    <string name="quality_original">Оригинал (без потерь)</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="settings_cache_size">Размер кэша</string>
+    <string name="settings_cache_restart_hint">Новый размер кэша применится после перезапуска приложения.</string>
+    <string name="settings_cache_used">Занято: %1$s</string>
+    <string name="settings_cache_clear">Очистить кэш</string>
+    <string name="settings_resume">Продолжать после перезапуска</string>
+    <string name="settings_resume_summary">Восстанавливать очередь и позицию</string>
+    <string name="settings_gapless">Воспроизведение без пауз</string>
+    <string name="settings_gapless_summary">Всегда включено: ExoPlayer сам убирает паузы, где формат это поддерживает (MP3 с LAME-заголовком, AAC, FLAC).</string>
+    <string name="settings_scrobble_threshold">Порог засчитывания прослушивания</string>
+    <string name="settings_scrobble_threshold_summary">50% трека или 4 минуты — что раньше; треки короче 30 с не учитываются</string>
+    <string name="settings_wave_discovery">Доля «открытий» в волне</string>
+    <string name="settings_wave_discovery_value">%1$d%%</string>
+    <string name="settings_wave_discovery_hint">Сколько незнакомых треков подмешивать в режиме «Для вас».</string>
+    <string name="settings_wave_reset_skips">Сбросить статистику пропусков</string>
+    <string name="settings_wave_reset_done">Сброшено: %1$s</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="settings_cover_colors">Цвета из обложки</string>
+    <string name="settings_cover_colors_summary">Фон плеера и мини-плеера в цвет обложки</string>
+    <string name="settings_dynamic_color">Цвета Material You</string>
+    <string name="settings_dynamic_color_summary">Цвета обоев (Android 12+)</string>
+
+    <!-- Аккаунты -->
+    <string name="accounts_add">Добавить учётку</string>
+    <string name="accounts_active">Активна</string>
+    <string name="accounts_local">Локальный: %1$s</string>
+    <string name="accounts_external">Внешний: %1$s</string>
+    <string name="accounts_current_address">Сейчас: %1$s — %2$s</string>
+    <string name="accounts_switch">Переключиться</string>
+    <string name="accounts_check">Проверить подключение</string>
+    <string name="accounts_checking">Проверяем…</string>
+    <string name="accounts_edit_addresses">Изменить адреса</string>
+    <string name="accounts_logout">Выйти</string>
+    <string name="accounts_logout_confirm">Выйти из учётки?</string>
+    <string name="accounts_logout_hint">Пароль, очередь, история и логи этой учётки будут удалены с устройства. Лайки и плейлисты останутся на сервере.</string>
+    <string name="check_ok">Работает, сервер %1$s</string>
+    <string name="server_lan">домашняя сеть</string>
+    <string name="server_wan">интернет</string>
+    <string name="server_unreachable">не отвечает</string>
+
+    <!-- Версии и о приложении -->
+    <string name="versions_current">Текущая версия</string>
+    <string name="versions_build_date">Сборка: %1$s</string>
+    <string name="versions_commit">Коммит: %1$s</string>
+    <string name="about_app_version">Версия приложения</string>
+    <string name="about_server_address">Адрес сервера</string>
+    <string name="about_server_type">Сервер</string>
+    <string name="about_navidrome_version">Navidrome %1$s</string>
+    <string name="about_navidrome_version_label">Версия Navidrome</string>
+    <string name="about_api_version">Версия Subsonic API</string>
+    <string name="about_opensubsonic">OpenSubsonic</string>
+    <string name="about_privacy">BodroMusic не использует внешнюю аналитику. Пароль хранится зашифрованным только на этом устройстве.</string>
+
+    <!-- Логи -->
+    <string name="logs_tab_requests">Запросы</string>
+    <string name="logs_tab_player">События плеера</string>
+    <string name="logs_search">Поиск по логам</string>
+    <string name="logs_errors_only">Только ошибки</string>
+    <string name="logs_endpoint">Эндпоинт</string>
+    <string name="logs_category_api">API</string>
+    <string name="logs_category_stream">Стрим</string>
+    <string name="logs_category_cover">Обложки</string>
+    <string name="logs_category_scrobble">Скробблы</string>
+    <string name="logs_empty">Записей нет</string>
+    <string name="logs_share">Поделиться логами</string>
+    <string name="logs_clear">Очистить</string>
+    <string name="logs_clear_confirm">Очистить логи?</string>
+    <string name="logs_level">Детализация</string>
+    <string name="logs_level_errors">Только ошибки</string>
+    <string name="logs_level_normal">Обычный</string>
+    <string name="logs_level_verbose">Подробный (с телами ответов)</string>
+    <string name="logs_pending">Ждут отправки: скробблов — %1$d, реакций — %2$d</string>
+    <string name="logs_send_now">Отправить сейчас</string>
+    <string name="logs_export_note">Пароль и параметры t, s, p замаскированы (***).</string>
+    <string name="logs_field_time">Время</string>
+    <string name="logs_field_type">Тип</string>
+    <string name="logs_field_server">Адрес</string>
+    <string name="logs_field_method">Метод</string>
+    <string name="logs_field_error_code">Код ошибки</string>
+    <string name="logs_field_message">Сообщение</string>
+    <string name="logs_field_duration">Длительность</string>
+    <string name="logs_field_size">Размер ответа</string>
+    <string name="logs_field_request_headers">Заголовки запроса</string>
+    <string name="logs_field_response_headers">Заголовки ответа</string>
+    <string name="logs_field_body">Тело ответа</string>
+    <string name="logs_body_hint">Тело ответа сохраняется только в режиме «Подробный».</string>
+
+    <!-- Склонения -->
+    <plurals name="tracks">
+        <item quantity="one">%d трек</item>
+        <item quantity="few">%d трека</item>
+        <item quantity="many">%d треков</item>
+        <item quantity="other">%d трека</item>
+    </plurals>
+    <plurals name="albums">
+        <item quantity="one">%d альбом</item>
+        <item quantity="few">%d альбома</item>
+        <item quantity="many">%d альбомов</item>
+        <item quantity="other">%d альбома</item>
+    </plurals>
+    <plurals name="minutes">
+        <item quantity="one">%d минута</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минуты</item>
+    </plurals>
+    <plurals name="minutes_short">
+        <item quantity="one">%d мин</item>
+        <item quantity="few">%d мин</item>
+        <item quantity="many">%d мин</item>
+        <item quantity="other">%d мин</item>
+    </plurals>
+    <plurals name="hours">
+        <item quantity="one">%d ч</item>
+        <item quantity="few">%d ч</item>
+        <item quantity="many">%d ч</item>
+        <item quantity="other">%d ч</item>
+    </plurals>
+</resources>

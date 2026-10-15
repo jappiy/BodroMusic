@@ -1,0 +1,7 @@
+# Скопируйте в local.properties (файл в .gitignore). Реальные данные в git не коммитить.
+# sdk.dir=/path/to/Android/Sdk
+
+# Отдельная тестовая учётка Navidrome (НЕ учётка живых людей: тесты ставят лайки/рейтинги и скробблят).
+navidrome.test.url=https://music.example.ru
+navidrome.test.user=bodro_test
+navidrome.test.password=

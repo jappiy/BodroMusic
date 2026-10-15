@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS — только с нормальными сертификатами (системные CA), self-signed не поддерживаются.
+  Network Security Config не умеет задавать диапазоны IP (192.168.0.0/16 и т.п.), поэтому
+  cleartext разрешён на уровне платформы, а ограничение «HTTP только для приватных адресов»
+  применяет приложение: ru.bodro.music.data.network.CleartextPolicyInterceptor (все запросы —
+  API, стрим, обложки — идут через один OkHttpClient).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

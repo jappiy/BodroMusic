@@ -12,6 +12,10 @@
 Чистая логика вынесена в JVM-модули: она тестируется без эмулятора и без Android SDK
 (`./gradlew -Pbodro.jvmOnly=true test`).
 
+Инструментальные тесты работают с настоящим приложением (без Hilt-testing): доступ к синглтонам —
+через `AppEntryPoint`, сервер — поддельный Navidrome на MockWebServer (`FakeNavidrome`, отдаёт
+сгенерированный WAV как поток трека).
+
 ## Ключевые классы `:app`
 
 - `data/account`: `AccountRepository`, `CredentialStore` (Tink AEAD + Android Keystore), `ConnectionManager` (активная учётка, LAN/WAN, смена сети).
@@ -27,12 +31,12 @@
 | Таблица | Поля |
 |---|---|
 | `accounts` | id, username, localUrl, externalUrl, serverVersion, openSubsonic, extensions, createdAt |
-| `disliked_tracks` | accountId, songId, songJson, createdAt, syncState |
-| `liked_cache` | accountId, songId, songJson, updatedAt |
+| `disliked_tracks` | accountId, songId, artistId, songJson, createdAt, syncState |
+| `liked_tracks` | accountId, songId, songJson, updatedAt |
 | `pending_reactions` | accountId, target, targetId, serverState, desiredState, updatedAt |
 | `pending_scrobbles` | id, accountId, songId, timestamp, attempts — UNIQUE(accountId, songId, timestamp) |
 | `play_history` | id, accountId, songId, artistId, albumId, genre, playedAt, listenedMs, skippedEarly |
-| `queue_state` | accountId (PK), snapshotJson, updatedAt |
+| `queue_state` | accountId (PK), snapshotJson, currentIndex, positionMs, updatedAt |
 | `search_history` | accountId, query, updatedAt |
 | `log_entries` | id, accountId, timestamp, type (network/player), category, endpoint, serverKind, url, httpCode, subsonicStatus, errorCode, message, durationMs, size, headers, body |
 

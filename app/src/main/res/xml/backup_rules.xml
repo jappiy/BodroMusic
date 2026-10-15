@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Зашифрованные секреты и ключи Keystore не попадают в бэкап (ключ Keystore всё равно не переносится). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="bodro_secrets.xml" />
+    <exclude domain="sharedpref" path="bodro_keyset.xml" />
+    <exclude domain="database" path="bodro.db" />
+    <exclude domain="database" path="bodro.db-wal" />
+    <exclude domain="database" path="bodro.db-shm" />
+</full-backup-content>

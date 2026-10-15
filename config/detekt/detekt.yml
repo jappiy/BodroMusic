@@ -16,9 +16,12 @@ complexity:
   CyclomaticComplexMethod:
     threshold: 20
     ignoreSimpleWhenEntries: true
+    ignoreAnnotated: ['Composable']
   NestedBlockDepth:
     threshold: 5
 style:
+  ThrowsCount:
+    max: 4
   MagicNumber:
     active: false
   ReturnCount:
@@ -32,6 +35,9 @@ style:
   UnusedPrivateMember:
     ignoreAnnotated: ['Preview']
 naming:
+  # Имена файлов проверяет ktlint (standard:filename); экраны держат ViewModel и Composable вместе.
+  MatchingDeclarationName:
+    active: false
   FunctionNaming:
     ignoreAnnotated: ['Composable']
   TopLevelPropertyNaming:

@@ -125,11 +125,15 @@ class SubsonicClient(
         return call("getRandomSongs", params) { it.songs("randomSongs") }
     }
 
+    /** Пустой [query] в Navidrome возвращает всю медиатеку постранично (для списка «Все треки»). */
     suspend fun search3(
         query: String,
         artistCount: Int = 10,
         albumCount: Int = 20,
         songCount: Int = 30,
+        songOffset: Int = 0,
+        albumOffset: Int = 0,
+        artistOffset: Int = 0,
     ): SearchResult = call(
         "search3",
         listOf(
@@ -137,6 +141,9 @@ class SubsonicClient(
             "artistCount" to artistCount.toString(),
             "albumCount" to albumCount.toString(),
             "songCount" to songCount.toString(),
+            "songOffset" to songOffset.toString(),
+            "albumOffset" to albumOffset.toString(),
+            "artistOffset" to artistOffset.toString(),
         ),
     ) { response ->
         val dto = response.decodeChild<SearchResult3Dto>("searchResult3") { SearchResult3Dto() }

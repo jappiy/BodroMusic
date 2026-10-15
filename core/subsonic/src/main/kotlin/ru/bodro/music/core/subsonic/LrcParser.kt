@@ -17,19 +17,23 @@ object LrcParser {
         for (raw in rawLines) {
             val line = raw.trim()
             offsetTag.find(line)?.let { offset = it.groupValues[1].toLongOrNull() ?: 0L }
-            if (metaTag.matches(line)) continue
-            val tags = timeTag.findAll(line).toList()
-            if (tags.isEmpty() || tags.first().range.first != 0) continue
-            hasTimeTags = true
-            val content = line.substring(tags.last().range.last + 1).trim()
-            for (tag in tags) {
-                timed += LyricLine(startMs = tag.toMillis() + offset, text = content)
+            val tags = if (metaTag.matches(line)) emptyList() else leadingTimeTags(line)
+            if (tags.isNotEmpty()) {
+                hasTimeTags = true
+                val content = line.substring(tags.last().range.last + 1).trim()
+                tags.forEach { tag -> timed += LyricLine(startMs = tag.toMillis() + offset, text = content) }
             }
         }
         if (!hasTimeTags) {
             return Lyrics(synced = false, lines = rawLines.map { LyricLine(null, it.trimEnd()) }.trimBlankEdges())
         }
         return Lyrics(synced = true, lines = timed.sortedBy { it.startMs })
+    }
+
+    /** Метки времени в начале строки: `[00:12.34][01:02.5]Текст`. */
+    private fun leadingTimeTags(line: String): List<MatchResult> {
+        val tags = timeTag.findAll(line).toList()
+        return if (tags.isEmpty() || tags.first().range.first != 0) emptyList() else tags
     }
 
     private fun MatchResult.toMillis(): Long {
