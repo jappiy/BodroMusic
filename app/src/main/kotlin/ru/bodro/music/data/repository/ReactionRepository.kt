@@ -87,13 +87,18 @@ class ReactionRepository @Inject constructor(
     private suspend fun loadLocal(accountId: Long) {
         val disliked = dao.getDisliked(accountId).map { it.songId }.toSet()
         val pending = dao.getPending(accountId)
+        if (loadedFor != accountId) return // учётку уже переключили
+        val loadedSongs = pending.filter { it.target == ReactionTarget.Song.name }
+            .associate { it.targetId to Reaction.valueOf(it.desiredState) }
+        val loadedStars = pending.filter { it.target != ReactionTarget.Song.name }
+            .associate { "${it.target.lowercase()}:${it.targetId}" to (it.desiredState == Reaction.Liked.name) }
+        // Объединяем, а не заменяем: изменения, сделанные пока шла загрузка, важнее загруженных.
         _state.update { current ->
+            val undisliked = current.songOverrides.filterValues { it != Reaction.Disliked }.keys
             current.copy(
-                dislikedIds = disliked,
-                songOverrides = pending.filter { it.target == ReactionTarget.Song.name }
-                    .associate { it.targetId to Reaction.valueOf(it.desiredState) },
-                starOverrides = pending.filter { it.target != ReactionTarget.Song.name }
-                    .associate { "${it.target.lowercase()}:${it.targetId}" to (it.desiredState == Reaction.Liked.name) },
+                dislikedIds = disliked - undisliked + current.dislikedIds,
+                songOverrides = loadedSongs + current.songOverrides,
+                starOverrides = loadedStars + current.starOverrides,
             )
         }
     }
