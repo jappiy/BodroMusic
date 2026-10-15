@@ -5,7 +5,10 @@ import io.mockk.every
 import io.mockk.mockk
 import java.util.Collections
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -66,8 +69,11 @@ class ReactionRepositoryTest {
         every { connection.session } returns session
     }
 
+    private var repoScope: CoroutineScope? = null
+
     @After
     fun tearDown() {
+        repoScope?.cancel()
         db.close()
         server.close()
     }
@@ -83,7 +89,8 @@ class ReactionRepositoryTest {
             log = mockk<LogRepository>(relaxed = true),
             syncScheduler = { mockk<SyncScheduler>(relaxed = true) },
             clock = { 1_000L },
-            scope = backgroundScope,
+            // Не backgroundScope: advanceUntilIdle() не выполняет фоновые корутины.
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()).also { repoScope = it },
         )
     }
 
