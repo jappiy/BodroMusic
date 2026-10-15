@@ -71,6 +71,9 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Build test APKs before starting the emulator
+        # Сборка и эмулятор одновременно не помещаются в ресурсы раннера.
+        run: ./gradlew assembleDebug assembleDebugAndroidTest
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -78,13 +81,13 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          cores: 4
-          ram-size: 4096M
+          cores: 2
+          ram-size: 3072M
           disk-size: 4096M
           emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
-          script: ./gradlew connectedDebugAndroidTest --continue
+          script: ./gradlew connectedDebugAndroidTest --continue -Dorg.gradle.jvmargs=-Xmx2g
       - name: Upload instrumented reports
         if: always()
         uses: actions/upload-artifact@v4
