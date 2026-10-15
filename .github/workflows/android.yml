@@ -64,7 +64,7 @@ jobs:
       - name: Free disk space
         # Эмулятору нужно место под userdata; на раннере много ненужного предустановленного.
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /usr/local/lib/node_modules "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /usr/local/lib/node_modules
           df -h /
       - name: Enable KVM
         run: |
