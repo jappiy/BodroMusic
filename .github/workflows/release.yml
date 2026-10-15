@@ -1,10 +1,18 @@
 name: Release
 
 # Публикация: git tag v0.7.0 && git push origin v0.7.0 → страница релиза с APK.
+# Или вручную: Actions → Release → Run workflow → версия (тег создаст GitHub).
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия без «v», например 0.7.0"
+        required: true
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 permissions:
   contents: write
@@ -28,7 +36,7 @@ jobs:
       - name: Name APKs by version
         id: apk
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/BodroMusic-${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "dist/BodroMusic-${VERSION}-debug.apk"
@@ -46,8 +54,10 @@ jobs:
           ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
-          name: BodroMusic ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: BodroMusic ${{ env.TAG }}
           body_path: dist/notes.md
           files: |
             dist/*.apk
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
+          prerelease: ${{ startsWith(env.TAG, 'v0.') }}
