@@ -72,7 +72,11 @@ class BackgroundPlaybackTest {
             }}",
             media != null,
         )
-        assertTrue("notification is ongoing (foreground service)", media!!.isOngoing)
+        // Сервис плеера — foreground (иначе система убьёт воспроизведение в фоне). Флаг ongoing Media3 не ставит.
+        assertTrue(
+            "notification belongs to a foreground service",
+            media!!.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0,
+        )
     }
 
     @Test
