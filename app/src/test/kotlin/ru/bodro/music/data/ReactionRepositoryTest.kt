@@ -55,7 +55,7 @@ class ReactionRepositoryTest {
                 if (!online) return MockResponse.Builder().code(503).build()
                 val url = request.url
                 requests +=
-                    url.pathSegments.last().removeSuffix(".view") + listOfNotNull(url.queryParameter("rating")).joinToString(prefix = ":")
+                    url.pathSegments.last().removeSuffix(".view") + listOfNotNull(url.queryParameter("rating")).joinToString("") { ":$it" }
                 return MockResponse.Builder().addHeader("Content-Type", "application/json")
                     .body("""{"subsonic-response":{"status":"ok","version":"1.16.1"}}""").build()
             }

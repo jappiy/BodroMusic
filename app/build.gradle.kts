@@ -126,6 +126,14 @@ ksp {
 
 tasks.named("preBuild") { dependsOn(copyChangelog) }
 
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+    }
+}
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:subsonic"))

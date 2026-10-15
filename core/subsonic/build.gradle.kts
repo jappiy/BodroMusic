@@ -16,7 +16,10 @@ java {
 
 tasks.withType<Test>().configureEach {
     useJUnit()
-    testLogging { events("failed") }
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 dependencies {
