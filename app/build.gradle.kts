@@ -1,4 +1,5 @@
 import java.time.Instant
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -44,7 +45,7 @@ android {
         buildConfigField("String", "BUILD_TIME", "\"$buildTime\"")
 
         // Данные тестовой учётки Navidrome — только из local.properties / окружения, не из git.
-        val localProps = java.util.Properties().apply {
+        val localProps = Properties().apply {
             val file = rootProject.file("local.properties")
             if (file.exists()) file.inputStream().use { load(it) }
         }
