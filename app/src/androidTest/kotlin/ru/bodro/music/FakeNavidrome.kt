@@ -41,7 +41,8 @@ class FakeNavidrome(private val trackSeconds: Int = 60) {
     private fun respond(request: RecordedRequest): MockResponse {
         val url = request.url
         val endpoint = url.pathSegments.lastOrNull()?.removeSuffix(".view") ?: ""
-        if (endpoint != "ping" && url.queryParameter("u") != USER) return json(error(40, "Wrong username or password"))
+        // Как настоящий Navidrome: авторизация проверяется на всех эндпоинтах, включая ping.
+        if (url.queryParameter("u") != USER) return json(error(40, "Wrong username or password"))
         return when (endpoint) {
             "ping" -> json(ok(""))
             "getOpenSubsonicExtensions" -> json(ok(""","openSubsonicExtensions":[{"name":"songLyrics","versions":[1]}]"""))

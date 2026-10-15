@@ -1,13 +1,13 @@
 package ru.bodro.music
 
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Intent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,10 +59,20 @@ class BackgroundPlaybackTest {
         assertTrue("still playing 10 s after Home", player.state.value.isPlaying)
         assertTrue("position advanced", player.state.value.positionMs > 5_000)
 
-        device.openNotification()
-        val found = device.wait(Until.hasObject(By.textContains(songs[0].title)), 5_000)
-        device.pressBack()
-        assertTrue("media notification with track title", found)
+        // Медиа-уведомление проверяем через систему, а не через шторку: на Android 13+ оно рисуется
+        // плеером в быстрых настройках, и поиск по тексту в UI ненадёжен.
+        val notifications = appContext.getSystemService(NotificationManager::class.java).activeNotifications
+        val media = notifications.firstOrNull {
+            it.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ==
+                songs[0].title
+        }
+        assertTrue(
+            "media notification with track title, got: ${notifications.map {
+                it.notification.extras.getCharSequence(Notification.EXTRA_TITLE)
+            }}",
+            media != null,
+        )
+        assertTrue("notification is ongoing (foreground service)", media!!.isOngoing)
     }
 
     @Test
