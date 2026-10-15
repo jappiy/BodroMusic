@@ -1,10 +1,12 @@
 package ru.bodro.music.playback
 
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +59,7 @@ class PlaybackDeps @Inject constructor(
  * подгрузка волны, таймер сна, реакции, обработка ошибок, переключение учёток.
  * Все обращения к плееру — в главном потоке ([scope] — Main).
  */
+@OptIn(UnstableApi::class)
 class PlaybackCoordinator(
     private val player: ExoPlayer,
     private val scope: CoroutineScope,
