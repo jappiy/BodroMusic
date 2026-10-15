@@ -320,6 +320,7 @@ fun LikedScreen(onBack: () -> Unit, viewModel: LikedViewModel = hiltViewModel())
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
+                    val waveTitle = listTitle(state)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             onClick = {
@@ -327,7 +328,7 @@ fun LikedScreen(onBack: () -> Unit, viewModel: LikedViewModel = hiltViewModel())
                                     WaveSettings(
                                         genre = state.genre,
                                         seed = WaveSeed.SongList(
-                                            listTitle(state),
+                                            waveTitle,
                                             songs.map {
                                                 it.id
                                             },
