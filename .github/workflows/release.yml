@@ -1,0 +1,53 @@
+name: Release
+
+# Публикация: git tag v0.7.0 && git push origin v0.7.0 → страница релиза с APK.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build APKs
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
+      - name: Name APKs by version
+        id: apk
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/BodroMusic-${VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/BodroMusic-${VERSION}-debug.apk"
+          # Раздел CHANGELOG.md для этой версии — текст релиза.
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > dist/notes.md
+          cat >> dist/notes.md <<'NOTES'
+
+          **Установка:** скачайте `BodroMusic-*.apk` на телефон и откройте (разрешите установку из неизвестных источников).
+          `-debug.apk` ставится рядом с основной версией (`ru.bodro.music.debug`) — для проверки.
+          NOTES
+          ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: BodroMusic ${{ github.ref_name }}
+          body_path: dist/notes.md
+          files: |
+            dist/*.apk
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
