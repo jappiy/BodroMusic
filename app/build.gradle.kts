@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.room)
 }
 
 // Версия приложения. Каждое изменение функциональности — запись в CHANGELOG.md и повышение версии.
@@ -114,8 +115,12 @@ kotlin {
     }
 }
 
+room {
+    // Схемы БД для миграций; плагин Room корректно разводит варианты debug/release.
+    schemaDirectory("$projectDir/schemas")
+}
+
 ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.generateKotlin", "true")
 }
 
