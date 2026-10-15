@@ -77,17 +77,21 @@ jobs:
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          # ATD — облегчённый образ Google для автотестов в CI.
+          api-level: 33
+          target: aosp_atd
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_4
           cores: 2
           ram-size: 3072M
           disk-size: 4096M
           emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
-          script: ./gradlew connectedDebugAndroidTest --continue -Dorg.gradle.jvmargs=-Xmx2g
+          pre-emulator-launch-script: free -m && df -h /
+          script: |
+            free -m
+            ./gradlew connectedDebugAndroidTest --continue --no-daemon -Dorg.gradle.jvmargs=-Xmx2g -Dkotlin.compiler.execution.strategy=in-process
       - name: Upload instrumented reports
         if: always()
         uses: actions/upload-artifact@v4
