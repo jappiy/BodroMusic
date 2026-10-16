@@ -10,6 +10,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -19,6 +20,7 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import ru.bodro.music.core.domain.player.StreamParamsResolver
@@ -66,14 +68,34 @@ class StreamDataSourceFactory @Inject constructor(
     private val playerCache: PlayerCache,
     private val offline: OfflineStore,
 ) {
-    fun create(): DataSource.Factory {
-        val upstream = OkHttpDataSource.Factory(http)
-        val cached = CacheDataSource.Factory()
+    private val cached: CacheDataSource.Factory by lazy {
+        CacheDataSource.Factory()
             .setCache(playerCache.cache)
-            .setUpstreamDataSourceFactory(upstream)
+            .setUpstreamDataSourceFactory(OkHttpDataSource.Factory(http))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    fun create(): DataSource.Factory {
         // DefaultDataSource: file:// (скачанные лайки) — с диска, http(s) — через кэш стрима.
         return ResolvingDataSource.Factory(DefaultDataSource.Factory(context, cached)) { spec -> resolve(spec) }
+    }
+
+    /**
+     * Скачать в кэш стрима начало трека ([bytes]), чтобы переключение на него началось без ожидания сети.
+     * Тот же ключ кэша, что и у плеера. Скачанные лайки и уже закэшированное повторно не качаются.
+     */
+    suspend fun prefetch(songId: String, bytes: Long) = withContext(Dispatchers.IO) {
+        val spec = resolve(DataSpec.Builder().setUri(MediaItemFactory.songUri(songId)).setLength(bytes).build())
+        if (spec.uri.scheme == "file") return@withContext
+        val writer = CacheWriter(cached.createDataSource(), spec, null, null)
+        val cancel = coroutineContext[Job]?.invokeOnCompletion { writer.cancel() }
+        try {
+            writer.cache()
+        } catch (_: IOException) {
+            // Нет сети или отменено — плеер скачает сам.
+        } finally {
+            cancel?.dispose()
+        }
     }
 
     fun currentQuality(): StreamQuality = settings.current.quality

@@ -157,6 +157,26 @@ def test_artist_goes_to_lidarr(tmp_path):
     assert world.scans >= 1
 
 
+def test_cancel_artist_stops_lidarr(tmp_path):
+    world = FakeWorld()
+    store, worker, clock = setup(world, tmp_path)
+    request, _ = store.create(
+        username="vasya",
+        kind=RequestKind.ARTIST,
+        artist="трофим",
+        title=None,
+        album=None,
+        duration_ms=None,
+        cover_url=None,
+    )
+    downloading = run_until(worker, clock, store, request.id, RequestStatus.DOWNLOADING)
+    world.lidarr_queue = 2
+    asyncio.run(worker.cancel(downloading))
+    assert store.get(request.id).status == RequestStatus.CANCELLED
+    assert world.lidarr_updates[-1]["monitored"] is False
+    assert world.lidarr_removed_from_queue == [0, 1]
+
+
 def test_existing_lidarr_artist_triggers_search(tmp_path):
     world = FakeWorld(
         lidarr_artists=[

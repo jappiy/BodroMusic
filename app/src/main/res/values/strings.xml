@@ -95,6 +95,10 @@
     <!-- Волна -->
     <string name="wave_title">Моя волна</string>
     <string name="wave_empty">Не удалось собрать волну: мало данных. Послушайте что-нибудь и поставьте лайки.</string>
+    <string name="wave_group_mood">Настроение</string>
+    <string name="wave_group_genre">Жанр</string>
+    <string name="wave_group_decade">Эпоха</string>
+    <string name="wave_more_genres">Ещё жанры</string>
     <string name="wave_mode_default">Для вас</string>
     <string name="wave_mode_favorites">Любимое</string>
     <string name="wave_mode_discover">Незнакомое</string>
@@ -135,6 +139,8 @@
     <string name="album_disc">Диск %1$d</string>
     <string name="artist_wave">Волна</string>
     <string name="artist_top_tracks">Популярные треки</string>
+    <string name="artist_popular_missing">Популярное, которого нет в библиотеке</string>
+    <string name="artist_popular_missing_hint">По данным Яндекс Музыки — можно поставить на загрузку</string>
     <string name="artist_albums">Альбомы</string>
     <string name="playlists_title">Плейлисты</string>
     <string name="playlists_empty">Плейлистов пока нет</string>
@@ -370,6 +376,8 @@
     <string name="discover_download_all_hint">Вся дискография через Lidarr</string>
     <string name="discover_in_library">В библиотеке</string>
     <string name="discover_download">Скачать</string>
+    <string name="discover_cancel_artist">Отменить загрузку исполнителя</string>
+    <string name="discover_cancelled">Загрузка «%1$s» отменена</string>
     <string name="discover_show_more">Показать ещё</string>
     <string name="discover_queued_track">«%1$s» поставлен в загрузку</string>
     <string name="discover_queued_artist">Все песни «%1$s» поставлены в загрузку</string>
@@ -384,6 +392,37 @@
     <string name="settings_downloads_summary">Скачивание через slskd и Lidarr</string>
     <string name="settings_cleanup_summary">Треки с дизлайками: удалить с сервера навсегда</string>
     <string name="settings_blocklist_summary">Удалённые треки, которые не скачаются снова</string>
+    <string name="settings_maintenance_summary">Отчёт: теги, обложки, дубли, короткие файлы</string>
+    <string name="maintenance_title">Обслуживание библиотеки</string>
+    <string name="maintenance_hint">Каждую ночь сервер проверяет библиотеку: дописывает теги и обложки по Яндекс Музыке, убирает дубли и обрезанные файлы, собирает альбомы из разных папок. Убранное лежит в карантине, его можно вернуть.</string>
+    <string name="maintenance_never">Ещё не запускалось</string>
+    <string name="maintenance_last">Последний запуск: %1$s — %2$s</string>
+    <string name="maintenance_status_running">идёт</string>
+    <string name="maintenance_status_completed">готово</string>
+    <string name="maintenance_status_failed">ошибка</string>
+    <string name="maintenance_next">Следующий запуск: %1$s · карантин хранится %2$d дн.</string>
+    <string name="maintenance_dry_run">Пробный режим: сервер только пишет отчёт и ничего не меняет (MAINTENANCE_DRY_RUN)</string>
+    <string name="maintenance_run">Запустить сейчас</string>
+    <string name="maintenance_running">Идёт проверка…</string>
+    <string name="maintenance_stat_duplicates">дублей убрано: %1$d</string>
+    <string name="maintenance_stat_albums">альбомов собрано: %1$d</string>
+    <string name="maintenance_stat_short">коротких убрано: %1$d</string>
+    <string name="maintenance_stat_tags">тегов исправлено: %1$d</string>
+    <string name="maintenance_stat_covers">обложек добавлено: %1$d</string>
+    <string name="maintenance_stat_found">требует внимания: %1$d</string>
+    <string name="maintenance_stat_clean">Проверено треков: %1$d — всё в порядке</string>
+    <string name="maintenance_empty">В отчёте пока пусто</string>
+    <string name="maintenance_empty_hint">Здесь появится всё, что регламент исправил или нашёл</string>
+    <string name="maintenance_kind_all">Все</string>
+    <string name="maintenance_kind_duplicate">Дубли</string>
+    <string name="maintenance_kind_album">Альбомы</string>
+    <string name="maintenance_kind_short">Короткие</string>
+    <string name="maintenance_kind_tags">Теги</string>
+    <string name="maintenance_kind_cover">Обложки</string>
+    <string name="maintenance_restore">Вернуть</string>
+    <string name="maintenance_restore_title">Вернуть файл из карантина?</string>
+    <string name="maintenance_restore_text">Файл «%1$s» вернётся на прежнее место, Navidrome пересканирует библиотеку.</string>
+    <string name="maintenance_restored">Файл возвращён</string>
 
     <!-- На удаление и чёрный список -->
     <string name="cleanup_title">На удаление</string>

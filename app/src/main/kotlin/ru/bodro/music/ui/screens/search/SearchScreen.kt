@@ -197,6 +197,7 @@ fun SearchScreen(
             onPlay = discover::play,
             onRetry = discover::retry,
             onShowMore = { discoverExpanded = true },
+            onCancel = discover::cancel,
         )
     }
 

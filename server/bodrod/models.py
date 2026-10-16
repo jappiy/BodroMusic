@@ -110,6 +110,8 @@ class ServiceInfo(ApiModel):
     cleanup: bool = False
     """Пользователь — администратор Navidrome (только ему доступны удаление и чёрный список)."""
     admin: bool = False
+    """Включено «Обслуживание библиотеки» (bodrod 0.4.0+)."""
+    maintenance: bool = False
 
 
 class CleanupUser(ApiModel):
@@ -157,3 +159,67 @@ class BlockEntryOut(ApiModel):
 class BlocklistPage(ApiModel):
     total: int
     items: list[BlockEntryOut]
+
+
+class ArtistPopular(ApiModel):
+    """Популярные треки исполнителя по каталогу (для экрана исполнителя в приложении)."""
+
+    source: str | None = None
+    artist: ArtistCandidate | None = None
+    tracks: list[TrackCandidate] = Field(default_factory=list)
+
+
+class LibraryCheckRequest(ApiModel):
+    ids: list[str] = Field(min_length=1, max_length=5000)
+
+
+class LibraryCheck(ApiModel):
+    """`missing` — треков больше нет в библиотеке; `replaced` — трек заменён копией (старый id → новый)."""
+
+    missing: list[str] = Field(default_factory=list)
+    replaced: dict[str, str] = Field(default_factory=dict)
+
+
+class MaintenanceRunOut(ApiModel):
+    id: int
+    trigger: str
+    """running / completed / failed."""
+    status: str
+    dry_run: bool
+    stats: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
+    started_at: int
+    finished_at: int | None = None
+
+
+class MaintenanceStatus(ApiModel):
+    enabled: bool
+    running: bool
+    dry_run: bool
+    """Время ежедневного запуска, «ЧЧ:ММ»."""
+    schedule: str
+    next_run_at: int | None = None
+    quarantine_days: int
+    last_run: MaintenanceRunOut | None = None
+
+
+class MaintenanceActionOut(ApiModel):
+    id: int
+    run_id: int
+    """short / duplicate / album / tags / cover."""
+    kind: str
+    """`True` — исправлено; `False` — только найдено (в отчёт)."""
+    applied: bool
+    artist: str | None = None
+    title: str | None = None
+    album: str | None = None
+    path: str | None = None
+    details: str
+    created_at: int
+    quarantine_id: int | None = None
+    restorable: bool = False
+
+
+class MaintenanceActionsPage(ApiModel):
+    total: int
+    items: list[MaintenanceActionOut]

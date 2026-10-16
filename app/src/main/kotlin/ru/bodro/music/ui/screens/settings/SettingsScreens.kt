@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
@@ -74,6 +75,7 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit,
     onOpenCleanup: () -> Unit,
     onOpenBlocklist: () -> Unit,
+    onOpenMaintenance: () -> Unit,
     onOpenVersions: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -135,6 +137,15 @@ fun SettingsScreen(
                 R.string.settings_blocklist_summary,
                 onOpenBlocklist,
                 "settings-blocklist",
+            )
+        }
+        item {
+            SettingsEntry(
+                Icons.Rounded.AutoFixHigh,
+                R.string.maintenance_title,
+                R.string.settings_maintenance_summary,
+                onOpenMaintenance,
+                "settings-maintenance",
             )
         }
         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }

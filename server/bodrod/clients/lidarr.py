@@ -123,6 +123,20 @@ class LidarrClient:
         items = await self._request("GET", "/queue/details", params={"artistId": artist_id}) or []
         return len(items)
 
+    async def stop_artist(self, artist_id: int) -> int:
+        """Отмена «скачать всё»: снять мониторинг исполнителя и убрать его загрузки из очереди. Файлы остаются."""
+        artist = await self._request("GET", f"/artist/{artist_id}")
+        if artist:
+            artist["monitored"] = False
+            artist["monitorNewItems"] = "none"
+            await self._request("PUT", f"/artist/{artist_id}", json=artist)
+        items = await self._request("GET", "/queue/details", params={"artistId": artist_id}) or []
+        for item in items:
+            await self._request(
+                "DELETE", f"/queue/{item['id']}", params={"removeFromClient": "true", "blocklist": "false"}
+            )
+        return len(items)
+
     # region Удаление файлов
 
     async def artists(self) -> list[dict[str, Any]]:

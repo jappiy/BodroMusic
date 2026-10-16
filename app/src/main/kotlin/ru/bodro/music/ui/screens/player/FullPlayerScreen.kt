@@ -89,8 +89,8 @@ private enum class PlayerSheet { None, Queue, Lyrics, Sleep }
 
 /**
  * Полноэкранный плеер: фон и акцент в цвет обложки, waveform-сикбар.
- * Дизлайк и лайк — по краям от кнопок переключения; внизу единый блок «повтор / перемешивание / текст».
- * Очередь, таймер сна и волна по треку — в меню «⋮».
+ * Дизлайк и лайк — по краям от кнопок переключения; внизу единый блок «повтор / перемешивание / текст / очередь».
+ * Таймер сна и волна по треку — в меню «⋮».
  */
 @Composable
 fun FullPlayerScreen(
@@ -157,7 +157,6 @@ fun FullPlayerScreen(
                         expanded = menuOpen,
                         sleepActive = state.sleepTimer != null,
                         onDismiss = { menuOpen = false },
-                        onQueue = { sheet = PlayerSheet.Queue },
                         onSleep = { sheet = PlayerSheet.Sleep },
                         onWave = { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) },
                         onSongActions = { actions.showSongMenu(song) },
@@ -250,6 +249,7 @@ fun FullPlayerScreen(
                     description = stringResource(if (disliked) R.string.action_undislike else R.string.action_dislike),
                     content = content,
                     buttonTag = "player-dislike",
+                    activeColor = DislikeBlue,
                     iconTag = if (disliked) "icon-disliked" else "icon-not-disliked",
                 ) { tint, description ->
                     Icon(painterResource(R.drawable.ic_heart_broken), contentDescription = description, tint = tint)
@@ -293,6 +293,7 @@ fun FullPlayerScreen(
                     description = stringResource(if (liked) R.string.action_unlike else R.string.action_like),
                     content = content,
                     buttonTag = "player-like",
+                    activeColor = LikeRed,
                     iconTag = if (liked) "icon-liked" else "icon-not-liked",
                 ) { tint, description ->
                     Icon(
@@ -303,7 +304,7 @@ fun FullPlayerScreen(
                 }
             }
             Spacer(Modifier.height(20.dp))
-            // Нижняя панель — единый блок: повтор, перемешивание, текст песни.
+            // Нижняя панель — единый блок: повтор, перемешивание, текст песни, очередь.
             Row(
                 Modifier
                     .padding(bottom = 12.dp)
@@ -332,6 +333,9 @@ fun FullPlayerScreen(
                 )
                 BottomAction(Icons.Rounded.Lyrics, stringResource(R.string.player_lyrics), content, tag = "open-lyrics") {
                     sheet = PlayerSheet.Lyrics
+                }
+                BottomAction(Icons.AutoMirrored.Rounded.QueueMusic, stringResource(R.string.player_queue), content, tag = "open-queue") {
+                    sheet = PlayerSheet.Queue
                 }
             }
         }
@@ -373,7 +377,7 @@ private fun BottomAction(
     }
 }
 
-/** Лайк/дизлайк: поставленная отметка — красная обводка и подложка, чтобы было сразу видно. */
+/** Лайк/дизлайк: поставленная отметка — цветная обводка и подложка (лайк красный, дизлайк синий). */
 @Composable
 private fun ReactionButton(
     active: Boolean,
@@ -382,35 +386,35 @@ private fun ReactionButton(
     content: Color,
     buttonTag: String,
     iconTag: String,
+    activeColor: Color,
     icon: @Composable (tint: Color, description: String) -> Unit,
 ) {
     Box(
         Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .then(if (active) Modifier.background(ReactionRed.copy(alpha = 0.18f)).border(2.dp, ReactionRed, CircleShape) else Modifier)
+            .then(if (active) Modifier.background(activeColor.copy(alpha = 0.18f)).border(2.dp, activeColor, CircleShape) else Modifier)
             .clickable(onClick = onClick, role = Role.Button)
             .testTag(buttonTag),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.testTag(iconTag)) { icon(if (active) ReactionRed else content.copy(alpha = 0.8f), description) }
+        Box(Modifier.testTag(iconTag)) { icon(if (active) activeColor else content.copy(alpha = 0.8f), description) }
     }
 }
 
-private val ReactionRed = Color(0xFFE53935)
+private val LikeRed = Color(0xFFE53935)
+private val DislikeBlue = Color(0xFF1E88E5)
 
 @Composable
 private fun PlayerMenu(
     expanded: Boolean,
     sleepActive: Boolean,
     onDismiss: () -> Unit,
-    onQueue: () -> Unit,
     onSleep: () -> Unit,
     onWave: () -> Unit,
     onSongActions: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        PlayerMenuItem(Icons.AutoMirrored.Rounded.QueueMusic, R.string.player_queue, "open-queue", onDismiss, onQueue)
         PlayerMenuItem(
             Icons.Rounded.Bedtime,
             if (sleepActive) R.string.player_sleep_timer_on else R.string.player_sleep_timer,

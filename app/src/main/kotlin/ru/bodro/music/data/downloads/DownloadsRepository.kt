@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import okhttp3.OkHttpClient
+import ru.bodro.music.core.downloads.ArtistPopular
 import ru.bodro.music.core.downloads.BlocklistPage
 import ru.bodro.music.core.downloads.CleanupUser
 import ru.bodro.music.core.downloads.DeleteSongResult
@@ -37,6 +38,9 @@ import ru.bodro.music.core.downloads.DownloadsClient
 import ru.bodro.music.core.downloads.DownloadsConfig
 import ru.bodro.music.core.downloads.DownloadsError
 import ru.bodro.music.core.downloads.DownloadsException
+import ru.bodro.music.core.downloads.LibraryCheck
+import ru.bodro.music.core.downloads.MaintenanceActionsPage
+import ru.bodro.music.core.downloads.MaintenanceStatus
 import ru.bodro.music.core.downloads.RequestStatus
 import ru.bodro.music.core.downloads.ServiceInfo
 import ru.bodro.music.data.account.ConnectionManager
@@ -110,6 +114,10 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun artistTopTracks(artist: DiscoverArtist): List<DiscoverTrack> = client.artistTopTracks(artist)
 
+    suspend fun artistPopular(name: String): ArtistPopular = client.artistPopular(name)
+
+    suspend fun checkLibrary(ids: List<String>): LibraryCheck = client.checkLibrary(ids)
+
     suspend fun downloadTrack(track: DiscoverTrack): DownloadRequest = remember(client.downloadTrack(track))
 
     suspend fun downloadArtist(artist: DiscoverArtist): DownloadRequest = remember(client.downloadArtist(artist))
@@ -131,6 +139,19 @@ class DownloadsRepository @Inject constructor(
     suspend fun blocklist(query: String?, limit: Int, offset: Int): BlocklistPage = client.blocklist(query, limit, offset)
 
     suspend fun unblock(id: Long) = client.unblock(id)
+
+    // endregion
+
+    // region Обслуживание библиотеки
+
+    suspend fun maintenanceStatus(): MaintenanceStatus = client.maintenanceStatus()
+
+    suspend fun maintenanceActions(runId: Long?, kind: String?, limit: Int, offset: Int): MaintenanceActionsPage =
+        client.maintenanceActions(runId, kind, limit, offset)
+
+    suspend fun runMaintenance() = client.runMaintenance()
+
+    suspend fun restoreFromQuarantine(id: Long) = client.restoreFromQuarantine(id)
 
     // endregion
 

@@ -57,3 +57,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object CleanupRoute
 
 @Serializable data object BlocklistRoute
+
+@Serializable data object MaintenanceRoute

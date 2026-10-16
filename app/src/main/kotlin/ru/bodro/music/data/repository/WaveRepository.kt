@@ -137,9 +137,10 @@ class WaveRepository @Inject constructor(
     /** Топ-8 жанров пользователя для чипов; если истории нет — самые большие жанры медиатеки. */
     suspend fun topGenres(limit: Int = 8): List<String> {
         val fromProfile = runCatching { profile().topGenres }.getOrDefault(emptyList())
-        if (fromProfile.size >= limit) return fromProfile.take(limit)
+        if (fromProfile.size >= limit) return fromProfile.distinctBy { it.trim().lowercase() }.take(limit)
         val fromLibrary = runCatching { library.genres().map { it.name } }.getOrDefault(emptyList())
-        return (fromProfile + fromLibrary).distinct().take(limit)
+        // «Rock» и «rock» — один жанр.
+        return (fromProfile + fromLibrary).distinctBy { it.trim().lowercase() }.take(limit)
     }
 
     val activeAccountId: Long? get() = connection.activeAccountId

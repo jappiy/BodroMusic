@@ -20,10 +20,12 @@ from .clients.lidarr import LidarrClient
 from .clients.navidrome import Credentials, NavidromeClient
 from .clients.slskd import SlskdClient
 from .config import Settings
-from .db import Store
+from .db import MaintenanceAction, MaintenanceRun, Store
+from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
 from .models import (
+    ArtistPopular,
     BlockEntryOut,
     BlocklistPage,
     CleanupUser,
@@ -33,6 +35,12 @@ from .models import (
     DiscoverResponse,
     DislikedSong,
     DownloadRequestOut,
+    LibraryCheck,
+    LibraryCheckRequest,
+    MaintenanceActionOut,
+    MaintenanceActionsPage,
+    MaintenanceRunOut,
+    MaintenanceStatus,
     RequestKind,
     ServiceInfo,
     TrackCandidate,
@@ -54,6 +62,8 @@ class Services:
     worker: Worker
     auth_cache: dict[str, tuple[str, float]]
     cleanup: CleanupService | None = None
+    maintenance: MaintenanceService | None = None
+    navidrome_db: NavidromeDb | None = None
 
 
 COVER_MAX_BYTES = 2 * 1024 * 1024
@@ -102,9 +112,13 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     providers: list[MetadataProvider] = [YandexMusicProvider(http, settings.yandex_token)]
     if settings.deezer_enabled:
         providers.append(DeezerProvider(http))
-    cleanup = (
-        CleanupService(settings, store, navidrome, NavidromeDb(settings.navidrome_db), lidarr)
-        if settings.navidrome_db
+    cover_fetcher = make_cover_fetcher(http)
+    navidrome_db = NavidromeDb(settings.navidrome_db) if settings.navidrome_db else None
+    files_lock = asyncio.Lock()
+    cleanup = CleanupService(settings, store, navidrome, navidrome_db, lidarr, files_lock) if navidrome_db else None
+    maintenance = (
+        MaintenanceService(settings, store, navidrome, navidrome_db, lidarr, providers, cover_fetcher, files_lock)
+        if navidrome_db and settings.maintenance_enabled
         else None
     )
     return Services(
@@ -112,9 +126,11 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         store=store,
         navidrome=navidrome,
         discover=DiscoverService(providers, navidrome),
-        worker=Worker(store, settings, navidrome, slskd, lidarr, cover_fetcher=make_cover_fetcher(http)),
+        worker=Worker(store, settings, navidrome, slskd, lidarr, cover_fetcher=cover_fetcher),
         auth_cache={},
         cleanup=cleanup,
+        maintenance=maintenance,
+        navidrome_db=navidrome_db,
     )
 
 
@@ -132,6 +148,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             tasks.append(asyncio.create_task(app.state.services.worker.run_forever()))
             if app.state.services.cleanup is not None:
                 tasks.append(asyncio.create_task(app.state.services.cleanup.run_forever()))
+            if app.state.services.maintenance is not None:
+                tasks.append(asyncio.create_task(app.state.services.maintenance.run_forever()))
         try:
             yield
         finally:
@@ -191,6 +209,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             metadata_sources=svc.discover.source_names,
             cleanup=svc.cleanup is not None,
             admin=svc.cleanup is not None and await svc.cleanup.is_admin(user.username),
+            maintenance=svc.maintenance is not None,
         )
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse, response_model_by_alias=True)
@@ -207,6 +226,26 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         id: Annotated[str, Query(alias="id")],
     ) -> list[TrackCandidate]:
         return await svc.discover.top_tracks(source, id, user)
+
+    @app.get("/api/v1/artists/popular", response_model=ArtistPopular, response_model_by_alias=True)
+    async def artist_popular(
+        user: User, svc: Svc, name: Annotated[str, Query(min_length=1, max_length=200)]
+    ) -> ArtistPopular:
+        return await svc.discover.artist_popular(name, user)
+
+    @app.post("/api/v1/library/check", response_model=LibraryCheck, response_model_by_alias=True)
+    async def library_check(user: User, svc: Svc, body: LibraryCheckRequest) -> LibraryCheck:
+        """Какие треки (например, из «Любимого») удалены из библиотеки или заменены другой копией."""
+        db = svc.navidrome_db
+        if db is None:
+            raise HTTPException(409, "Не настроено: задайте NAVIDROME_DB")
+        ids = list(dict.fromkeys(body.ids))
+        present = await asyncio.to_thread(db.present_ids, ids)
+        gone = [i for i in ids if i not in present]
+        kept_paths = svc.store.replacements(gone) if gone else {}
+        by_path = await asyncio.to_thread(db.ids_by_path, list(set(kept_paths.values()))) if kept_paths else {}
+        replaced = {old: by_path[path] for old, path in kept_paths.items() if path in by_path}
+        return LibraryCheck(missing=[i for i in gone if i not in replaced], replaced=replaced)
 
     @app.get("/api/v1/requests", response_model=list[DownloadRequestOut], response_model_by_alias=True)
     async def list_requests(
@@ -325,6 +364,72 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         if entry is None:
             raise HTTPException(404, "Запись не найдена")
         log.info("%s убрал из чёрного списка: %s — %s", user.username, entry.artist, entry.title)
+        return Response(status_code=204)
+
+    # endregion
+
+    # region Обслуживание библиотеки (только администраторы Navidrome)
+
+    async def admin_maintenance(user: User, svc: Svc) -> MaintenanceService:
+        if svc.maintenance is None or svc.cleanup is None:
+            raise HTTPException(409, "Обслуживание библиотеки не настроено: задайте NAVIDROME_DB")
+        if not await svc.cleanup.is_admin(user.username):
+            raise HTTPException(403, "Доступно только администраторам")
+        return svc.maintenance
+
+    Maintenance = Annotated[MaintenanceService, Depends(admin_maintenance)]
+
+    def run_out(run: MaintenanceRun) -> MaintenanceRunOut:
+        return MaintenanceRunOut(**run.__dict__)
+
+    def action_out(action: MaintenanceAction) -> MaintenanceActionOut:
+        return MaintenanceActionOut(**action.__dict__)
+
+    @app.get("/api/v1/maintenance", response_model=MaintenanceStatus, response_model_by_alias=True)
+    async def maintenance_status(maintenance: Maintenance, svc: Svc) -> MaintenanceStatus:
+        runs = svc.store.list_runs(1)
+        return MaintenanceStatus(
+            enabled=True,
+            running=maintenance.running,
+            dry_run=svc.settings.maintenance_dry_run,
+            schedule=svc.settings.maintenance_at,
+            next_run_at=int(maintenance.next_run_at() * 1000),
+            quarantine_days=svc.settings.quarantine_days,
+            last_run=run_out(runs[0]) if runs else None,
+        )
+
+    @app.get("/api/v1/maintenance/runs", response_model=list[MaintenanceRunOut], response_model_by_alias=True)
+    async def maintenance_runs(
+        maintenance: Maintenance, svc: Svc, limit: Annotated[int, Query(ge=1, le=100)] = 20
+    ) -> list[MaintenanceRunOut]:
+        return [run_out(r) for r in svc.store.list_runs(limit)]
+
+    @app.get("/api/v1/maintenance/actions", response_model=MaintenanceActionsPage, response_model_by_alias=True)
+    async def maintenance_actions(
+        maintenance: Maintenance,
+        svc: Svc,
+        run_id: Annotated[int | None, Query(alias="runId")] = None,
+        kind: Annotated[str | None, Query(max_length=20)] = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> MaintenanceActionsPage:
+        total, items = svc.store.list_actions(run_id, kind, limit, offset)
+        return MaintenanceActionsPage(total=total, items=[action_out(a) for a in items])
+
+    @app.post("/api/v1/maintenance/run", status_code=202, response_class=Response)
+    async def maintenance_run(maintenance: Maintenance, user: User) -> Response:
+        if not maintenance.start("manual"):
+            raise HTTPException(409, "Обслуживание уже идёт")
+        log.info("%s запустил обслуживание библиотеки", user.username)
+        return Response(status_code=202)
+
+    @app.post("/api/v1/maintenance/quarantine/{entry_id}/restore", status_code=204, response_class=Response)
+    async def maintenance_restore(maintenance: Maintenance, user: User, entry_id: int) -> Response:
+        try:
+            await maintenance.restore(entry_id)
+        except MaintenanceError as e:
+            raise HTTPException(409, str(e)) from e
+        log.info("%s вернул файл из карантина (%s)", user.username, entry_id)
         return Response(status_code=204)
 
     # endregion

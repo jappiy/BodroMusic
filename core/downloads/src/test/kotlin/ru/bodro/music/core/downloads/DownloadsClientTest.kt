@@ -130,6 +130,53 @@ class DownloadsClientTest {
     }
 
     @Test
+    fun `library check, popular and maintenance endpoints`() = runTest {
+        server.enqueue(json("""{"missing":["t1"],"replaced":{"s1":"a1"}}"""))
+        server.enqueue(
+            json(
+                """{"source":"yandex","artist":{"name":"Трофим","source":"yandex","sourceId":"5"},
+                "tracks":[{"title":"Город Сочи","artist":"Трофим","source":"yandex","sourceId":"1","librarySongId":"lib-1"}]}""",
+            ),
+        )
+        server.enqueue(
+            json(
+                """{"enabled":true,"running":false,"dryRun":false,"schedule":"04:00","nextRunAt":5,"quarantineDays":30,
+                "lastRun":{"id":3,"trigger":"schedule","status":"completed","dryRun":false,
+                "stats":{"duplicates_removed":2},"startedAt":1,"finishedAt":2}}""",
+            ),
+        )
+        server.enqueue(
+            json(
+                """{"total":1,"items":[{"id":9,"runId":3,"kind":"duplicate","applied":true,"title":"Песня",
+                "details":"Дубль","createdAt":1,"quarantineId":4,"restorable":true}]}""",
+            ),
+        )
+        server.enqueue(MockResponse.Builder().code(202).build())
+        server.enqueue(MockResponse.Builder().code(204).build())
+
+        val check = client().checkLibrary(listOf("s1", "t1"))
+        assertEquals(listOf("t1"), check.missing)
+        assertEquals(mapOf("s1" to "a1"), check.replaced)
+        val checkRequest = server.takeRequest()
+        assertEquals("/bodrod/api/v1/library/check", checkRequest.url.encodedPath)
+        assertEquals("""{"ids":["s1","t1"]}""", checkRequest.body!!.utf8())
+
+        assertEquals("lib-1", client().artistPopular("Трофим").tracks.single().librarySongId)
+        assertEquals("Трофим", server.takeRequest().url.queryParameter("name"))
+
+        assertEquals(2, client().maintenanceStatus().lastRun?.stats?.get("duplicates_removed"))
+        server.takeRequest()
+        val actions = client().maintenanceActions(runId = 3, kind = "duplicate")
+        assertTrue(actions.items.single().restorable)
+        assertEquals("3", server.takeRequest().url.queryParameter("runId"))
+
+        client().runMaintenance()
+        assertEquals("POST", server.takeRequest().method)
+        client().restoreFromQuarantine(4)
+        assertEquals("/bodrod/api/v1/maintenance/quarantine/4/restore", server.takeRequest().url.encodedPath)
+    }
+
+    @Test
     fun `delete accepts empty 204`() = runTest {
         server.enqueue(MockResponse.Builder().code(204).build())
         client().delete("r1")

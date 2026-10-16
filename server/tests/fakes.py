@@ -56,6 +56,8 @@ class FakeWorld:
     lidarr_artists: list[dict[str, Any]] = field(default_factory=list)
     lidarr_queue: int = 0
     lidarr_commands: list[dict[str, Any]] = field(default_factory=list)
+    lidarr_removed_from_queue: list[int] = field(default_factory=list)
+    lidarr_updates: list[dict[str, Any]] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
 
     def client(self) -> httpx.AsyncClient:
@@ -176,6 +178,7 @@ class FakeWorld:
             artist_id = int(path.rsplit("/", 1)[-1])
             return httpx.Response(200, json=next(a for a in self.lidarr_artists if a["id"] == artist_id))
         if path.startswith("/artist/") and request.method == "PUT":
+            self.lidarr_updates.append(json.loads(request.content))
             return httpx.Response(202, json=json.loads(request.content))
         if path == "/rootfolder":
             return httpx.Response(200, json=[{"id": 1, "path": "/music"}])
@@ -186,6 +189,9 @@ class FakeWorld:
             return httpx.Response(201, json={"id": 1})
         if path == "/queue/details":
             return httpx.Response(200, json=[{"id": i} for i in range(self.lidarr_queue)])
+        if path.startswith("/queue/") and request.method == "DELETE":
+            self.lidarr_removed_from_queue.append(int(path.rsplit("/", 1)[-1]))
+            return httpx.Response(200)
         return httpx.Response(404)
 
     # endregion

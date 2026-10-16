@@ -116,7 +116,69 @@ data class ServiceInfo(
     val cleanup: Boolean = false,
     /** Пользователь — администратор Navidrome: может удалять треки и править чёрный список. */
     val admin: Boolean = false,
+    /** Включено «Обслуживание библиотеки» (bodrod 0.4.0+). */
+    val maintenance: Boolean = false,
 )
+
+/** Популярные треки исполнителя по каталогу; у тех, что есть в библиотеке, заполнен [DiscoverTrack.librarySongId]. */
+@Serializable
+data class ArtistPopular(
+    val source: String? = null,
+    val artist: DiscoverArtist? = null,
+    val tracks: List<DiscoverTrack> = emptyList(),
+)
+
+/** [missing] — треков больше нет в библиотеке; [replaced] — трек заменён другой копией (старый id → новый). */
+@Serializable
+data class LibraryCheck(val missing: List<String> = emptyList(), val replaced: Map<String, String> = emptyMap())
+
+/** Запуск «Обслуживания библиотеки». [stats] — счётчики: `duplicates_removed`, `tags_fixed`… */
+@Serializable
+data class MaintenanceRun(
+    val id: Long,
+    val trigger: String = "",
+    /** running / completed / failed. */
+    val status: String,
+    val dryRun: Boolean = false,
+    val stats: Map<String, Int> = emptyMap(),
+    val error: String? = null,
+    val startedAt: Long = 0,
+    val finishedAt: Long? = null,
+)
+
+@Serializable
+data class MaintenanceStatus(
+    val enabled: Boolean = false,
+    val running: Boolean = false,
+    val dryRun: Boolean = false,
+    /** «ЧЧ:ММ» — время ежедневного запуска. */
+    val schedule: String = "",
+    val nextRunAt: Long? = null,
+    val quarantineDays: Int = 30,
+    val lastRun: MaintenanceRun? = null,
+)
+
+/** Что сделал (или нашёл) регламент. [kind]: short / duplicate / album / tags / cover. */
+@Serializable
+data class MaintenanceAction(
+    val id: Long,
+    val runId: Long,
+    val kind: String,
+    /** `true` — исправлено; `false` — только найдено. */
+    val applied: Boolean,
+    val artist: String? = null,
+    val title: String? = null,
+    val album: String? = null,
+    val path: String? = null,
+    val details: String = "",
+    val createdAt: Long = 0,
+    val quarantineId: Long? = null,
+    /** Файл в карантине, его можно вернуть. */
+    val restorable: Boolean = false,
+)
+
+@Serializable
+data class MaintenanceActionsPage(val total: Int = 0, val items: List<MaintenanceAction> = emptyList())
 
 /** Пользователь Navidrome для вкладок «Не нравятся …» (служебные учётки сервер не отдаёт). */
 @Serializable
@@ -161,6 +223,9 @@ data class BlocklistPage(val total: Int = 0, val items: List<BlockEntry> = empty
 
 @Serializable
 internal data class DeleteSongsBody(val ids: List<String>)
+
+@Serializable
+internal data class IdsBody(val ids: List<String>)
 
 @Serializable
 internal data class CreateRequestBody(

@@ -69,6 +69,7 @@ import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
+import ru.bodro.music.data.downloads.LikedCheck
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.data.repository.ListeningStats
 import ru.bodro.music.data.repository.ReactionRepository
@@ -97,6 +98,7 @@ data class CollectionData(
 @HiltViewModel
 class CollectionViewModel @Inject constructor(
     private val library: LibraryRepository,
+    private val likedCheck: LikedCheck,
     reactions: ReactionRepository,
 ) : ViewModel() {
     private val remote = MutableStateFlow(CollectionData())
@@ -115,6 +117,7 @@ class CollectionViewModel @Inject constructor(
             runCatching { library.starred() }
                 .onSuccess { starred ->
                     remote.update { it.copy(starredArtists = starred.artists, starredAlbums = starred.albums, error = null) }
+                    likedCheck.run()
                 }
                 .onFailure { e -> remote.update { it.copy(error = e.toUiError()) } }
         }
@@ -294,6 +297,7 @@ data class LikedUi(
 @HiltViewModel
 class LikedViewModel @Inject constructor(
     private val library: LibraryRepository,
+    private val likedCheck: LikedCheck,
     reactions: ReactionRepository,
 ) : ViewModel() {
     private val filters = MutableStateFlow(LikedUi())
@@ -310,6 +314,7 @@ class LikedViewModel @Inject constructor(
         viewModelScope.launch {
             filters.update { it.copy(refreshing = true) }
             runCatching { library.starred() }
+            runCatching { likedCheck.run() } // удалённые с сервера треки не показываем
             filters.update { it.copy(refreshing = false) }
         }
     }

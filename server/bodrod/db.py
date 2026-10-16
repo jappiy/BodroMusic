@@ -47,6 +47,51 @@ CREATE TABLE IF NOT EXISTS blocklist (
     removed_count INTEGER NOT NULL DEFAULT 0,
     last_removed_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS maintenance_runs (
+    id INTEGER PRIMARY KEY,
+    trigger TEXT NOT NULL,
+    status TEXT NOT NULL,
+    dry_run INTEGER NOT NULL DEFAULT 0,
+    stats TEXT NOT NULL DEFAULT '{}',
+    error TEXT,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS maintenance_actions (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    applied INTEGER NOT NULL,
+    artist TEXT,
+    title TEXT,
+    album TEXT,
+    path TEXT,
+    details TEXT NOT NULL,
+    quarantine_id INTEGER,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_actions_run ON maintenance_actions(run_id, id);
+CREATE TABLE IF NOT EXISTS quarantine (
+    id INTEGER PRIMARY KEY,
+    original_path TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    size INTEGER,
+    created_at INTEGER NOT NULL,
+    restored_at INTEGER,
+    purged_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS replacements (
+    song_id TEXT PRIMARY KEY,
+    kept_path TEXT NOT NULL,
+    quarantine_id INTEGER,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS maintenance_checked (
+    key TEXT PRIMARY KEY,
+    signature TEXT NOT NULL,
+    checked_at INTEGER NOT NULL
+);
 """
 
 
@@ -69,6 +114,47 @@ class BlockEntry:
     created_at: int
     removed_count: int
     last_removed_at: int | None
+
+
+@dataclass
+class MaintenanceRun:
+    id: int
+    trigger: str
+    status: str
+    dry_run: bool
+    stats: dict[str, int]
+    error: str | None
+    started_at: int
+    finished_at: int | None
+
+
+@dataclass
+class MaintenanceAction:
+    id: int
+    run_id: int
+    kind: str
+    applied: bool
+    artist: str | None
+    title: str | None
+    album: str | None
+    path: str | None
+    details: str
+    quarantine_id: int | None
+    created_at: int
+    """Файл лежит в карантине, и его можно вернуть."""
+    restorable: bool = False
+
+
+@dataclass
+class QuarantineEntry:
+    id: int
+    original_path: str
+    stored_path: str
+    reason: str
+    size: int | None
+    created_at: int
+    restored_at: int | None
+    purged_at: int | None
 
 
 def dedup_key(kind: RequestKind, artist: str, title: str | None) -> str:
@@ -335,6 +421,197 @@ class Store:
         return _block_from_row(row) if row else None
 
     # endregion
+
+    # region Обслуживание библиотеки
+
+    def start_run(self, trigger: str, dry_run: bool) -> MaintenanceRun:
+        ts = now_ms()
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO maintenance_runs (trigger, status, dry_run, started_at) VALUES (?, 'running', ?, ?)",
+                (trigger, int(dry_run), ts),
+            )
+            run_id = int(cur.lastrowid)
+        return MaintenanceRun(run_id, trigger, "running", dry_run, {}, None, ts, None)
+
+    def finish_run(self, run_id: int, status: str, stats: dict[str, int], error: str | None = None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE maintenance_runs SET status = ?, stats = ?, error = ?, finished_at = ? WHERE id = ?",
+                (status, json.dumps(stats), error, now_ms(), run_id),
+            )
+
+    def fail_unfinished_runs(self) -> None:
+        """Запуски, прерванные перезапуском сервиса."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE maintenance_runs SET status = 'failed', error = 'Прервано перезапуском сервиса', "
+                "finished_at = ? WHERE status = 'running'",
+                (now_ms(),),
+            )
+
+    def list_runs(self, limit: int) -> list[MaintenanceRun]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM maintenance_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [_run_from_row(r) for r in rows]
+
+    def get_run(self, run_id: int) -> MaintenanceRun | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM maintenance_runs WHERE id = ?", (run_id,)).fetchone()
+        return _run_from_row(row) if row else None
+
+    def add_action(
+        self,
+        run_id: int,
+        kind: str,
+        applied: bool,
+        details: str,
+        *,
+        artist: str | None = None,
+        title: str | None = None,
+        album: str | None = None,
+        path: str | None = None,
+        quarantine_id: int | None = None,
+    ) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO maintenance_actions (run_id, kind, applied, artist, title, album, path, details, "
+                "quarantine_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, kind, int(applied), artist, title, album, path, details, quarantine_id, now_ms()),
+            )
+            return int(cur.lastrowid)
+
+    def list_actions(
+        self, run_id: int | None, kind: str | None, limit: int, offset: int
+    ) -> tuple[int, list[MaintenanceAction]]:
+        where: list[str] = []
+        params: list[object] = []
+        if run_id is not None:
+            where.append("a.run_id = ?")
+            params.append(run_id)
+        if kind:
+            where.append("a.kind = ?")
+            params.append(kind)
+        clause = " AND ".join(where) or "1 = 1"
+        with self._lock:
+            count_sql = f"SELECT COUNT(*) FROM maintenance_actions a WHERE {clause}"
+            total = self._conn.execute(count_sql, params).fetchone()[0]
+            rows = self._conn.execute(
+                "SELECT a.*, (q.id IS NOT NULL AND q.restored_at IS NULL AND q.purged_at IS NULL) AS restorable "
+                f"FROM maintenance_actions a LEFT JOIN quarantine q ON q.id = a.quarantine_id WHERE {clause} "
+                "ORDER BY a.id DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
+        return total, [_action_from_row(r) for r in rows]
+
+    def add_quarantine(self, original_path: str, stored_path: str, reason: str, size: int | None) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO quarantine (original_path, stored_path, reason, size, created_at) VALUES (?, ?, ?, ?, ?)",
+                (original_path, stored_path, reason, size, now_ms()),
+            )
+            return int(cur.lastrowid)
+
+    def get_quarantine(self, entry_id: int) -> QuarantineEntry | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM quarantine WHERE id = ?", (entry_id,)).fetchone()
+        return QuarantineEntry(**dict(row)) if row else None
+
+    def mark_restored(self, entry_id: int) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE quarantine SET restored_at = ? WHERE id = ?", (now_ms(), entry_id))
+            self._conn.execute("DELETE FROM replacements WHERE quarantine_id = ?", (entry_id,))
+
+    def mark_purged(self, entry_id: int) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE quarantine SET purged_at = ? WHERE id = ?", (now_ms(), entry_id))
+
+    def expired_quarantine(self, before_ms: int) -> list[QuarantineEntry]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM quarantine WHERE created_at < ? AND restored_at IS NULL AND purged_at IS NULL",
+                (before_ms,),
+            ).fetchall()
+        return [QuarantineEntry(**dict(r)) for r in rows]
+
+    def add_replacement(self, song_id: str, kept_path: str, quarantine_id: int | None) -> None:
+        """Трек `song_id` убран как дубль или перенесён: его место занял файл `kept_path` (путь Navidrome)."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO replacements (song_id, kept_path, quarantine_id, created_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(song_id) DO UPDATE SET kept_path = excluded.kept_path, "
+                "quarantine_id = excluded.quarantine_id",
+                (song_id, kept_path, quarantine_id, now_ms()),
+            )
+
+    def replacements(self, song_ids: list[str]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        with self._lock:
+            for start in range(0, len(song_ids), 500):
+                chunk = song_ids[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                for r in self._conn.execute(
+                    f"SELECT song_id, kept_path FROM replacements WHERE song_id IN ({marks})", chunk
+                ):
+                    result[r["song_id"]] = r["kept_path"]
+        return result
+
+    def checked(self, key: str) -> tuple[str, int] | None:
+        """Подпись и время последней проверки файла или папки, для которых не нашлось исправления."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT signature, checked_at FROM maintenance_checked WHERE key = ?", (key,)
+            ).fetchone()
+        return (row["signature"], row["checked_at"]) if row else None
+
+    def set_checked(self, key: str, signature: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO maintenance_checked (key, signature, checked_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET signature = excluded.signature, checked_at = excluded.checked_at",
+                (key, signature, now_ms()),
+            )
+
+    def track_durations(self) -> dict[str, int]:
+        """id трека в Navidrome → длительность по каталогу (мс) для треков, скачанных через bodrod."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT song_id, duration_ms FROM requests WHERE kind = 'track' AND status = 'completed' "
+                "AND song_id IS NOT NULL AND duration_ms IS NOT NULL"
+            ).fetchall()
+        return {r["song_id"]: int(r["duration_ms"]) for r in rows}
+
+    # endregion
+
+
+def _run_from_row(row: sqlite3.Row) -> MaintenanceRun:
+    return MaintenanceRun(
+        id=row["id"],
+        trigger=row["trigger"],
+        status=row["status"],
+        dry_run=bool(row["dry_run"]),
+        stats=json.loads(row["stats"] or "{}"),
+        error=row["error"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+    )
+
+
+def _action_from_row(row: sqlite3.Row) -> MaintenanceAction:
+    return MaintenanceAction(
+        id=row["id"],
+        run_id=row["run_id"],
+        kind=row["kind"],
+        applied=bool(row["applied"]),
+        artist=row["artist"],
+        title=row["title"],
+        album=row["album"],
+        path=row["path"],
+        details=row["details"],
+        quarantine_id=row["quarantine_id"],
+        created_at=row["created_at"],
+        restorable=bool(row["restorable"]),
+    )
 
 
 def _block_from_row(row: sqlite3.Row) -> BlockEntry:

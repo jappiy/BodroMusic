@@ -61,6 +61,12 @@ class DownloadsClient(
     suspend fun artistTopTracks(artist: DiscoverArtist): List<DiscoverTrack> =
         get(listOf("api", "v1", "artists", "top"), listOf("source" to artist.source, "id" to artist.sourceId))
 
+    /** Популярные треки исполнителя из каталога (Яндекс Музыка) с отметкой «есть в библиотеке». */
+    suspend fun artistPopular(name: String): ArtistPopular = get(listOf("api", "v1", "artists", "popular"), listOf("name" to name))
+
+    /** Какие треки удалены из библиотеки или заменены другой копией (bodrod 0.4.0+). */
+    suspend fun checkLibrary(ids: List<String>): LibraryCheck = post(listOf("api", "v1", "library", "check"), IdsBody(ids))
+
     suspend fun requests(limit: Int = 100): List<DownloadRequest> =
         get(listOf("api", "v1", "requests"), listOf("limit" to limit.toString()))
 
@@ -113,6 +119,40 @@ class DownloadsClient(
     }
 
     // endregion
+
+    // region Обслуживание библиотеки (только администраторы)
+
+    suspend fun maintenanceStatus(): MaintenanceStatus = get(listOf("api", "v1", "maintenance"))
+
+    suspend fun maintenanceActions(runId: Long?, kind: String?, limit: Int = 200, offset: Int = 0): MaintenanceActionsPage = get(
+        listOf("api", "v1", "maintenance", "actions"),
+        listOfNotNull(
+            runId?.let { "runId" to it.toString() },
+            kind?.let { "kind" to it },
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+        ),
+    )
+
+    suspend fun maintenanceRuns(limit: Int = 20): List<MaintenanceRun> =
+        get(listOf("api", "v1", "maintenance", "runs"), listOf("limit" to limit.toString()))
+
+    /** Запустить сейчас; 409 ([DownloadsError.Disabled]) — уже идёт. */
+    suspend fun runMaintenance() {
+        execute<Unit?>(Request.Builder().url(url(listOf("api", "v1", "maintenance", "run"))).post(EMPTY), null) { null }
+    }
+
+    suspend fun restoreFromQuarantine(id: Long) {
+        val path = listOf("api", "v1", "maintenance", "quarantine", id.toString(), "restore")
+        execute<Unit?>(Request.Builder().url(url(path)).post(EMPTY), null) { null }
+    }
+
+    // endregion
+
+    private suspend inline fun <reified B, reified T> post(path: List<String>, body: B): T {
+        val payload = downloadsJson.encodeToString(serializer<B>(), body).toRequestBody(JSON)
+        return execute(Request.Builder().url(url(path)).post(payload), null) { downloadsJson.decodeFromString(serializer<T>(), it) }
+    }
 
     private suspend fun create(body: CreateRequestBody): DownloadRequest {
         val payload = downloadsJson.encodeToString(CreateRequestBody.serializer(), body).toRequestBody(JSON)
@@ -185,6 +225,7 @@ class DownloadsClient(
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
+        val EMPTY = ByteArray(0).toRequestBody(null)
         const val MAX_DETAIL = 200
     }
 }

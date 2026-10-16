@@ -58,9 +58,11 @@ class SubsonicAuthTest {
         assertEquals("/navidrome/rest/stream.view", original.encodedPath)
         assertEquals("0", original.queryParameter("maxBitRate"))
         assertEquals("raw", original.queryParameter("format"))
+        assertEquals(null, original.queryParameter("estimateContentLength"))
         val transcoded = client.streamUrl("s-1", maxBitRate = 192, format = "mp3", config = config)
         assertEquals("192", transcoded.queryParameter("maxBitRate"))
         assertEquals("mp3", transcoded.queryParameter("format"))
+        assertEquals("true", transcoded.queryParameter("estimateContentLength"))
     }
 
     @Test

@@ -31,6 +31,7 @@ import ru.bodro.music.ui.screens.settings.BlocklistScreen
 import ru.bodro.music.ui.screens.settings.CleanupScreen
 import ru.bodro.music.ui.screens.settings.LogDetailScreen
 import ru.bodro.music.ui.screens.settings.LogsScreen
+import ru.bodro.music.ui.screens.settings.MaintenanceScreen
 import ru.bodro.music.ui.screens.settings.PlaybackSettingsScreen
 import ru.bodro.music.ui.screens.settings.SettingsScreen
 import ru.bodro.music.ui.screens.settings.VersionsScreen
@@ -78,6 +79,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenDownloads = { navController.navigate(DownloadsRoute) },
                 onOpenCleanup = { navController.navigate(CleanupRoute) },
                 onOpenBlocklist = { navController.navigate(BlocklistRoute) },
+                onOpenMaintenance = { navController.navigate(MaintenanceRoute) },
                 onOpenVersions = { navController.navigate(VersionsRoute) },
                 onOpenLogs = { navController.navigate(LogsRoute) },
                 onOpenAbout = { navController.navigate(AboutRoute) },
@@ -114,5 +116,6 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<DownloadsRoute> { DownloadsScreen(onBack = back) }
         composable<CleanupRoute> { CleanupScreen(onBack = back) }
         composable<BlocklistRoute> { BlocklistScreen(onBack = back) }
+        composable<MaintenanceRoute> { MaintenanceScreen(onBack = back) }
     }
 }

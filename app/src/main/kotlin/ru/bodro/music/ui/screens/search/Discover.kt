@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -190,6 +191,14 @@ class DiscoverViewModel @Inject constructor(
         }
     }
 
+    fun cancel(request: DownloadRequest) {
+        viewModelScope.launch {
+            runCatching { downloads.delete(request) }
+                .onSuccess { message(context.getString(R.string.discover_cancelled, request.artist)) }
+                .onFailure { message(it.toUiError().text(context)) }
+        }
+    }
+
     fun play(songId: String) {
         viewModelScope.launch {
             runCatching { library.song(songId) }
@@ -209,6 +218,8 @@ class DiscoverCallbacks(
     val onPlay: (String) -> Unit,
     val onRetry: () -> Unit,
     val onShowMore: () -> Unit,
+    /** Отменить активную заявку (для исполнителя — Lidarr перестаёт его отслеживать). */
+    val onCancel: (DownloadRequest) -> Unit = {},
 )
 
 private const val COLLAPSED_TRACKS = 8
@@ -267,9 +278,13 @@ private fun LazyListScope.discoverContent(
     val headerArtist = selected ?: mainArtist
     if (headerArtist != null) {
         item(key = "discover-artist-${headerArtist.source}-${headerArtist.sourceId}") {
-            ArtistHeader(headerArtist, requests[artistKey(headerArtist.name)], canArtists) {
-                callbacks.onDownloadArtist(headerArtist)
-            }
+            ArtistHeader(
+                headerArtist,
+                requests[artistKey(headerArtist.name)],
+                canArtists,
+                onDownloadAll = { callbacks.onDownloadArtist(headerArtist) },
+                onCancel = callbacks.onCancel,
+            )
         }
     }
     val (titleRes, tracks) = when {
@@ -332,7 +347,13 @@ private fun sourceName(source: String): String = when (source) {
 }
 
 @Composable
-private fun ArtistHeader(artist: DiscoverArtist, request: DownloadRequest?, canDownload: Boolean, onDownloadAll: () -> Unit) {
+private fun ArtistHeader(
+    artist: DiscoverArtist,
+    request: DownloadRequest?,
+    canDownload: Boolean,
+    onDownloadAll: () -> Unit,
+    onCancel: (DownloadRequest) -> Unit,
+) {
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -351,7 +372,12 @@ private fun ArtistHeader(artist: DiscoverArtist, request: DownloadRequest?, canD
                 )
             }
             when {
-                request?.status?.isActive == true -> RequestProgress(request)
+                request?.status?.isActive == true -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    RequestProgress(request)
+                    IconButton(onClick = { onCancel(request) }, modifier = Modifier.testTag("discover-cancel-artist")) {
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.discover_cancel_artist))
+                    }
+                }
                 request?.status == RequestStatus.Completed -> Icon(
                     Icons.Rounded.CheckCircle,
                     contentDescription = stringResource(R.string.download_status_completed),
@@ -383,7 +409,7 @@ private fun ArtistBubble(artist: DiscoverArtist, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, canDownload: Boolean, callbacks: DiscoverCallbacks) {
+fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, canDownload: Boolean, callbacks: DiscoverCallbacks) {
     val librarySongId = track.librarySongId ?: request?.songId?.takeIf { request.status == RequestStatus.Completed }
     val activeOrDone = request != null && (request.status.isActive || request.status == RequestStatus.Completed)
     val onClick: (() -> Unit)? = when {

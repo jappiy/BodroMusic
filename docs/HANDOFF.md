@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-16. Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-16 (задание 005). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -57,16 +57,16 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.10.0** (`versionCode 10`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.3.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Текущая версия приложения: **0.11.0** (`versionCode 11`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.4.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
 - Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.9.0
   (`BodroMusic-0.9.0.apk` — release с R8; `BodroMusic-0.9.0-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
-**CI полностью зелёный** (последний прогон на коммите `72977d2`, 0.10.0): сборка debug и release, unit-тесты,
-Android Lint, ktlint, detekt, инструментальные тесты на эмуляторе.
+**0.11.0 / bodrod 0.4.0 (задание 005)** проверены локально: сборка debug и release, unit-тесты, Android Lint, ktlint,
+detekt, pytest + ruff. CI после пуша — см. файл задания. Последний полностью зелёный CI — `72977d2` (0.10.0).
 
 | Пункт ТЗ (раздел 1) | Статус |
 |---|---|
@@ -82,11 +82,12 @@ Android Lint, ktlint, detekt, инструментальные тесты на �
 | 10. Автотесты | ⚠️ на эмуляторе в CI; на физическом телефоне не запускались |
 
 **Владелец пользуется приложением на телефоне** (с 0.9.0) и присылает замечания — первая порция разобрана
-в задании 004 (0.10.0). Release-APK (R8) на устройстве агентом не проверялся; CI запускает только debug.
+в заданиях 004 (0.10.0) и 005 (0.11.0). Release-APK (R8) на устройстве агентом не проверялся; CI запускает только debug.
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **140** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 7, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Unit: **141** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 8, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Сервер (`server/tests`, pytest): **60**, в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками).
 - Инструментальные: **9** — 8 проходят, 1 пропускается (`RealServerSmokeTest`, нет данных тестовой учётки).
   Тесты гоняют настоящее приложение против поддельного сервера `FakeNavidrome` (MockWebServer,
   отдаёт сгенерированный WAV как поток трека). Hilt-testing не используется: доступ к синглтонам — через `di/AppEntryPoint`.
@@ -105,12 +106,15 @@ Android Lint, ktlint, detekt, инструментальные тесты на �
 - `data/repository` — `LibraryRepository`, `ReactionRepository` (оптимистичный UI + очередь `pending_reactions`), `ScrobbleRepository`, `WaveRepository`, `HistoryRepository`, плейлисты, поиск, CHANGELOG.
 - `data/log/LogRepository` — журнал запросов и событий плеера в Room (кольцевой буфер 5000 записей / 7 дней).
 - `data/network/CleartextPolicy` — HTTP только для приватных адресов (Network Security Config не умеет диапазоны IP, поэтому правило в интерцепторе OkHttp).
-- `playback/` — `PlaybackService` (`MediaLibraryService`), `PlaybackCoordinator` (скробблинг, история, сохранение очереди, догрузка волны, таймер сна, ошибки, смена учётки), `PlayerConnection` (MediaController → `StateFlow` для UI), `StreamDataSourceFactory` (URL потока подписывается в момент открытия; ключ кэша без токенов).
+- `playback/` — `PlaybackService` (`MediaLibraryService`, старт после 0,5 с буфера), `StreamPrefetcher` (начало
+  двух следующих треков очереди — в кэш стрима), `PlaybackCoordinator` (скробблинг, история, сохранение очереди, догрузка волны, таймер сна, ошибки, смена учётки), `PlayerConnection` (MediaController → `StateFlow` для UI), `StreamDataSourceFactory` (URL потока подписывается в момент открытия; ключ кэша без токенов).
 - `sync/` — `SyncWorker` + `SyncScheduler` (WorkManager: скробблы и реакции).
 - `data/offline/OfflineLiked.kt` — скачивание лайкнутых треков для прослушивания без сети (настройка «Скачивать
   понравившиеся треки»): `OfflineStore` (файлы `files/offline/<accountId>/<songId>`), `OfflineSyncWorker`
   (только Wi-Fi), `OfflineScheduler` (следит за настройкой и кэшем лайков). `StreamDataSourceFactory` отдаёт
   скачанный файл вместо потока.
+- `data/downloads/LikedCheck.kt` — «Любимое» без удалённых треков (`POST /api/v1/library/check` в bodrod),
+  перенос лайка на копию, оставшуюся после чистки дублей.
 - `ui/` — `app/` (корень, навигация, `MainViewModel` с общими действиями), `screens/*`, `components/`, `theme/`, `image/` (Coil со стабильными ключами кэша, палитра обложек).
 
 Ключевые решения:
@@ -122,6 +126,8 @@ Android Lint, ktlint, detekt, инструментальные тесты на �
 - Статистика «Коллекции» (всего прослушиваний, любимые исполнители и треки) — по `playCount` Navidrome
   (`LibraryRepository.listeningStats()`: альбомы `frequent` + треки топ-20 альбомов), а не по локальной истории.
 - Повторное нажатие на выбранную вкладку — возврат к корню раздела (`BodroRoot.onTabClick`).
+- «Популярные треки» на экране исполнителя — из Яндекс Музыки через bodrod (`/api/v1/artists/popular`): скачанные
+  и нескачанные (с загрузкой). Без bodrod — своя история + `getTopSongs`.
 
 ## 4. Сборка и проверка
 
@@ -191,10 +197,11 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Обновить проект `bodrod` на сервере до 0.3.0 и проверить «На удаление» — YAML и что проверить:
-   [`docs/history/003-cleanup-blocklist.md`](history/003-cleanup-blocklist.md).
-1. Владелец присылает следующую (большую) порцию замечаний — новое задание `docs/history/005-…`.
-   Из 004 проверить на телефоне: офлайн-лайки (режим полёта), счётчики «Коллекции» на реальной библиотеке.
+0. Обновить проект `bodrod` на сервере до 0.4.0 (YAML 003 + переменные из 005), проверить «На удаление»
+   и сделать пробный прогон регламента — [`docs/history/005-maintenance-artist-playback.md`](history/005-maintenance-artist-playback.md).
+1. Следующая порция замечаний владельца — новое задание `docs/history/006-…`.
+   Проверить на телефоне: из 004 — офлайн-лайки, счётчики «Коллекции»; из 005 — старт и переключение треков,
+   экран исполнителя, теги «Моей волны».
 2. Сверка UI с референсами — нужны скриншоты в `docs/references/` (см. раздел 6.1 ТЗ).
 3. Проверить release-сборку (R8) на устройстве.
 4. При желании — smoke-тест против реального сервера: данные тестовой учётки в CI secrets (если сервер доступен из интернета по DDNS).
@@ -211,6 +218,14 @@ Smoke-тест против реального Navidrome: скопировать
 `server/bodrod/cleanup.py`, `navidrome_db.py`; приложение — `ui/screens/settings/CleanupScreens.kt`.
 Задача, решения владельца, устройство и YAML для сервера — [`docs/history/003-cleanup-blocklist.md`](history/003-cleanup-blocklist.md).
 
+## 9а. Обслуживание библиотеки (bodrod 0.4.0 / app 0.11.0)
+
+Ночной регламент bodrod (`server/bodrod/maintenance.py`): короткие и обрезанные файлы, дубли треков и альбомов,
+пустые теги и обложки по каталогу. Убранное — в карантин на 30 дней. Отчёт, запуск и «Вернуть» — в приложении
+(`ui/screens/settings/MaintenanceScreen.kt`, только админы). Правила и переменные — `server/README.md`,
+задание и YAML — [`docs/history/005-maintenance-artist-playback.md`](history/005-maintenance-artist-playback.md).
+На реальном сервере не запускался: первый прогон — с `MAINTENANCE_DRY_RUN=true`.
+
 ## 10. История заданий
 
 Каждое задание — отдельный файл в `docs/history/` (правила — раздел 0.1). Задания до 0.8.0 описаны только в `CHANGELOG.md`.
@@ -221,6 +236,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 002 | 2026-10-16 | Развёртывание bodrod на сервере, шаг `placing` | bodrod 0.2.0–0.2.1 | [002-bodrod-deploy.md](history/002-bodrod-deploy.md) |
 | 003 | 2026-10-16 | Раздел «На удаление» и чёрный список | app 0.9.0, bodrod 0.3.0 | [003-cleanup-blocklist.md](history/003-cleanup-blocklist.md) |
 | 004 | 2026-10-16 | Замечания по интерфейсу, часть 1 (плеер, вкладки, главная, настройки, коллекция, офлайн-лайки) | app 0.10.0 | [004-ui-feedback-1.md](history/004-ui-feedback-1.md) |
+| 005 | 2026-10-16 | Регламент обслуживания библиотеки, популярное исполнителя из Яндекса, быстрый старт воспроизведения, мелкие правки | app 0.11.0, bodrod 0.4.0 | [005-maintenance-artist-playback.md](history/005-maintenance-artist-playback.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)
 
@@ -236,5 +252,6 @@ cd "C:\Projects\BodroMusic"; git fetch origin; git switch claude/new-session-fi1
 - Android SDK: `%LOCALAPPDATA%\Android\Sdk` (переменная `ANDROID_HOME`), `adb` — в `platform-tools`; телефон владельца
   подключается по USB (`adb devices`).
 - JDK из Android Studio (`C:\Program Files\Android\Android Studio\jbr`) — **25**, а Gradle 8.14 на нём не запускается.
-  Нужен JDK 17 (как в CI): портативный Temurin 17 (zip с adoptium.net) и `JAVA_HOME` на него.
+  Портативный Temurin 17 лежит в `C:\tools\jdk17`. В Git Bash: `export JAVA_HOME=C:/tools/jdk17 ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"`.
+- Python 3.12 есть (`py -3`); для тестов сервера — venv с `pip install -r server/requirements-dev.txt`.
 - `gh` не установлен: статус CI — через публичный API GitHub (репозиторий публичный), запуск Release — вручную в Actions.

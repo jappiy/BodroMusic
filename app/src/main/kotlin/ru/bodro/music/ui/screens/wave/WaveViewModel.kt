@@ -37,7 +37,7 @@ class WaveViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val genres = runCatching { wave.topGenres() }.getOrDefault(emptyList())
+            val genres = runCatching { wave.topGenres(limit = GENRES_LOADED) }.getOrDefault(emptyList())
             val decades = runCatching { wave.favoriteDecades() }.getOrDefault(emptyList()).take(6).sorted()
             _filters.update { it.copy(genres = genres, decades = decades.ifEmpty { listOf(1970, 1980, 1990, 2000, 2010, 2020) }) }
         }
@@ -51,3 +51,5 @@ class WaveViewModel @Inject constructor(
 
     fun setDecade(decade: Int?) = _filters.update { it.copy(decade = if (it.decade == decade) null else decade) }
 }
+
+private const val GENRES_LOADED = 24

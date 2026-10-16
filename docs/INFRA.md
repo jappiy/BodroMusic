@@ -110,7 +110,7 @@ slskd сохраняет готовый файл в `/downloads/<имя роди
 | Контейнер | Образ | Роль |
 | --- | --- | --- |
 | `bodrod-secrets` | `alpine:3.20` | Одноразовый при каждом старте: достаёт `ApiKey` из `lidarr/config.xml` и ключ slskd из `slskd.yml`, пишет `/volume1/docker/bodrod/secrets/env` (`chmod 600`), делает `chown -R 1027:100` для `env` и `data` |
-| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание |
+| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1; в репозитории уже 0.4.0 — обновить, см. задания 003 и 005), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки» |
 
 Ключевые настройки `bodrod`:
 ```yaml
@@ -131,7 +131,11 @@ environment:
   SLSKD_DOWNLOADS_DIR: /music/slsk
   LIBRARY_DIR: /music/library
   # YANDEX_MUSIC_TOKEN: не задан, поиск Яндекса идёт анонимно
+  # с 0.3.0 (задание 003): NAVIDROME_DB, LIDARR_MUSIC_DIR, SLSK_WORKER_QUEUE + том папки Navidrome
+  # с 0.4.0 (задание 005): TZ, MAINTENANCE_DRY_RUN (первый прогон), при желании MAINTENANCE_AT, QUARANTINE_DAYS
 ```
+Регламент 0.4.0 пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
+`/volume2/music/.bodrod-quarantine` (30 дней, внутри `.ndignore`). Файлы из папок исполнителей Lidarr не трогает.
 Пакет `bodromusic-server` на GHCR публичный, теги — короткие хеши коммитов. В проекте тег закреплён, `latest` не используется.
 
 ### Не относятся к музыке
@@ -214,7 +218,8 @@ RuTracker в схеме не участвует: заставить его ра�
 ### 5.3. Заявки из приложения: bodrod
 
 API (авторизация теми же Subsonic-заголовками `X-Subsonic-User` / `-Token` / `-Salt`, bodrod проверяет их в Navidrome):
-`GET /api/health`, `GET /api/v1/info`, `GET /api/v1/discover`, `POST /api/v1/requests`, `GET /api/v1/requests`.
+`GET /api/health`, `GET /api/v1/info`, `GET /api/v1/discover`, `POST /api/v1/requests`, `GET /api/v1/requests`;
+с 0.4.0 — `GET /api/v1/artists/popular`, `POST /api/v1/library/check`, `/api/v1/maintenance*`. Полный список — `server/README.md`.
 
 В приложении адрес сервиса указывается в **Настройки → Загрузки** (`http://192.168.1.113:8790`) отдельно для каждой учётки.
 `DownloadWatchWorker` опрашивает заявки и показывает уведомление.
@@ -232,7 +237,8 @@ queued ─► (уже в библиотеке? → completed)
 ```
 
 **Исполнитель:** `queued ─► downloading` (Lidarr добавляет артиста и ищет дискографию) `─► completed`.
-Сдаётся через 24 часа.
+Сдаётся через 24 часа. Отмена из приложения (0.4.0) снимает мониторинг исполнителя в Lidarr и убирает его
+загрузки из очереди; уже скачанные файлы остаются.
 
 **Как bodrod уживается с остальными:**
 - папку `slsk/` делят slskd, Soularr, slsk-worker, slsk-sweeper и bodrod;
@@ -250,6 +256,7 @@ queued ─► (уже в библиотеке? → completed)
 
 Что и когда менялось на сервере — в файлах заданий `docs/history/` (индекс — `docs/HANDOFF.md`, раздел 10).
 Развёртывание bodrod 0.2.x (сессия 2026-10-16) — [`docs/history/002-bodrod-deploy.md`](history/002-bodrod-deploy.md).
+bodrod 0.4.0 (регламент обслуживания библиотеки) — [`docs/history/005-maintenance-artist-playback.md`](history/005-maintenance-artist-playback.md).
 
 ---
 

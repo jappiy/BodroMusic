@@ -7,12 +7,13 @@ Navidrome пишет в БД в режиме WAL, поэтому каждое ч
 
 from __future__ import annotations
 
-import os
+import posixpath
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 DISLIKE_RATING = 1
+_OPTIONAL_COLUMNS = ("album_artist", "disc_number", "track_number", "has_cover_art")
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,11 @@ class NdSong:
     """Абсолютный путь так, как его видит Navidrome."""
     path: str
     disliked_by: list[str] = field(default_factory=list)
+    album_artist: str | None = None
+    disc_number: int | None = None
+    track_number: int | None = None
+    """Есть встроенная обложка (по данным сканера Navidrome)."""
+    has_cover_art: bool | None = None
 
 
 class NavidromeDb:
@@ -58,9 +64,10 @@ class NavidromeDb:
         has_library = "library_id" in cols
         library_path = "l.path" if has_library else "NULL"
         join = "LEFT JOIN library l ON l.id = mf.library_id" if has_library else ""
+        optional = ", ".join(f"mf.{c}" if c in cols else f"NULL AS {c}" for c in _OPTIONAL_COLUMNS)
         return (
             "SELECT mf.id, mf.title, mf.artist, mf.album, mf.album_id, mf.duration, mf.size, mf.suffix, "
-            f"mf.bit_rate, mf.path, {library_path} AS library_path FROM media_file mf {join}"
+            f"mf.bit_rate, mf.path, {optional}, {library_path} AS library_path FROM media_file mf {join}"
         )
 
     def _not_missing(self, conn: sqlite3.Connection) -> str:
@@ -105,6 +112,29 @@ class NavidromeDb:
             result.extend(_song(r) for r in rows)
         return result
 
+    def present_ids(self, ids: list[str]) -> set[str]:
+        """Какие из треков есть в библиотеке (не удалены и не помечены сканером как пропавшие)."""
+        with self._connect() as conn:
+            return {s.id for s in self._by_ids(conn, ids)}
+
+    def ids_by_path(self, paths: list[str]) -> dict[str, str]:
+        """Путь (как его видит Navidrome) → id трека. Нужно, чтобы найти перенесённый файл после пересканирования."""
+        wanted = set(paths)
+        return {s.path: s.id for s in self.iter_songs() if s.path in wanted}
+
+    def annotation_counts(self) -> dict[str, int]:
+        """id трека → сколько у него отметок пользователей (лайки, оценки, прослушивания)."""
+        with self._connect() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(annotation)")}
+            parts = [c for c in ("starred", "rating", "play_count") if c in cols]
+            if not parts:
+                return {}
+            score = " + ".join(f"(CASE WHEN COALESCE({c}, 0) > 0 THEN 1 ELSE 0 END)" for c in parts)
+            rows = conn.execute(
+                f"SELECT item_id, SUM({score}) AS n FROM annotation WHERE item_type = 'media_file' GROUP BY item_id"
+            ).fetchall()
+        return {r["item_id"]: int(r["n"] or 0) for r in rows if r["n"]}
+
     def iter_songs(self) -> Iterator[NdSong]:
         """Все треки библиотеки (для поиска заблокированных). Читается потоком, без загрузки в память целиком."""
         with self._connect() as conn:
@@ -114,8 +144,8 @@ class NavidromeDb:
 
 def _song(r: sqlite3.Row) -> NdSong:
     path = r["path"] or ""
-    if not os.path.isabs(path) and r["library_path"]:
-        path = os.path.join(r["library_path"], path)  # Navidrome 0.55+: путь относительно библиотеки
+    if not posixpath.isabs(path) and r["library_path"]:
+        path = posixpath.join(r["library_path"], path)  # Navidrome 0.55+: путь относительно библиотеки
     return NdSong(
         id=r["id"],
         title=r["title"] or "",
@@ -127,4 +157,8 @@ def _song(r: sqlite3.Row) -> NdSong:
         suffix=r["suffix"],
         bit_rate=r["bit_rate"],
         path=path,
+        album_artist=r["album_artist"] or None,
+        disc_number=r["disc_number"],
+        track_number=r["track_number"],
+        has_cover_art=bool(r["has_cover_art"]) if r["has_cover_art"] is not None else None,
     )

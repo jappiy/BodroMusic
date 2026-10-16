@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CacheBitmapLoader
@@ -57,12 +58,14 @@ class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private lateinit var coordinator: PlaybackCoordinator
+    private var prefetcher: StreamPrefetcher? = null
     private var currentReaction: Reaction? = null
 
     override fun onCreate() {
         super.onCreate()
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources.create()))
+            .setLoadControl(fastStartLoadControl())
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -99,7 +102,18 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         coordinator.start()
+        prefetcher = StreamPrefetcher(player, dataSources, scope).also(player::addListener)
     }
+
+    /** Старт после 0,5 с буфера вместо 2,5 с по умолчанию: новый трек начинает играть почти сразу. */
+    private fun fastStartLoadControl() = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+            DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+            START_BUFFER_MS,
+            REBUFFER_MS,
+        )
+        .build()
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
@@ -112,6 +126,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        prefetcher?.release()
         coordinator.release()
         session?.run {
             player.release()
@@ -237,5 +252,7 @@ class PlaybackService : MediaLibraryService() {
         const val ACTION_LIKE = "ru.bodro.music.LIKE"
         val LIKE_COMMAND = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
         private const val ROOT_ID = "root"
+        private const val START_BUFFER_MS = 500
+        private const val REBUFFER_MS = 2_000
     }
 }

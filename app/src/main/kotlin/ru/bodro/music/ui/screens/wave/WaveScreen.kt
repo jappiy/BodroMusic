@@ -4,19 +4,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
@@ -33,6 +36,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,73 +98,94 @@ fun WaveScreen(onBack: () -> Unit, viewModel: WaveViewModel = hiltViewModel()) {
     val actions = LocalAppActions.current
     val waveIsPlaying = player.source.isWave && player.hasMedia
 
+    var allGenres by rememberSaveable { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize().testTag("wave-screen")) {
         WaveBackground(waveColors(), Modifier.fillMaxSize(), animate = player.isPlaying || !waveIsPlaying)
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            IconButton(onClick = onBack, modifier = Modifier.padding(8.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back), tint = Color.White)
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                if (waveIsPlaying) player.currentSong?.artist.orEmpty() else stringResource(R.string.wave_title),
-                style = WaveTitleStyle,
-                color = Color.White,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-            Spacer(Modifier.height(24.dp))
-            Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                WavePlayButton(
-                    playing = waveIsPlaying && player.isPlaying,
-                    loading = player.waveLoading,
-                    onClick = {
-                        if (waveIsPlaying) viewModel.togglePlay() else actions.startWave(filters.toSettings())
-                    },
+        // Без горизонтальной прокрутки: чипы переносятся на новые строки, экран целиком прокручивается вверх-вниз.
+        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(top = 64.dp),
+                verticalArrangement = Arrangement.Bottom,
+            ) {
+                Text(
+                    if (waveIsPlaying) player.currentSong?.artist.orEmpty() else stringResource(R.string.wave_title),
+                    style = WaveTitleStyle,
+                    color = Color.White,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 24.dp),
                 )
-                Spacer(Modifier.size(16.dp))
-                if (waveIsPlaying) TrackCapsule(player)
-            }
-            Spacer(Modifier.height(32.dp))
-            ChipRow {
-                items(WaveModes) { mode ->
-                    WaveChip(waveModeLabel(mode), filters.mode == mode) {
-                        viewModel.setMode(mode)
-                        actions.startWave(filters.copy(mode = mode).toSettings())
+                Spacer(Modifier.height(24.dp))
+                Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    WavePlayButton(
+                        playing = waveIsPlaying && player.isPlaying,
+                        loading = player.waveLoading,
+                        onClick = {
+                            if (waveIsPlaying) viewModel.togglePlay() else actions.startWave(filters.toSettings())
+                        },
+                    )
+                    Spacer(Modifier.size(16.dp))
+                    if (waveIsPlaying) TrackCapsule(player)
+                }
+                Spacer(Modifier.height(24.dp))
+                ChipGroup(stringResource(R.string.wave_group_mood)) {
+                    WaveModes.forEach { mode ->
+                        WaveChip(waveModeLabel(mode), filters.mode == mode) {
+                            viewModel.setMode(mode)
+                            actions.startWave(filters.copy(mode = mode).toSettings())
+                        }
                     }
                 }
-            }
-            if (filters.genres.isNotEmpty()) {
-                ChipRow {
-                    items(filters.genres) { genre ->
-                        WaveChip(genre, filters.genre == genre) {
-                            viewModel.setGenre(genre)
-                            actions.startWave(filters.copy(genre = if (filters.genre == genre) null else genre).toSettings())
+                if (filters.genres.isNotEmpty()) {
+                    val shown = if (allGenres) filters.genres else filters.genres.take(GENRES_SHOWN)
+                    ChipGroup(stringResource(R.string.wave_group_genre)) {
+                        // Выбранный жанр виден, даже если он не в первых восьми.
+                        (shown + listOfNotNull(filters.genre?.takeIf { it !in shown })).forEach { genre ->
+                            WaveChip(genre, filters.genre == genre) {
+                                viewModel.setGenre(genre)
+                                actions.startWave(filters.copy(genre = if (filters.genre == genre) null else genre).toSettings())
+                            }
+                        }
+                        if (filters.genres.size > GENRES_SHOWN) {
+                            WaveChip(stringResource(if (allGenres) R.string.action_show_less else R.string.wave_more_genres), false) {
+                                allGenres = !allGenres
+                            }
+                        }
+                    }
+                }
+                ChipGroup(stringResource(R.string.wave_group_decade), Modifier.padding(bottom = 24.dp)) {
+                    filters.decades.forEach { decade ->
+                        WaveChip(stringResource(R.string.decade_label, decade), filters.decade == decade) {
+                            viewModel.setDecade(decade)
+                            actions.startWave(filters.copy(decade = if (filters.decade == decade) null else decade).toSettings())
                         }
                     }
                 }
             }
-            ChipRow(Modifier.padding(bottom = 24.dp)) {
-                items(filters.decades) { decade ->
-                    WaveChip(stringResource(R.string.decade_label, decade), filters.decade == decade) {
-                        viewModel.setDecade(decade)
-                        actions.startWave(filters.copy(decade = if (filters.decade == decade) null else decade).toSettings())
-                    }
-                }
+            IconButton(onClick = onBack, modifier = Modifier.padding(8.dp)) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back), tint = Color.White)
             }
         }
     }
 }
 
+/** Группа чипов с подписью; чипы переносятся на следующую строку. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChipRow(modifier: Modifier = Modifier, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    LazyRow(
-        modifier.fillMaxWidth().padding(vertical = 4.dp),
-        contentPadding = PaddingValues(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        content = content,
-    )
+private fun ChipGroup(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+    }
 }
+
+private const val GENRES_SHOWN = 8
 
 @Composable
 fun WaveChip(label: String, selected: Boolean, onClick: () -> Unit) {

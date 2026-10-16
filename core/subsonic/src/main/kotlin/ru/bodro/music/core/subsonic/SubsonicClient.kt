@@ -259,6 +259,8 @@ class SubsonicClient(
             add("id" to songId)
             add("maxBitRate" to (maxBitRate ?: 0).toString())
             format?.let { add("format" to it) }
+            // Перекодированный поток без Content-Length нельзя перематывать: Navidrome умеет отдать оценку длины.
+            if (format != null && format != "raw") add("estimateContentLength" to "true")
         }
         return buildUrl("stream", params, config ?: requireConfig())
     }

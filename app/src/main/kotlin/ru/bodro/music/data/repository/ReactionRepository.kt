@@ -170,6 +170,23 @@ class ReactionRepository @Inject constructor(
         return to
     }
 
+    /**
+     * Треки удалены с сервера: убрать их из «Любимого» и «Не нравится» и снять свой лайк на сервере —
+     * иначе Navidrome продолжит отдавать пропавший трек в `getStarred2`. Ошибки сервера не важны.
+     */
+    suspend fun forget(songIds: Collection<String>) {
+        val accountId = connection.activeAccountId ?: return
+        val ids = songIds.toSet()
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            dao.deleteLiked(accountId, id)
+            dao.deleteDisliked(accountId, id)
+            dao.deletePending(accountId, ReactionTarget.Song.name, id)
+        }
+        _state.update { it.copy(songOverrides = it.songOverrides - ids, dislikedIds = it.dislikedIds - ids) }
+        scope.launch { ids.forEach { id -> runCatching { client.unstar(songId = id) } } }
+    }
+
     suspend fun setStarred(target: ReactionTarget, id: String, liked: Boolean) {
         require(target != ReactionTarget.Song)
         val accountId = connection.activeAccountId ?: return

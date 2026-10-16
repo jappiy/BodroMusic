@@ -408,6 +408,12 @@ class Worker:
                 transfer = await self._slskd.transfer(c["username"], c["filename"])
                 if transfer is not None:
                     await self._slskd.cancel(c["username"], transfer.id)
+        if r.kind == RequestKind.ARTIST and self._lidarr is not None and "lidarrId" in r.state:
+            try:
+                removed = await self._lidarr.stop_artist(int(r.state["lidarrId"]))
+                log.info("Lidarr: исполнитель %s больше не отслеживается, из очереди убрано %s", r.artist, removed)
+            except Exception as e:  # noqa: BLE001 — заявку всё равно отменяем
+                log.warning("Lidarr: не удалось остановить загрузку %s: %s", r.artist, e)
         self._finish(r, RequestStatus.CANCELLED, "Отменено")
         self._store.save(r)
 

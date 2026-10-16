@@ -23,6 +23,11 @@ def _int(name: str, default: int) -> int:
     return int(value) if value else default
 
 
+def _bool(name: str, default: bool) -> bool:
+    value = _opt(name)
+    return default if value is None else value.lower() not in ("false", "0", "no", "off")
+
+
 @dataclass(frozen=True)
 class Settings:
     navidrome_url: str
@@ -76,6 +81,20 @@ class Settings:
     """Очередь slsk-worker («Исполнитель - Трек» построчно): из неё убираются заблокированные треки."""
     slsk_worker_queue: str | None = None
 
+    """Регламент «Обслуживание библиотеки» (теги, обложки, дубли, короткие файлы). Нужен NAVIDROME_DB."""
+    maintenance_enabled: bool = True
+    """Время ежедневного запуска (часы:минуты, часовой пояс контейнера — переменная TZ)."""
+    maintenance_at: str = "04:00"
+    """Пробный режим: только отчёт, файлы не меняются."""
+    maintenance_dry_run: bool = False
+    """Папка карантина (убранные дубли и короткие файлы). Пусто — `<MUSIC_DIR>/.bodrod-quarantine`."""
+    quarantine_dir: str | None = None
+    quarantine_days: int = 30
+    """Сколько запросов к каталогу (поиск тегов и обложек) за один запуск."""
+    maintenance_catalog_limit: int = 200
+    """Короче этого (секунды) — подозрительно короткий файл."""
+    maintenance_min_track_s: int = 10
+
     @property
     def slskd_enabled(self) -> bool:
         return bool(self.slskd_url and self.slskd_api_key)
@@ -96,6 +115,10 @@ class Settings:
     def is_service_user(self, username: str) -> bool:
         name = username.lower()
         return name == self.navidrome_admin_user.lower() or name in (u.lower() for u in self.service_users)
+
+    @property
+    def quarantine_path(self) -> str:
+        return self.quarantine_dir or os.path.join(self.music_dir, ".bodrod-quarantine")
 
     @property
     def db_path(self) -> str:
@@ -142,4 +165,11 @@ class Settings:
             lidarr_music_dir=_opt("LIDARR_MUSIC_DIR"),
             blocklist_sweep_s=_int("BLOCKLIST_SWEEP_S", 15 * 60),
             slsk_worker_queue=_opt("SLSK_WORKER_QUEUE"),
+            maintenance_enabled=_bool("MAINTENANCE_ENABLED", True),
+            maintenance_at=_opt("MAINTENANCE_AT") or "04:00",
+            maintenance_dry_run=_bool("MAINTENANCE_DRY_RUN", False),
+            quarantine_dir=_opt("QUARANTINE_DIR"),
+            quarantine_days=_int("QUARANTINE_DAYS", 30),
+            maintenance_catalog_limit=_int("MAINTENANCE_CATALOG_LIMIT", 200),
+            maintenance_min_track_s=_int("MAINTENANCE_MIN_TRACK_S", 10),
         )

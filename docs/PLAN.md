@@ -24,7 +24,7 @@
 - `data/settings`: `SettingsRepository` (DataStore).
 - `sync`: `SyncWorker` (скробблы + реакции), `SyncScheduler`.
 - `data/offline`: `OfflineStore` (скачанные лайки в `files/offline/<accountId>/<songId>`), `OfflineSyncWorker`, `OfflineScheduler` (настройка «Скачивать понравившиеся треки», только Wi-Fi).
-- `playback`: `PlaybackService` (`MediaLibraryService`), `PlayerConnection` (MediaController → `StateFlow`), `QueuePersister`, `WaveQueueManager`, `ScrobbleController`, `StreamDataSourceFactory` (ResolvingDataSource + SimpleCache), `SleepTimerController`.
+- `playback`: `PlaybackService` (`MediaLibraryService`), `PlayerConnection` (MediaController → `StateFlow`), `QueuePersister`, `WaveQueueManager`, `ScrobbleController`, `StreamDataSourceFactory` (ResolvingDataSource + SimpleCache, `prefetch`), `StreamPrefetcher` (начало следующих треков в кэш), `SleepTimerController`.
 - `ui`: тема, компоненты, экраны (Главная, Коллекция, Поиск, Настройки, Плеер, Волна, Альбом, Исполнитель, Плейлист, Логи, История версий…).
 
 ## Схема Room (все таблицы с `accountId`)

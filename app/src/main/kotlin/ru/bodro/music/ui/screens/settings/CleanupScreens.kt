@@ -177,6 +177,7 @@ class CleanupViewModel @Inject constructor(
             runCatching { downloads.deleteSongs(songs.map { it.id }) }
                 .onSuccess { results ->
                     val removed = results.filter { it.ok }.map { it.id }.toSet()
+                    reactions.forget(removed) // удалённый трек не должен остаться в «Любимом»
                     _state.update { s -> s.copy(busy = false, songs = s.songs.filterNot { it.id in removed }) }
                     val failed = results.filterNot { it.ok }
                     onDone(removed.size, failed.size, failed.firstOrNull()?.message)

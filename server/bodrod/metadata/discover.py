@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from ..clients.navidrome import Credentials, NavidromeClient
-from ..models import ArtistCandidate, DiscoverResponse, TrackCandidate
+from ..models import ArtistCandidate, ArtistPopular, DiscoverResponse, TrackCandidate
 from ..text import normalize, similarity
 from .providers import MetadataProvider, SearchHits
 
@@ -49,6 +49,25 @@ class DiscoverService:
         tracks = await provider.top_tracks(artist_id, TOP_TRACKS_LIMIT)
         await self._mark_tracks(tracks, creds)
         return tracks
+
+    async def artist_popular(self, name: str, creds: Credentials | None = None) -> ArtistPopular:
+        """Популярные треки исполнителя по каталогу (порядок — популярность) с отметкой «есть в библиотеке»."""
+        name = name.strip()
+        for provider in self._providers:
+            try:
+                hits = await provider.search(name)
+                artist = next((a for a in hits.artists[:5] if normalize(a.name) == normalize(name)), None) or next(
+                    (a for a in hits.artists[:3] if similarity(a.name, name) >= ARTIST_MATCH), None
+                )
+                if artist is None:
+                    continue
+                tracks = await provider.top_tracks(artist.source_id, TOP_TRACKS_LIMIT)
+            except Exception as e:  # noqa: BLE001 — каталог недоступен: пробуем следующий
+                log.warning("Каталог %s: популярное «%s» не получено: %s", provider.name, name, e)
+                continue
+            await self._mark_tracks(tracks, creds)
+            return ArtistPopular(source=provider.name, artist=artist, tracks=tracks)
+        return ArtistPopular()
 
     async def _build(self, provider: MetadataProvider, query: str, hits: SearchHits) -> DiscoverResponse:
         artist = pick_artist(query, hits)

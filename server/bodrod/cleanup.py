@@ -59,13 +59,14 @@ class CleanupService:
         navidrome: NavidromeClient,
         db: NavidromeDb,
         lidarr: LidarrClient | None,
+        lock: asyncio.Lock | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
         self._navidrome = navidrome
         self._db = db
         self._lidarr = lidarr if settings.lidarr_music_dir else None
-        self._lock = asyncio.Lock()
+        self._lock = lock or asyncio.Lock()  # общий с обслуживанием библиотеки: файлы не трогают одновременно
 
     # region Пользователи и списки
 
