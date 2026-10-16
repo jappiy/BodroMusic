@@ -65,7 +65,7 @@
 
 ## 2. Статус
 
-**CI полностью зелёный** (последний прогон на коммите `030564b`): сборка debug и release, unit-тесты,
+**CI полностью зелёный** (последний прогон на коммите `72977d2`, 0.10.0): сборка debug и release, unit-тесты,
 Android Lint, ktlint, detekt, инструментальные тесты на эмуляторе.
 
 | Пункт ТЗ (раздел 1) | Статус |
@@ -237,4 +237,4 @@ cd "C:\Projects\BodroMusic"; git fetch origin; git switch claude/new-session-fi1
   подключается по USB (`adb devices`).
 - JDK из Android Studio (`C:\Program Files\Android\Android Studio\jbr`) — **25**, а Gradle 8.14 на нём не запускается.
   Нужен JDK 17 (как в CI): портативный Temurin 17 (zip с adoptium.net) и `JAVA_HOME` на него.
-- `gh` не установлен: статус CI — через публичный API GitHub, запуск Release — вручную в Actions.
+- `gh` не установлен: статус CI — через публичный API GitHub (репозиторий публичный), запуск Release — вручную в Actions.
