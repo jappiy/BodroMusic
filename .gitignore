@@ -12,3 +12,11 @@ build/
 *.keystore
 !debug.keystore
 *.jks
+
+# Сервис загрузок (Python)
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+server/bodrod-data/

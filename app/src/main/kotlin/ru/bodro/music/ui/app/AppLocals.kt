@@ -57,3 +57,12 @@ val LocalReactions = staticCompositionLocalOf { ReactionState() }
 
 /** id играющего трека — для подсветки в списках. */
 val LocalNowPlayingId = staticCompositionLocalOf<String?> { null }
+
+/** Запросы извне (нажатие на уведомление): открыть плеер, сыграть скачанный трек, открыть загрузки. */
+sealed interface ExternalRequest {
+    data object OpenPlayer : ExternalRequest
+
+    data class PlaySong(val songId: String) : ExternalRequest
+
+    data object OpenDownloads : ExternalRequest
+}

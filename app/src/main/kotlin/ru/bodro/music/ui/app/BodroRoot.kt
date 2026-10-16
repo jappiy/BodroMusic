@@ -74,7 +74,7 @@ enum class TopLevel(val route: Any, val routeClass: KClass<*>, val icon: ImageVe
 }
 
 @Composable
-fun BodroRoot(viewModel: MainViewModel, coverArtUrls: CoverArtUrls, openPlayerRequests: Flow<Unit>) {
+fun BodroRoot(viewModel: MainViewModel, coverArtUrls: CoverArtUrls, externalRequests: Flow<ExternalRequest>) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     BodroTheme(settings.themeMode, settings.dynamicColor) {
         CompositionLocalProvider(LocalCoverArtUrls provides coverArtUrls) {
@@ -84,14 +84,14 @@ fun BodroRoot(viewModel: MainViewModel, coverArtUrls: CoverArtUrls, openPlayerRe
                 SessionState.NoAccount -> LoginScreen(prefill = null)
                 is SessionState.NeedsLogin -> LoginScreen(prefill = s.account)
                 // Смена учётки — новый граф навигации и новые ViewModel (данные другой учётки).
-                is SessionState.Active -> key(s.account.id) { MainShell(viewModel, openPlayerRequests) }
+                is SessionState.Active -> key(s.account.id) { MainShell(viewModel, externalRequests) }
             }
         }
     }
 }
 
 @Composable
-private fun MainShell(viewModel: MainViewModel, openPlayerRequests: Flow<Unit>) {
+private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalRequest>) {
     val navController = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val player by viewModel.playerState.collectAsStateWithLifecycle()
@@ -107,7 +107,18 @@ private fun MainShell(viewModel: MainViewModel, openPlayerRequests: Flow<Unit>) 
 
     LaunchedEffect(Unit) { viewModel.connectPlayer() }
     LaunchedEffect(Unit) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
-    LaunchedEffect(Unit) { openPlayerRequests.collect { if (player.hasMedia) expanded = true } }
+    LaunchedEffect(Unit) {
+        externalRequests.collect { request ->
+            when (request) {
+                ExternalRequest.OpenPlayer -> if (player.hasMedia) expanded = true
+                is ExternalRequest.PlaySong -> {
+                    viewModel.playSongById(request.songId)
+                    expanded = true
+                }
+                ExternalRequest.OpenDownloads -> navController.navigate(DownloadsRoute) { launchSingleTop = true }
+            }
+        }
+    }
     BackHandler(enabled = expanded) { expanded = false }
 
     val backStackEntry by navController.currentBackStackEntryAsState()

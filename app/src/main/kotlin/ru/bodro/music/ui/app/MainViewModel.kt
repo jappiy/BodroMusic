@@ -27,6 +27,7 @@ import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
+import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.data.repository.PlaylistRepository
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.data.repository.ReactionState
@@ -51,6 +52,7 @@ class MainViewModel @Inject constructor(
     private val reactionRepository: ReactionRepository,
     private val playlistRepository: PlaylistRepository,
     private val palette: CoverPaletteRepository,
+    private val library: LibraryRepository,
 ) : ViewModel(), AppActions {
     val session: StateFlow<SessionState> = connection.session
     val settings: StateFlow<AppSettings> = settingsRepository.settings
@@ -160,6 +162,15 @@ class MainViewModel @Inject constructor(
 
     fun dismissPlaylistPicker() {
         _playlistPicker.value = null
+    }
+
+    /** Скачанный трек из уведомления: загрузить по id и сразу включить. */
+    fun playSongById(id: String) {
+        viewModelScope.launch {
+            runCatching { library.song(id) }
+                .onSuccess { player.play(listOf(it), 0, QueueSource.CustomSource(), false) }
+                .onFailure { showMessage(context.getString(it.toUiError().message)) }
+        }
     }
 
     override fun showMessage(message: String) {

@@ -1,0 +1,28 @@
+# Пример: bodrod рядом с уже работающими Navidrome, slskd и Lidarr.
+# Скопируйте в docker-compose.yml, подставьте адреса и ключи. Секреты лучше держать в .env.
+services:
+  bodrod:
+    image: ghcr.io/jappiy/bodromusic-server:latest
+    container_name: bodrod
+    restart: unless-stopped
+    ports:
+      - "8790:8790"
+    volumes:
+      - ./bodrod-data:/data
+    environment:
+      # Navidrome: админ-учётка нужна, чтобы запускать сканирование и проверять, есть ли трек в библиотеке.
+      NAVIDROME_URL: http://navidrome:4533
+      NAVIDROME_ADMIN_USER: admin
+      NAVIDROME_ADMIN_PASSWORD: ${NAVIDROME_ADMIN_PASSWORD}
+      # slskd — скачивание отдельных треков. Ключ: slskd.yml → web.authentication.api_keys.
+      SLSKD_URL: http://slskd:5030
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      # Lidarr — скачивание всей дискографии исполнителя. Ключ: Settings → General → API Key.
+      LIDARR_URL: http://lidarr:8686
+      LIDARR_API_KEY: ${LIDARR_API_KEY}
+      # Необязательно: по умолчанию берутся первая корневая папка и первые профили Lidarr.
+      # LIDARR_ROOT_FOLDER: /music
+      # LIDARR_QUALITY_PROFILE_ID: "1"
+      # LIDARR_METADATA_PROFILE_ID: "1"
+      # Необязательно: OAuth-токен Яндекс Музыки (без него поиск тоже работает, но каталог может быть урезан).
+      # YANDEX_MUSIC_TOKEN: ${YANDEX_MUSIC_TOKEN}

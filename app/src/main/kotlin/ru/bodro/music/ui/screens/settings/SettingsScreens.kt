@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Palette
@@ -57,6 +58,7 @@ fun SettingsScreen(
     onOpenPlayback: () -> Unit,
     onOpenWave: () -> Unit,
     onOpenAppearance: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenVersions: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -91,6 +93,15 @@ fun SettingsScreen(
                 R.string.settings_appearance_summary,
                 onOpenAppearance,
                 "settings-appearance",
+            )
+        }
+        item {
+            SettingsEntry(
+                Icons.Rounded.Download,
+                R.string.settings_downloads,
+                R.string.settings_downloads_summary,
+                onOpenDownloads,
+                "settings-downloads",
             )
         }
         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }

@@ -1,7 +1,8 @@
 # BodroMusic
 
 Android-клиент для домашнего сервера **Navidrome** (Subsonic API + OpenSubsonic): несколько учёток, LAN/WAN,
-фоновое воспроизведение, скробблинг, лайки/дизлайки и «Моя волна» на клиенте.
+фоновое воспроизведение, скробблинг, лайки/дизлайки, «Моя волна» на клиенте и скачивание недостающей музыки
+через slskd/Lidarr.
 
 Техзадание — [docs/SPEC.md](docs/SPEC.md), план и архитектура — [docs/PLAN.md](docs/PLAN.md),
 история изменений — [CHANGELOG.md](CHANGELOG.md).
@@ -14,6 +15,7 @@ Android-клиент для домашнего сервера **Navidrome** (Sub
 | `core:model` | Модели (Kotlin/JVM) |
 | `core:subsonic` | Клиент Subsonic API, авторизация, маскирование секретов, лог-перехватчик, выбор LAN/WAN |
 | `core:domain` | Скробблинг, реакции, `WaveEngine`, разбор CHANGELOG, бейдж качества, псевдо-waveform |
+| `core:downloads` | Клиент сервиса загрузок (глобальный поиск, заявки slskd/Lidarr) |
 | `app` | Android: Compose UI, Media3, Room, DataStore, Hilt, WorkManager |
 
 ## Сборка
@@ -29,5 +31,7 @@ Android-клиент для домашнего сервера **Navidrome** (Sub
 
 Для smoke-теста против реального сервера скопируйте `local.properties.example` → `local.properties`
 и укажите **отдельную тестовую** учётку Navidrome (тесты ставят лайки, рейтинги и скробблят).
+
+Сервис загрузок для сервера (slskd + Lidarr + Navidrome) — [server/README.md](server/README.md).
 
 CI: `.github/workflows/android.yml` — сборка APK, unit-тесты, lint, инструментальные тесты на эмуляторе.

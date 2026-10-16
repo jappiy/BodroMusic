@@ -12,8 +12,8 @@ plugins {
 }
 
 // Версия приложения. Каждое изменение функциональности — запись в CHANGELOG.md и повышение версии.
-val appVersionCode = 7
-val appVersionName = "0.7.0"
+val appVersionCode = 8
+val appVersionName = "0.8.0"
 
 val gitHash: String = providers.exec {
     commandLine("git", "rev-parse", "--short=10", "HEAD")
@@ -138,6 +138,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:subsonic"))
     implementation(project(":core:domain"))
+    implementation(project(":core:downloads"))
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

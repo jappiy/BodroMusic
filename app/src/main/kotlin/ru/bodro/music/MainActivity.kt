@@ -18,6 +18,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.ui.app.BodroRoot
+import ru.bodro.music.ui.app.ExternalRequest
 import ru.bodro.music.ui.app.MainViewModel
 import ru.bodro.music.ui.image.CoverArtUrls
 
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var coverArtUrls: CoverArtUrls
 
     private val viewModel: MainViewModel by viewModels()
-    private val openPlayerRequests = Channel<Unit>(Channel.CONFLATED)
+    private val externalRequests = Channel<ExternalRequest>(Channel.BUFFERED)
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -35,10 +36,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         splash.setKeepOnScreenCondition { viewModel.session.value == SessionState.Loading }
         enableEdgeToEdge()
-        handleIntent(intent)
+        // После поворота экрана intent тот же — действие из уведомления не повторяем.
+        if (savedInstanceState == null) handleIntent(intent)
         requestNotificationPermission()
         setContent {
-            BodroRoot(viewModel, coverArtUrls, openPlayerRequests.receiveAsFlow())
+            BodroRoot(viewModel, coverArtUrls, externalRequests.receiveAsFlow())
         }
     }
 
@@ -48,7 +50,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) openPlayerRequests.trySend(Unit)
+        if (intent == null) return
+        val songId = intent.getStringExtra(EXTRA_PLAY_SONG_ID)
+        when {
+            intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false) -> externalRequests.trySend(ExternalRequest.OpenPlayer)
+            songId != null -> externalRequests.trySend(ExternalRequest.PlaySong(songId))
+            intent.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false) -> externalRequests.trySend(ExternalRequest.OpenDownloads)
+        }
     }
 
     /** Android 13+: без разрешения уведомление плеера не показывается. */
@@ -61,5 +69,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_PLAYER = "ru.bodro.music.OPEN_PLAYER"
+        const val EXTRA_PLAY_SONG_ID = "ru.bodro.music.PLAY_SONG_ID"
+        const val EXTRA_OPEN_DOWNLOADS = "ru.bodro.music.OPEN_DOWNLOADS"
     }
 }

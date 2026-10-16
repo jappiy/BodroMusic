@@ -53,3 +53,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object WaveSettingsRoute
 
 @Serializable data object AppearanceRoute
+
+@Serializable data object DownloadsRoute

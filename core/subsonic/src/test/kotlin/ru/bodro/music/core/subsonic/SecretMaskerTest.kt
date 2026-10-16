@@ -28,6 +28,7 @@ class SecretMaskerTest {
     fun `masks auth headers`() {
         assertEquals("***", SecretMasker.maskHeader("Authorization", "Basic dXNlcjpwYXNz"))
         assertEquals("***", SecretMasker.maskHeader("x-nd-authorization", "Bearer abc"))
+        assertEquals("***", SecretMasker.maskHeader("X-Subsonic-Token", "26719a1196d2a940705a59634eb18eab"))
         assertEquals("audio/flac", SecretMasker.maskHeader("Content-Type", "audio/flac"))
     }
 

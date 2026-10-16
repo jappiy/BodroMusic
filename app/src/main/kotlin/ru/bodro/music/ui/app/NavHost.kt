@@ -12,6 +12,7 @@ import ru.bodro.music.data.repository.AlbumSort
 import ru.bodro.music.ui.screens.album.AlbumScreen
 import ru.bodro.music.ui.screens.artist.ArtistScreen
 import ru.bodro.music.ui.screens.collection.CollectionScreen
+import ru.bodro.music.ui.screens.downloads.DownloadsScreen
 import ru.bodro.music.ui.screens.collection.DislikedScreen
 import ru.bodro.music.ui.screens.collection.LikedScreen
 import ru.bodro.music.ui.screens.home.HomeScreen
@@ -67,13 +68,14 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenTracks = { navController.navigate(TracksRoute) },
             )
         }
-        composable<SearchRoute> { SearchScreen() }
+        composable<SearchRoute> { SearchScreen(onOpenDownloads = { navController.navigate(DownloadsRoute) }) }
         composable<SettingsRoute> {
             SettingsScreen(
                 onOpenAccounts = { navController.navigate(AccountsRoute) },
                 onOpenPlayback = { navController.navigate(PlaybackSettingsRoute) },
                 onOpenWave = { navController.navigate(WaveSettingsRoute) },
                 onOpenAppearance = { navController.navigate(AppearanceRoute) },
+                onOpenDownloads = { navController.navigate(DownloadsRoute) },
                 onOpenVersions = { navController.navigate(VersionsRoute) },
                 onOpenLogs = { navController.navigate(LogsRoute) },
                 onOpenAbout = { navController.navigate(AboutRoute) },
@@ -108,5 +110,6 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<PlaybackSettingsRoute> { PlaybackSettingsScreen(onBack = back) }
         composable<WaveSettingsRoute> { WaveSettingsScreen(onBack = back) }
         composable<AppearanceRoute> { AppearanceScreen(onBack = back) }
+        composable<DownloadsRoute> { DownloadsScreen(onBack = back) }
     }
 }

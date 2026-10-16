@@ -9,6 +9,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import ru.bodro.music.R
+import ru.bodro.music.core.downloads.DownloadsError
+import ru.bodro.music.core.downloads.DownloadsException
 import ru.bodro.music.core.subsonic.ApiErrorKind
 import ru.bodro.music.core.subsonic.NetworkErrorKind
 import ru.bodro.music.core.subsonic.SubsonicError
@@ -56,6 +58,7 @@ data class UiError(@StringRes val message: Int, val details: String? = null, val
 
 fun Throwable.toUiError(): UiError = when (this) {
     is SubsonicException -> error.toUiError()
+    is DownloadsException -> error.toUiError()
     is CleartextNotAllowedException -> UiError(R.string.error_cleartext)
     else -> UiError(R.string.error_unknown, message)
 }
@@ -84,6 +87,15 @@ fun SubsonicError.toUiError(): UiError = when (this) {
     }
     is SubsonicError.InvalidResponse -> UiError(R.string.error_invalid_response, details)
     SubsonicError.NotConfigured -> UiError(R.string.error_not_configured)
+}
+
+fun DownloadsError.toUiError(): UiError = when (this) {
+    DownloadsError.NotConfigured -> UiError(R.string.downloads_error_not_configured)
+    DownloadsError.Unauthorized -> UiError(R.string.downloads_error_unauthorized)
+    is DownloadsError.Disabled -> UiError(R.string.downloads_error_disabled, details)
+    is DownloadsError.Network -> UiError(R.string.downloads_error_unreachable, details, isOffline = true)
+    is DownloadsError.Http -> UiError(R.string.error_server_generic, "HTTP $status" + (details?.let { ": $it" } ?: ""))
+    is DownloadsError.InvalidResponse -> UiError(R.string.error_invalid_response, details)
 }
 
 fun UiError.text(context: Context): String = context.getString(message)

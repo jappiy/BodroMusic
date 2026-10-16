@@ -30,7 +30,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -78,7 +83,7 @@ import ru.bodro.music.ui.components.SongRow
 import ru.bodro.music.ui.util.toUiError
 import ru.bodro.music.ui.util.tracksText
 
-data class SearchResults(val result: SearchResult, val playlists: List<Playlist>) {
+data class SearchResults(val result: SearchResult, val playlists: List<Playlist>, val query: String = "") {
     val isEmpty: Boolean get() = result.isEmpty && playlists.isEmpty()
 }
 
@@ -116,7 +121,7 @@ class SearchViewModel @Inject constructor(
             val result = runCatching {
                 val found = library.search(q)
                 val lists = allPlaylists ?: playlists.playlists().also { allPlaylists = it }
-                SearchResults(found, lists.filter { it.name.contains(q, ignoreCase = true) })
+                SearchResults(found, lists.filter { it.name.contains(q, ignoreCase = true) }, q)
             }
             emit(result.fold({ LoadState.Content(it) }, { LoadState.Error(it.toUiError()) }))
         }
@@ -149,13 +154,51 @@ class SearchViewModel @Inject constructor(
 }
 
 @Composable
-fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
+fun SearchScreen(
+    onOpenDownloads: () -> Unit = {},
+    viewModel: SearchViewModel = hiltViewModel(),
+    discover: DiscoverViewModel = hiltViewModel(),
+) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val discoverUi by discover.state.collectAsStateWithLifecycle()
+    val discoverConfigured by discover.configured.collectAsStateWithLifecycle()
+    val discoverRequests by discover.requests.collectAsStateWithLifecycle()
+    val discoverInfo by discover.info.collectAsStateWithLifecycle()
+    var discoverExpanded by rememberSaveable(discoverUi?.query) { mutableStateOf(false) }
     val actions = LocalAppActions.current
     val navigator = LocalNavigator.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        discover.events.collect { event ->
+            when (event) {
+                is DiscoverEvent.Message -> actions.showMessage(event.text)
+                is DiscoverEvent.Play -> actions.play(listOf(event.song), 0, QueueSource.CustomSource(query.trim()))
+            }
+        }
+    }
+    // Сначала ищем в своей библиотеке; если треков там нет — сразу предлагаем скачать.
+    LaunchedEffect(results, discoverConfigured) {
+        val content = (results as? LoadState.Content)?.data
+        when {
+            results == null -> discover.reset()
+            content == null -> Unit
+            content.result.songs.isEmpty() && discoverConfigured -> discover.search(content.query)
+            discoverUi?.query != content.query -> discover.reset()
+        }
+    }
+    val discoverCallbacks = remember(discover, discoverUi?.query) {
+        DiscoverCallbacks(
+            onDownload = discover::download,
+            onDownloadArtist = discover::downloadArtist,
+            onSelectArtist = discover::selectArtist,
+            onPlay = discover::play,
+            onRetry = discover::retry,
+            onShowMore = { discoverExpanded = true },
+        )
+    }
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding().testTag("search-screen"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
@@ -215,8 +258,17 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
             is LoadState.Error -> item { Box(Modifier.height(400.dp)) { ErrorState(r.error, viewModel::retry) } }
             is LoadState.Content -> {
                 val data = r.data
-                if (data.isEmpty) {
+                if (data.isEmpty && !discoverConfigured) {
                     item { Box(Modifier.height(300.dp)) { EmptyState(stringResource(R.string.search_nothing, query.trim())) } }
+                    item { DiscoverSetupHint(onOpenDownloads) }
+                } else if (data.isEmpty) {
+                    item {
+                        Text(
+                            stringResource(R.string.search_library_empty, data.query),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
                 }
                 if (data.result.songs.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.search_tracks)) }
@@ -267,6 +319,17 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
                                 navigator.openPlaylist(playlist.id)
                             },
                         )
+                    }
+                }
+                val ui = discoverUi
+                if (ui != null && ui.query == data.query) {
+                    discoverSection(ui, discoverRequests, discoverInfo, discoverExpanded, discoverCallbacks)
+                } else if (discoverConfigured && data.result.songs.isNotEmpty()) {
+                    item(key = "discover-offer") {
+                        TextButton(
+                            onClick = { discover.search(data.query) },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp).testTag("discover-offer"),
+                        ) { Text(stringResource(R.string.search_discover_button, data.query)) }
                     }
                 }
             }

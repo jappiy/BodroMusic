@@ -12,7 +12,7 @@ object SecretMasker {
     /** `?u=x&t=abc&s=def` → `?u=x&t=***&s=***`. Работает и для URL, и для строк query/form. */
     private val queryParam = Regex("""(?<=[?&;]|^)(${secretParams.joinToString("|")})=([^&#\s]*)""")
 
-    private val authHeader = Regex("""(?i)^(authorization|cookie|set-cookie|x-nd-authorization)$""")
+    private val authHeader = Regex("""(?i)^(authorization|cookie|set-cookie|x-nd-authorization|x-subsonic-token|x-subsonic-salt)$""")
 
     private val jsonSecret = Regex(""""(password|token|salt)"\s*:\s*"[^"]*"""")
 

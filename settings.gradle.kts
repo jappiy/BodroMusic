@@ -37,6 +37,7 @@ rootProject.name = "BodroMusic"
 include(":core:model")
 include(":core:subsonic")
 include(":core:domain")
+include(":core:downloads")
 
 // `-Pbodro.jvmOnly=true` собирает только чистые JVM-модули (без Android SDK и Google Maven).
 // Используется в CI-окружениях без доступа к Android SDK.

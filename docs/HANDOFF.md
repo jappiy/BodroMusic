@@ -117,6 +117,20 @@ Smoke-тест против реального Navidrome: скопировать
 - Скриншоты экранов (раздел 9.4 ТЗ) не сделаны.
 - Предупреждение компилятора про `@ApplicationContext` на параметре (`LogsScreens.kt`, KT-73255) — безвредно.
 
+## 7а. Глобальный поиск и загрузки (0.8.0)
+
+- Сервис `server/` (bodrod, Python/FastAPI) работает на сервере рядом с Navidrome. Инструкция — `server/README.md`,
+  CI — `.github/workflows/server.yml` (pytest + ruff, образ `ghcr.io/jappiy/bodromusic-server`).
+- Сценарий: поиск в библиотеке (`search3`). Если треков нет, вызывается `GET /api/v1/discover` (Яндекс Музыка → Deezer).
+  По нажатию создаётся заявка: трек скачивается через slskd, исполнитель — через Lidarr. Сервис запускает `startScan`
+  в Navidrome и ждёт появления трека. `DownloadWatchWorker` в приложении опрашивает заявки и показывает уведомление.
+- Клиент: модуль `core:downloads` (`DownloadsClient`, `DownloadWatch`), `data/downloads/` (репозиторий, воркер,
+  уведомления), `ui/screens/search/Discover.kt`, `ui/screens/downloads/DownloadsScreen.kt`.
+  Адрес сервиса хранится отдельно для каждой учётки в DataStore `downloads`.
+- С настоящими slskd, Lidarr, Яндексом и Deezer интеграция **не проверялась**: из облачной среды эти API недоступны.
+  Клиенты написаны по документации API и покрыты тестами на поддельных серверах. При первой проверке на сервере
+  смотрите логи контейнера (`docker logs bodrod`).
+
 ## 8. Следующие шаги
 
 1. Владелец ставит APK, проверяет на телефоне с реальным сервером; разобрать его замечания.

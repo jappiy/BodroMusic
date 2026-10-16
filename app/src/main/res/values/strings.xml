@@ -334,4 +334,52 @@
         <item quantity="many">%d ч</item>
         <item quantity="other">%d ч</item>
     </plurals>
+
+    <!-- Глобальный поиск и загрузки (сервис bodrod: slskd + Lidarr) -->
+    <string name="search_discover_title">Найти и скачать</string>
+    <string name="search_discover_source">Каталог: %1$s</string>
+    <string name="search_discover_button">Не нашли? Искать «%1$s» для скачивания</string>
+    <string name="search_discover_nothing">Во внешних каталогах ничего не нашлось</string>
+    <string name="search_discover_not_configured">Чтобы скачивать музыку, которой нет в библиотеке, укажите адрес сервиса загрузок.</string>
+    <string name="search_discover_setup">Настроить загрузки</string>
+    <string name="search_library_empty">В библиотеке по запросу «%1$s» ничего нет</string>
+    <string name="discover_popular">Популярные треки</string>
+    <string name="discover_tracks">Треки</string>
+    <string name="discover_other_artists">Исполнители</string>
+    <string name="discover_download_all">Скачать всё</string>
+    <string name="discover_download_all_hint">Вся дискография через Lidarr</string>
+    <string name="discover_in_library">В библиотеке</string>
+    <string name="discover_download">Скачать</string>
+    <string name="discover_show_more">Показать ещё</string>
+    <string name="discover_queued_track">«%1$s» поставлен в загрузку</string>
+    <string name="discover_queued_artist">Все песни «%1$s» поставлены в загрузку</string>
+    <string name="download_status_queued">В очереди</string>
+    <string name="download_status_searching">Ищем источник</string>
+    <string name="download_status_downloading">Скачиваем</string>
+    <string name="download_status_importing">Добавляем в библиотеку</string>
+    <string name="download_status_completed">Скачано</string>
+    <string name="download_status_failed">Не удалось</string>
+    <string name="download_status_cancelled">Отменено</string>
+    <string name="settings_downloads">Загрузки</string>
+    <string name="settings_downloads_summary">Скачивание через slskd и Lidarr</string>
+    <string name="downloads_url">Адрес сервиса загрузок</string>
+    <string name="downloads_url_hint">Например, 192.168.1.10:8790</string>
+    <string name="downloads_url_help">Сервис bodrod работает на сервере рядом с Navidrome (инструкция — server/README.md в репозитории). Вход — той же учёткой Navidrome.</string>
+    <string name="downloads_save">Сохранить и проверить</string>
+    <string name="downloads_disable">Отключить</string>
+    <string name="downloads_ok">Сервис %1$s подключён. Треки (slskd): %2$s, исполнители (Lidarr): %3$s</string>
+    <string name="downloads_yes">да</string>
+    <string name="downloads_no">нет</string>
+    <string name="downloads_requests">Заявки</string>
+    <string name="downloads_empty">Заявок пока нет. Найдите трек в поиске и нажмите «Скачать».</string>
+    <string name="downloads_cancel">Отменить</string>
+    <string name="downloads_remove">Убрать из списка</string>
+    <string name="downloads_channel">Загрузки</string>
+    <string name="downloads_notification_track_done">Трек скачан</string>
+    <string name="downloads_notification_artist_done">Исполнитель скачан</string>
+    <string name="downloads_notification_failed">Не удалось скачать</string>
+    <string name="downloads_error_not_configured">Сервис загрузок не настроен</string>
+    <string name="downloads_error_unauthorized">Сервис загрузок не принял учётку Navidrome</string>
+    <string name="downloads_error_disabled">Эта возможность не настроена на сервере</string>
+    <string name="downloads_error_unreachable">Сервис загрузок недоступен</string>
 </resources>
