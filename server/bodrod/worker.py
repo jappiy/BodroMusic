@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
+import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -39,6 +41,17 @@ CoverFetcher = Callable[[str], Awaitable[tuple[bytes, str] | None]]
 
 async def _no_cover(url: str) -> tuple[bytes, str] | None:
     return None
+
+
+def error_location(error: BaseException) -> str:
+    """Где упало: последняя строка нашего кода и, если глубже, библиотека — для сообщения в приложении."""
+    frames = traceback.extract_tb(error.__traceback__)
+    ours = [f for f in frames if f"{os.sep}bodrod{os.sep}" in f.filename]
+    where = f"{os.path.basename(ours[-1].filename)}:{ours[-1].lineno} {ours[-1].name}" if ours else "?"
+    if frames and frames[-1] not in ours:
+        lib = frames[-1].filename.split(f"site-packages{os.sep}")[-1]
+        where += f" → {lib}:{frames[-1].lineno}"
+    return where
 
 
 MAX_ERRORS = 8
@@ -102,9 +115,21 @@ class Worker:
             request.errors = 0
         except Exception as e:  # noqa: BLE001 — сетевые сбои: повторяем с паузой
             request.errors += 1
-            log.warning("Заявка %s: ошибка шага (%s): %s", request.id, request.errors, e)
+            where = error_location(e)
+            log.warning(
+                "Заявка %s: ошибка шага %s (%s/%s) в %s: %s",
+                request.id,
+                request.status.value,
+                request.errors,
+                MAX_ERRORS,
+                where,
+                e,
+                exc_info=True,
+            )
             if request.errors >= MAX_ERRORS:
-                self._finish(request, RequestStatus.FAILED, f"Ошибка: {e}")
+                # Запоминаем шаг: повторное нажатие «Скачать» продолжит с него, без новой загрузки.
+                request.state["failedStatus"] = request.status.value
+                self._finish(request, RequestStatus.FAILED, f"Ошибка ({where}): {e}")
             else:
                 request.next_check_at = self._clock() + min(300, 5 * 2**request.errors)
         current = self._store.get(request.id)

@@ -183,3 +183,23 @@ def test_remove_source_cleans_only_empty_peer_dir(tmp_path):
 
 
 # endregion
+
+
+def test_broken_existing_tags_are_rewritten(tmp_path, monkeypatch):
+    import bodrod.placement as placement
+
+    mp3 = copy_fixture(tmp_path, "silence.mp3")
+    write_tags(mp3, Tags("Старый", "Тег", None), None)
+    real = placement._write_tags
+    calls = []
+
+    def flaky(path, tags, cover):
+        calls.append(path)
+        if len(calls) == 1:
+            "битый тег".encode("ascii")
+        return real(path, tags, cover)
+
+    monkeypatch.setattr(placement, "_write_tags", flaky)
+    written = write_tags(mp3, TAGS, None)
+    assert "(старые теги удалены)" in written
+    assert mutagen.File(mp3, easy=True)["title"] == ["Город Сочи"]

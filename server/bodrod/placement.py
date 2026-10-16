@@ -160,7 +160,23 @@ def remove_source(source: Path, downloads_dir: str) -> None:
 
 
 def write_tags(path: Path, tags: Tags, cover: tuple[bytes, str] | None) -> list[str]:
-    """artist / albumartist / title / album + обложка, если её нет. Остальные теги (номер, год, жанр) не трогаем."""
+    """artist / albumartist / title / album + обложка, если её нет. Остальные теги (номер, год, жанр) не трогаем.
+
+    Если существующие теги файла битые и mutagen не может их пересохранить, теги стираются и пишутся заново.
+    """
+    try:
+        return _write_tags(path, tags, cover)
+    except Exception:
+        log.warning("Не удалось обновить теги %s, пишем их заново с нуля", path.name, exc_info=True)
+    import mutagen
+
+    audio = mutagen.File(path)
+    if audio is not None and audio.tags is not None:
+        audio.delete()
+    return _write_tags(path, tags, cover) + ["(старые теги удалены)"]
+
+
+def _write_tags(path: Path, tags: Tags, cover: tuple[bytes, str] | None) -> list[str]:
     import mutagen
     from mutagen.flac import FLAC
     from mutagen.mp3 import MP3

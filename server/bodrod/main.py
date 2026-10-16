@@ -210,6 +210,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             duration_ms=body.duration_ms,
             cover_url=body.cover_url,
         )
+        if not created:
+            svc.worker.wake()  # заявка могла ожить после ошибки
         if created:
             log.info("%s: новая заявка %s %s — %s", user.username, body.kind, body.artist, body.title or "")
             svc.worker.wake()
@@ -240,10 +242,18 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
 
 
 def main() -> None:
+    import sys
+
     import uvicorn
 
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    log.info(
+        "bodrod %s, кодировка файловой системы: %s, UTF-8 mode: %s",
+        __version__,
+        sys.getfilesystemencoding(),
+        sys.flags.utf8_mode,
     )
     uvicorn.run(create_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8790")), log_level="info")  # noqa: S104
 

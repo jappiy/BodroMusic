@@ -196,3 +196,56 @@ def test_without_dirs_old_behaviour(tmp_path, missing):
     env.tick()
     assert env.store.get(env.request.id).status == RequestStatus.IMPORTING
     assert library_files(env) == []
+
+
+def test_failure_shows_location_and_retry_resumes_placing(tmp_path, monkeypatch):
+    env = Env(tmp_path)
+    local = env.download_finished()
+
+    def broken(source, dest, tags, cover):
+        "Город Сочи".encode("ascii")
+
+    monkeypatch.setattr(worker_module, "place_file", broken)
+    for _ in range(20):  # паузы между повторами растут до 5 минут
+        env.clock.advance(300)
+        asyncio.run(env.worker.tick())
+    failed = env.store.get(env.request.id)
+    assert failed.status == RequestStatus.FAILED
+    assert "test_worker_placement.py" in failed.message or "worker.py" in failed.message
+    assert "ascii" in failed.message
+    assert failed.state["failedStatus"] == "placing"
+    assert local.exists()  # исходник на месте — можно повторить
+
+    monkeypatch.undo()
+    again, created = env.store.create(
+        username="vasya",
+        kind=RequestKind.TRACK,
+        artist="Трофим",
+        title="Город Сочи",
+        album="Хиты",
+        duration_ms=200_000,
+        cover_url=None,
+    )
+    assert not created and again.id == env.request.id
+    assert again.status == RequestStatus.PLACING
+    run_until(env.worker, env.clock, env.store, env.request.id, RequestStatus.IMPORTING)
+    assert library_files(env) == [EXPECTED]
+    assert len(env.world.slskd_searches) == 1  # заново не искали и не качали
+
+
+def test_legacy_failed_request_is_resumed(tmp_path):
+    env = Env(tmp_path)
+    r = env.store.get(env.request.id)
+    r.status = RequestStatus.FAILED
+    r.state = {"candidates": [], "index": 0, "placeStartedAt": 1.0}
+    env.store.save(r)
+    again, created = env.store.create(
+        username="vasya",
+        kind=RequestKind.TRACK,
+        artist="Трофим",
+        title="Город Сочи",
+        album=None,
+        duration_ms=None,
+        cover_url=None,
+    )
+    assert (again.id, again.status, created) == (env.request.id, RequestStatus.PLACING, False)

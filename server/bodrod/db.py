@@ -113,6 +113,9 @@ class Store:
         """Новая заявка или уже существующая (та же песня/исполнитель в работе или скачана) — `(заявка, создана)`."""
         key = dedup_key(kind, artist, title)
         with self._lock:
+            revived = self._revive_failed(username, key)
+            if revived is not None:
+                return revived, False
             row = self._conn.execute(
                 "SELECT * FROM requests WHERE username = ? AND dedup_key = ? AND status NOT IN (?, ?) "
                 "ORDER BY created_at DESC LIMIT 1",
@@ -164,6 +167,47 @@ class Store:
                 ),
             )
             return request, True
+
+    def _revive_failed(self, username: str, key: str) -> DownloadRequest | None:
+        """Последняя заявка упала после загрузки (на размещении/импорте) — продолжить её, не скачивая заново."""
+        row = self._conn.execute(
+            "SELECT * FROM requests WHERE username = ? AND dedup_key = ? ORDER BY created_at DESC LIMIT 1",
+            (username, key),
+        ).fetchone()
+        if row is None:
+            return None
+        request = _from_row(row)
+        resume = request.state.pop("failedStatus", None)
+        if resume is None:  # заявки, упавшие до версии 0.2.1, — шаг понятен по состоянию
+            if "importStartedAt" in request.state:
+                resume = RequestStatus.IMPORTING.value
+            elif "placeStartedAt" in request.state:
+                resume = RequestStatus.PLACING.value
+        if request.status != RequestStatus.FAILED or resume not in (
+            RequestStatus.PLACING.value,
+            RequestStatus.IMPORTING.value,
+        ):
+            return None
+        request.status = RequestStatus(resume)
+        request.message = "Повторяем"
+        request.errors = 0
+        request.next_check_at = 0
+        now = time.time()
+        request.state["placeStartedAt"] = now
+        request.state["importStartedAt"] = now
+        request.updated_at = now_ms()
+        self._conn.execute(
+            "UPDATE requests SET status = ?, message = ?, errors = 0, next_check_at = 0, state = ?, updated_at = ? "
+            "WHERE id = ?",
+            (
+                request.status.value,
+                request.message,
+                json.dumps(request.state, ensure_ascii=False),
+                request.updated_at,
+                request.id,
+            ),
+        )
+        return request
 
     def get(self, request_id: str) -> DownloadRequest | None:
         with self._lock:
