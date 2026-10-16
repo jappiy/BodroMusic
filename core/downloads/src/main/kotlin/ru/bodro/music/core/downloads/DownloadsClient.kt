@@ -32,6 +32,9 @@ sealed interface DownloadsError {
     /** Navidrome не принял учётку. */
     data object Unauthorized : DownloadsError
 
+    /** Действие доступно только администраторам Navidrome. */
+    data object Forbidden : DownloadsError
+
     /** На сервере не настроен slskd / Lidarr. */
     data class Disabled(val details: String?) : DownloadsError
 
@@ -79,6 +82,37 @@ class DownloadsClient(
     suspend fun delete(id: String) {
         execute<Unit?>(Request.Builder().url(url(listOf("api", "v1", "requests", id))).delete(), null) { null }
     }
+
+    // region «На удаление» и чёрный список (только администраторы)
+
+    suspend fun cleanupUsers(): List<CleanupUser> = get(listOf("api", "v1", "cleanup", "users"))
+
+    /** `username = null` — треки, которые не нравятся всем пользователям. */
+    suspend fun disliked(username: String?): List<DislikedSong> =
+        get(listOf("api", "v1", "cleanup", "disliked"), listOfNotNull(username?.let { "username" to it }))
+
+    /** Удалить файлы с сервера окончательно и занести треки в чёрный список. */
+    suspend fun deleteSongs(ids: List<String>): List<DeleteSongResult> {
+        val payload = downloadsJson.encodeToString(DeleteSongsBody.serializer(), DeleteSongsBody(ids)).toRequestBody(JSON)
+        return execute(Request.Builder().url(url(listOf("api", "v1", "cleanup", "delete"))).post(payload), null) {
+            downloadsJson.decodeFromString(serializer<List<DeleteSongResult>>(), it)
+        }
+    }
+
+    suspend fun blocklist(query: String?, limit: Int = 200, offset: Int = 0): BlocklistPage = get(
+        listOf("api", "v1", "blocklist"),
+        listOfNotNull(
+            query?.takeIf { it.isNotBlank() }?.let { "q" to it },
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+        ),
+    )
+
+    suspend fun unblock(id: Long) {
+        execute<Unit?>(Request.Builder().url(url(listOf("api", "v1", "blocklist", id.toString()))).delete(), null) { null }
+    }
+
+    // endregion
 
     private suspend fun create(body: CreateRequestBody): DownloadRequest {
         val payload = downloadsJson.encodeToString(CreateRequestBody.serializer(), body).toRequestBody(JSON)
@@ -135,7 +169,8 @@ class DownloadsClient(
         }
 
     private fun errorFor(code: Int, details: String?): DownloadsError = when (code) {
-        401, 403 -> DownloadsError.Unauthorized
+        401 -> DownloadsError.Unauthorized
+        403 -> DownloadsError.Forbidden
         409 -> DownloadsError.Disabled(details)
         else -> DownloadsError.Http(code, details)
     }

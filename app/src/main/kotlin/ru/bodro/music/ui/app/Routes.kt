@@ -22,8 +22,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object LikedRoute
 
-@Serializable data object DislikedRoute
-
 @Serializable data object PlaylistsRoute
 
 @Serializable data object ArtistsRoute
@@ -55,3 +53,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object AppearanceRoute
 
 @Serializable data object DownloadsRoute
+
+@Serializable data object CleanupRoute
+
+@Serializable data object BlocklistRoute

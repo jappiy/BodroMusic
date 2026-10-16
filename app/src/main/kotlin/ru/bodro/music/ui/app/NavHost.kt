@@ -12,7 +12,6 @@ import ru.bodro.music.data.repository.AlbumSort
 import ru.bodro.music.ui.screens.album.AlbumScreen
 import ru.bodro.music.ui.screens.artist.ArtistScreen
 import ru.bodro.music.ui.screens.collection.CollectionScreen
-import ru.bodro.music.ui.screens.collection.DislikedScreen
 import ru.bodro.music.ui.screens.collection.LikedScreen
 import ru.bodro.music.ui.screens.downloads.DownloadsScreen
 import ru.bodro.music.ui.screens.home.HomeScreen
@@ -28,6 +27,8 @@ import ru.bodro.music.ui.screens.search.SearchScreen
 import ru.bodro.music.ui.screens.settings.AboutScreen
 import ru.bodro.music.ui.screens.settings.AccountsScreen
 import ru.bodro.music.ui.screens.settings.AppearanceScreen
+import ru.bodro.music.ui.screens.settings.BlocklistScreen
+import ru.bodro.music.ui.screens.settings.CleanupScreen
 import ru.bodro.music.ui.screens.settings.LogDetailScreen
 import ru.bodro.music.ui.screens.settings.LogsScreen
 import ru.bodro.music.ui.screens.settings.PlaybackSettingsScreen
@@ -58,7 +59,6 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<CollectionRoute> {
             CollectionScreen(
                 onOpenLiked = { navController.navigate(LikedRoute) },
-                onOpenDisliked = { navController.navigate(DislikedRoute) },
                 onOpenPlaylists = { navController.navigate(PlaylistsRoute) },
                 onOpenArtists = { navController.navigate(ArtistsRoute) },
                 onOpenStarredArtists = { navController.navigate(StarredArtistsRoute) },
@@ -76,6 +76,8 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenWave = { navController.navigate(WaveSettingsRoute) },
                 onOpenAppearance = { navController.navigate(AppearanceRoute) },
                 onOpenDownloads = { navController.navigate(DownloadsRoute) },
+                onOpenCleanup = { navController.navigate(CleanupRoute) },
+                onOpenBlocklist = { navController.navigate(BlocklistRoute) },
                 onOpenVersions = { navController.navigate(VersionsRoute) },
                 onOpenLogs = { navController.navigate(LogsRoute) },
                 onOpenAbout = { navController.navigate(AboutRoute) },
@@ -87,7 +89,6 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<GenreRoute> { GenreScreen(onBack = back) }
         composable<WaveRoute> { WaveScreen(onBack = back) }
         composable<LikedRoute> { LikedScreen(onBack = back) }
-        composable<DislikedRoute> { DislikedScreen(onBack = back) }
         composable<PlaylistsRoute> { PlaylistsScreen(onBack = back) }
         composable<ArtistsRoute> { ArtistsScreen(onBack = back, starredOnly = false) }
         composable<StarredArtistsRoute> { ArtistsScreen(onBack = back, starredOnly = true) }
@@ -111,5 +112,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<WaveSettingsRoute> { WaveSettingsScreen(onBack = back) }
         composable<AppearanceRoute> { AppearanceScreen(onBack = back) }
         composable<DownloadsRoute> { DownloadsScreen(onBack = back) }
+        composable<CleanupRoute> { CleanupScreen(onBack = back) }
+        composable<BlocklistRoute> { BlocklistScreen(onBack = back) }
     }
 }

@@ -25,9 +25,13 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import okhttp3.OkHttpClient
+import ru.bodro.music.core.downloads.BlocklistPage
+import ru.bodro.music.core.downloads.CleanupUser
+import ru.bodro.music.core.downloads.DeleteSongResult
 import ru.bodro.music.core.downloads.DiscoverArtist
 import ru.bodro.music.core.downloads.DiscoverResult
 import ru.bodro.music.core.downloads.DiscoverTrack
+import ru.bodro.music.core.downloads.DislikedSong
 import ru.bodro.music.core.downloads.DownloadRequest
 import ru.bodro.music.core.downloads.DownloadsClient
 import ru.bodro.music.core.downloads.DownloadsConfig
@@ -115,6 +119,20 @@ class DownloadsRepository @Inject constructor(
         client.delete(request.id)
         refresh()
     }
+
+    // region «На удаление» и чёрный список
+
+    suspend fun cleanupUsers(): List<CleanupUser> = client.cleanupUsers()
+
+    suspend fun disliked(username: String?): List<DislikedSong> = client.disliked(username)
+
+    suspend fun deleteSongs(ids: List<String>): List<DeleteSongResult> = client.deleteSongs(ids)
+
+    suspend fun blocklist(query: String?, limit: Int, offset: Int): BlocklistPage = client.blocklist(query, limit, offset)
+
+    suspend fun unblock(id: Long) = client.unblock(id)
+
+    // endregion
 
     suspend fun refresh(): List<DownloadRequest> = client.requests().also { _requests.value = it }
 

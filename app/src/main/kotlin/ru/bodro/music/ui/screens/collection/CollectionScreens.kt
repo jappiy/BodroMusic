@@ -38,7 +38,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -47,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,7 +66,6 @@ import ru.bodro.music.R
 import ru.bodro.music.core.model.Album
 import ru.bodro.music.core.model.Artist
 import ru.bodro.music.core.model.QueueSource
-import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
@@ -89,7 +86,6 @@ import ru.bodro.music.ui.util.toUiError
 
 data class CollectionData(
     val likedSongs: List<Song> = emptyList(),
-    val dislikedCount: Int = 0,
     val starredArtists: List<Artist> = emptyList(),
     val starredAlbums: List<Album> = emptyList(),
     val error: UiError? = null,
@@ -103,12 +99,8 @@ class CollectionViewModel @Inject constructor(
     private val remote = MutableStateFlow(CollectionData())
 
     /** Лайки — из кэша Room (работает без сети), исполнители/альбомы — с сервера. */
-    val state: StateFlow<CollectionData> = combine(remote, reactions.observeLikedCache(), reactions.observeDisliked()) {
-            r,
-            liked,
-            disliked,
-        ->
-        r.copy(likedSongs = liked, dislikedCount = disliked.size)
+    val state: StateFlow<CollectionData> = combine(remote, reactions.observeLikedCache()) { r, liked ->
+        r.copy(likedSongs = liked)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CollectionData())
 
     init {
@@ -129,7 +121,6 @@ class CollectionViewModel @Inject constructor(
 @Composable
 fun CollectionScreen(
     onOpenLiked: () -> Unit,
-    onOpenDisliked: () -> Unit,
     onOpenPlaylists: () -> Unit,
     onOpenArtists: () -> Unit,
     onOpenStarredArtists: () -> Unit,
@@ -178,11 +169,6 @@ fun CollectionScreen(
                     pluralStringResource(R.plurals.tracks, state.likedSongs.size, state.likedSongs.size),
                     onOpenLiked,
                     "entry-liked",
-                )
-                CollectionEntryPainter(
-                    stringResource(R.string.disliked_title),
-                    pluralStringResource(R.plurals.tracks, state.dislikedCount, state.dislikedCount),
-                    onOpenDisliked,
                 )
                 CollectionEntry(
                     Icons.AutoMirrored.Rounded.QueueMusic,
@@ -239,25 +225,6 @@ private fun CollectionEntry(icon: ImageVector, title: String, subtitle: String?,
         },
         trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
         modifier = Modifier.clickable(onClick = onClick).testTag(tag),
-    )
-}
-
-@Composable
-private fun CollectionEntryPainter(title: String, subtitle: String, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
-        supportingContent = { Text(subtitle) },
-        leadingContent = {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_heart_broken), contentDescription = null) }
-            }
-        },
-        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
-        modifier = Modifier.clickable(onClick = onClick).testTag("entry-disliked"),
     )
 }
 
@@ -402,54 +369,5 @@ fun LikedScreen(onBack: () -> Unit, viewModel: LikedViewModel = hiltViewModel())
 
 @Composable
 private fun listTitle(state: LikedUi): String = state.genre ?: stringResource(R.string.liked_title)
-
-// endregion
-
-// region «Не нравится»
-
-@HiltViewModel
-class DislikedViewModel @Inject constructor(private val reactions: ReactionRepository) : ViewModel() {
-    val songs: StateFlow<List<Song>> = reactions.observeDisliked().stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList(),
-    )
-
-    fun undislike(song: Song) {
-        viewModelScope.launch { reactions.setReaction(song, Reaction.None) }
-    }
-}
-
-@Composable
-fun DislikedScreen(onBack: () -> Unit, viewModel: DislikedViewModel = hiltViewModel()) {
-    val songs by viewModel.songs.collectAsStateWithLifecycle()
-    val actions = LocalAppActions.current
-    Scaffold(topBar = { BodroTopBar(stringResource(R.string.disliked_title), onBack) }) { padding ->
-        if (songs.isEmpty()) {
-            EmptyState(stringResource(R.string.disliked_empty), stringResource(R.string.disliked_hint), Modifier.padding(padding))
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("disliked-screen")) {
-                item {
-                    Text(
-                        stringResource(R.string.disliked_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                }
-                itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { SongRow(song, onClick = { actions.play(songs, index) }) }
-                        TextButton(onClick = {
-                            viewModel.undislike(song)
-                        }, modifier = Modifier.padding(end = 8.dp).testTag("undislike-${song.id}")) {
-                            Text(stringResource(R.string.action_undislike_short))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 // endregion

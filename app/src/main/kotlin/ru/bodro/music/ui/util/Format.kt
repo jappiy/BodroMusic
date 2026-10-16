@@ -92,6 +92,7 @@ fun SubsonicError.toUiError(): UiError = when (this) {
 fun DownloadsError.toUiError(): UiError = when (this) {
     DownloadsError.NotConfigured -> UiError(R.string.downloads_error_not_configured)
     DownloadsError.Unauthorized -> UiError(R.string.downloads_error_unauthorized)
+    DownloadsError.Forbidden -> UiError(R.string.cleanup_admin_only)
     is DownloadsError.Disabled -> UiError(R.string.downloads_error_disabled, details)
     is DownloadsError.Network -> UiError(R.string.downloads_error_unreachable, details, isOffline = true)
     is DownloadsError.Http -> UiError(R.string.error_server_generic, "HTTP $status" + (details?.let { ": $it" } ?: ""))

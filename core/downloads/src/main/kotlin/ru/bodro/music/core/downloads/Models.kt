@@ -112,7 +112,55 @@ data class ServiceInfo(
     val trackDownloads: Boolean,
     val artistDownloads: Boolean,
     val metadataSources: List<String> = emptyList(),
+    /** На сервере настроен раздел «На удаление» (bodrod 0.3.0+ с доступом к БД Navidrome). */
+    val cleanup: Boolean = false,
+    /** Пользователь — администратор Navidrome: может удалять треки и править чёрный список. */
+    val admin: Boolean = false,
 )
+
+/** Пользователь Navidrome для вкладок «Не нравятся …» (служебные учётки сервер не отдаёт). */
+@Serializable
+data class CleanupUser(val username: String, val isAdmin: Boolean = false)
+
+/** Трек с дизлайком. [path] — путь к файлу относительно папки музыки на сервере. */
+@Serializable
+data class DislikedSong(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    val albumId: String? = null,
+    /** Секунды. */
+    val duration: Int? = null,
+    val size: Long? = null,
+    val suffix: String? = null,
+    val bitRate: Int? = null,
+    val path: String = "",
+    val dislikedBy: List<String> = emptyList(),
+)
+
+@Serializable
+data class DeleteSongResult(val id: String, val ok: Boolean, val message: String = "")
+
+/** Запись чёрного списка: трек удалён с сервера и не будет скачан снова. */
+@Serializable
+data class BlockEntry(
+    val id: Long,
+    val artist: String,
+    val title: String,
+    val album: String? = null,
+    val createdBy: String = "",
+    val createdAt: Long = 0,
+    /** Сколько раз файл удалялся: первое удаление и повторные появления. */
+    val removedCount: Int = 1,
+    val lastRemovedAt: Long? = null,
+)
+
+@Serializable
+data class BlocklistPage(val total: Int = 0, val items: List<BlockEntry> = emptyList())
+
+@Serializable
+internal data class DeleteSongsBody(val ids: List<String>)
 
 @Serializable
 internal data class CreateRequestBody(

@@ -113,9 +113,7 @@
     <string name="liked_wave">Волна по этому списку</string>
     <string name="liked_search_hint">Поиск в «Мне нравится»</string>
     <string name="liked_empty">Ставьте сердечко трекам — они появятся здесь</string>
-    <string name="disliked_title">Не нравится</string>
     <string name="disliked_empty">Нет дизлайков</string>
-    <string name="disliked_hint">Эти треки не попадают в «Мою волну» и миксы, но остаются в альбомах и поиске.</string>
     <string name="library_artists">Исполнители</string>
     <string name="library_albums">Альбомы</string>
     <string name="library_genres">Жанры</string>
@@ -310,6 +308,12 @@
         <item quantity="many">%d треков</item>
         <item quantity="other">%d трека</item>
     </plurals>
+    <plurals name="cleanup_delete_all_text">
+        <item quantity="one">%1$d трек из списка «%2$s» будет удалён с сервера навсегда и попадёт в чёрный список. Отменить это нельзя.</item>
+        <item quantity="few">%1$d трека из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
+        <item quantity="many">%1$d треков из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
+        <item quantity="other">%1$d трека из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
+    </plurals>
     <plurals name="albums">
         <item quantity="one">%d альбом</item>
         <item quantity="few">%d альбома</item>
@@ -362,6 +366,33 @@
     <string name="download_status_cancelled">Отменено</string>
     <string name="settings_downloads">Загрузки</string>
     <string name="settings_downloads_summary">Скачивание через slskd и Lidarr</string>
+    <string name="settings_cleanup_summary">Треки с дизлайками: удалить с сервера навсегда</string>
+    <string name="settings_blocklist_summary">Удалённые треки, которые не скачаются снова</string>
+
+    <!-- На удаление и чёрный список -->
+    <string name="cleanup_title">На удаление</string>
+    <string name="cleanup_group_everyone">Не нравятся всем</string>
+    <string name="cleanup_group_mine">Не нравятся мне</string>
+    <string name="cleanup_group_user">Не нравятся %1$s</string>
+    <string name="cleanup_hint">Удаление стирает файл с сервера навсегда и заносит трек в чёрный список: Lidarr, Soulseek и поиск больше его не скачают.</string>
+    <string name="cleanup_hint_readonly">Эти треки не попадают в «Мою волну» и миксы. Удалять треки с сервера могут только администраторы.</string>
+    <string name="cleanup_delete">Удалить</string>
+    <string name="cleanup_delete_all">Удалить все (%1$d)</string>
+    <string name="cleanup_delete_one_title">Удалить трек с сервера?</string>
+    <string name="cleanup_delete_one_text">«%1$s» будет удалён с сервера навсегда и попадёт в чёрный список. Отменить это нельзя.</string>
+    <string name="cleanup_delete_all_title">Удалить весь список?</string>
+    <string name="cleanup_deleted">Удалено</string>
+    <string name="cleanup_failed">ошибок</string>
+    <string name="cleanup_admin_only">Доступно только администраторам</string>
+    <string name="blocklist_title">Чёрный список</string>
+    <string name="blocklist_search">Поиск по исполнителю или названию</string>
+    <string name="blocklist_empty">Чёрный список пуст</string>
+    <string name="blocklist_not_found">Ничего не найдено</string>
+    <string name="blocklist_hint">Сюда попадают треки, удалённые в разделе «На удаление». Они не скачаются снова, а если появятся в библиотеке, сервер удалит их.</string>
+    <string name="blocklist_entry_summary">Удалил %1$s · %2$s · удалений: %3$d</string>
+    <string name="blocklist_unblock">Разблокировать</string>
+    <string name="blocklist_unblock_title">Разблокировать трек?</string>
+    <string name="blocklist_unblock_text">«%1$s» снова можно будет скачать. Сам файл не вернётся: его нужно скачать заново.</string>
     <string name="downloads_url">Адрес сервиса загрузок</string>
     <string name="downloads_url_hint">Например, 192.168.1.10:8790</string>
     <string name="downloads_url_help">Сервис bodrod работает на сервере рядом с Navidrome (инструкция — server/README.md в репозитории). Вход — той же учёткой Navidrome.</string>

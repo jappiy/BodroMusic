@@ -96,6 +96,40 @@ class DownloadsClientTest {
     }
 
     @Test
+    fun `cleanup endpoints`() = runTest {
+        server.enqueue(
+            json(
+                """[{"id":"s1","title":"Город Сочи","artist":"Трофим","albumId":"al1","duration":200,
+                "path":"library/Трофим/x.mp3","dislikedBy":["masha","vasya"],"extra":1}]""",
+            ),
+        )
+        server.enqueue(json("""[{"id":"s1","ok":true,"message":"Удалён"}]"""))
+        server.enqueue(json("""{"total":1,"items":[{"id":7,"artist":"Трофим","title":"Город Сочи","createdBy":"vasya"}]}"""))
+        server.enqueue(MockResponse.Builder().code(204).build())
+        server.enqueue(json("""{"detail":"Доступно только администраторам"}""", code = 403))
+
+        val songs = client().disliked(username = null)
+        assertEquals(listOf("masha", "vasya"), songs.single().dislikedBy)
+        assertEquals("/bodrod/api/v1/cleanup/disliked", server.takeRequest().url.encodedPath)
+
+        assertTrue(client().deleteSongs(listOf("s1")).single().ok)
+        val delete = server.takeRequest()
+        assertEquals("POST", delete.method)
+        assertEquals("""{"ids":["s1"]}""", delete.body!!.utf8())
+
+        val page = client().blocklist("сочи")
+        assertEquals(7L, page.items.single().id)
+        assertEquals("сочи", server.takeRequest().url.queryParameter("q"))
+
+        client().unblock(7)
+        val unblock = server.takeRequest()
+        assertEquals("DELETE", unblock.method)
+        assertEquals("/bodrod/api/v1/blocklist/7", unblock.url.encodedPath)
+
+        expect(DownloadsError.Forbidden) { client().cleanupUsers() }
+    }
+
+    @Test
     fun `delete accepts empty 204`() = runTest {
         server.enqueue(MockResponse.Builder().code(204).build())
         client().delete("r1")
