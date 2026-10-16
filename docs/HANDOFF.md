@@ -161,7 +161,29 @@ Smoke-тест против реального Navidrome: скопировать
   (проверять в `POST /api/v1/requests` и в воркере перед размещением), затем `startScan`.
 - Строка «Не нравится» в коллекции — `ui/screens/collection/CollectionScreens.kt` (`onOpenDisliked`, `DislikedScreen`).
 
-Статус: заданы встречные вопросы владельцу, реализация не начата.
+Решения владельца: удаляют только админы Navidrome; «всем» = все люди, кроме служебных учёток (`bodrod`);
+Lidarr — вариант «Б» (мониторинг альбома снимается, только когда в нём не осталось файлов); блоклист по
+«исполнитель + название»; отдельный экран «Чёрный список» с поиском и разблокировкой через диалог; удаление
+безвозвратное; подтверждение на каждое удаление; «Вернуть» перенесена в «Не нравятся мне».
+
+Статус: **реализовано** — bodrod 0.3.0 (`server/bodrod/cleanup.py`, `navidrome_db.py`, тесты `tests/test_cleanup.py`)
+и приложение 0.9.0 (`ui/screens/settings/CleanupScreens.kt`). Устройство серверной части — `docs/INFRA.md`.
+
+Что нужно сделать на сервере (DSM → проект `bodrod` → YAML), затем пересобрать проект:
+```yaml
+image: ghcr.io/jappiy/bodromusic-server:<хеш коммита>
+volumes:
+  - /volume1/docker/bodromusic/navidrome:/navidrome          # БД Navidrome (без :ro — нужен файл -shm)
+  - /volume1/docker/beets/config/slsk:/slsk-worker           # очередь slsk-worker
+environment:
+  NAVIDROME_DB: /navidrome/navidrome.db
+  LIDARR_MUSIC_DIR: /volume2/music
+  SLSK_WORKER_QUEUE: /slsk-worker/queue.txt
+```
+Проверить в Lidarr: Settings → Media Management → Recycling Bin пуст (иначе удалённое уйдёт в корзину).
+
+Не сделано: объединение DSM-проектов `bodromusic`, `bodrod`, `slskd`, `soularr`, `beets` в один (владелец разрешил).
+Нужны текущие YAML этих проектов из DSM; при объединении сохранить имена контейнеров и сети или перейти на одну сеть.
 
 ### Продолжение на компьютере владельца (Windows, папка `C:\Проекты\BodroMusic`)
 
