@@ -5,6 +5,7 @@ Android-клиент для домашнего сервера **Navidrome** (Sub
 
 Техзадание — [docs/SPEC.md](docs/SPEC.md), план и архитектура — [docs/PLAN.md](docs/PLAN.md),
 история изменений — [CHANGELOG.md](CHANGELOG.md).
+Текущее состояние и передача работы — [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Модули
 
