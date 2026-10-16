@@ -112,7 +112,7 @@ class ViewModelTests {
         advanceUntilIdle()
         assertEquals(R.string.error_wrong_credentials, (vm.state.value as LoadState.Error).error.message)
 
-        val data = HomeData(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        val data = HomeData(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         coEvery { library.home() } returns data
         vm.load()
         advanceUntilIdle()

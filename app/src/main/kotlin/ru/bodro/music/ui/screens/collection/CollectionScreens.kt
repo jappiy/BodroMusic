@@ -70,6 +70,7 @@ import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.data.repository.ListeningStats
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.ui.app.LocalAppActions
 import ru.bodro.music.ui.app.LocalNavigator
@@ -88,6 +89,8 @@ data class CollectionData(
     val likedSongs: List<Song> = emptyList(),
     val starredArtists: List<Artist> = emptyList(),
     val starredAlbums: List<Album> = emptyList(),
+    /** Статистика прослушиваний (null — ещё не загружена или сервер недоступен). */
+    val stats: ListeningStats? = null,
     val error: UiError? = null,
 )
 
@@ -115,6 +118,9 @@ class CollectionViewModel @Inject constructor(
                 }
                 .onFailure { e -> remote.update { it.copy(error = e.toUiError()) } }
         }
+        viewModelScope.launch {
+            runCatching { library.listeningStats() }.onSuccess { stats -> remote.update { it.copy(stats = stats) } }
+        }
     }
 }
 
@@ -133,13 +139,22 @@ fun CollectionScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
     val navigator = LocalNavigator.current
+    val favoriteTracksTitle = stringResource(R.string.collection_favorite_tracks)
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding().testTag("collection-screen"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             Text(
                 stringResource(R.string.tab_collection),
                 style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = if (state.stats == null) 12.dp else 0.dp),
             )
+            state.stats?.let { stats ->
+                Text(
+                    stringResource(R.string.collection_total_plays, formatCount(stats.totalPlays)),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 12.dp).testTag("collection-total-plays"),
+                )
+            }
         }
         item {
             // «Моя волна по коллекции».
@@ -179,8 +194,34 @@ fun CollectionScreen(
                 )
             }
         }
+        val topArtists = state.stats?.topArtists.orEmpty()
+        if (topArtists.isNotEmpty()) {
+            item { SectionHeader(stringResource(R.string.collection_favorite_artists)) }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(topArtists, key = { it.artist.id }) { (artist, plays) ->
+                        ArtistCircle(
+                            artist,
+                            onClick = { navigator.openArtist(artist.id) },
+                            subtitle = pluralStringResource(R.plurals.plays, plays.toInt(), plays.toInt()),
+                        )
+                    }
+                }
+            }
+        }
+        val topSongs = state.stats?.topSongs.orEmpty()
+        if (topSongs.isNotEmpty()) {
+            item { SectionHeader(favoriteTracksTitle) }
+            itemsIndexed(topSongs.take(FAVORITE_TRACKS_SHOWN), key = { _, song -> "top-${song.id}" }) { index, song ->
+                SongRow(
+                    song,
+                    onClick = { actions.play(topSongs, index, QueueSource.CustomSource(favoriteTracksTitle)) },
+                    showPlays = true,
+                )
+            }
+        }
         if (state.starredArtists.isNotEmpty()) {
-            item { SectionHeader(stringResource(R.string.collection_favorite_artists), onShowAll = onOpenStarredArtists) }
+            item { SectionHeader(stringResource(R.string.collection_starred_artists), onShowAll = onOpenStarredArtists) }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(state.starredArtists, key = { it.id }) { ArtistCircle(it, onClick = { navigator.openArtist(it.id) }) }
@@ -206,6 +247,11 @@ fun CollectionScreen(
         }
     }
 }
+
+private const val FAVORITE_TRACKS_SHOWN = 10
+
+/** 12345 → «12 345». */
+private fun formatCount(value: Long): String = "%,d".format(java.util.Locale.forLanguageTag("ru"), value)
 
 @Composable
 private fun CollectionEntry(icon: ImageVector, title: String, subtitle: String?, onClick: () -> Unit, tag: String) {

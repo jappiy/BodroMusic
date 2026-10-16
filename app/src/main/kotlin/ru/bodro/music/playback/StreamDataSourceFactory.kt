@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -24,6 +25,7 @@ import ru.bodro.music.core.domain.player.StreamParamsResolver
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.subsonic.SubsonicClient
 import ru.bodro.music.data.account.ConnectionManager
+import ru.bodro.music.data.offline.OfflineStore
 import ru.bodro.music.data.settings.SettingsRepository
 
 /** Кэш стрима (LRU). Размер берётся из настроек при первом обращении — изменение применяется после перезапуска. */
@@ -49,17 +51,20 @@ class PlayerCache @Inject constructor(
 }
 
 /**
- * `bodro://song/<id>` → подписанный URL `stream.view` с параметрами качества (Wi-Fi / мобильная сеть).
+ * `bodro://song/<id>` → скачанный файл лайкнутого трека, если он есть,
+ * иначе подписанный URL `stream.view` с параметрами качества.
  * Ключ кэша не содержит токенов: `account:song:quality:codec`.
  */
 @OptIn(UnstableApi::class)
 @Singleton
 class StreamDataSourceFactory @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val http: OkHttpClient,
     private val client: SubsonicClient,
     private val settings: SettingsRepository,
     private val connection: ConnectionManager,
     private val playerCache: PlayerCache,
+    private val offline: OfflineStore,
 ) {
     fun create(): DataSource.Factory {
         val upstream = OkHttpDataSource.Factory(http)
@@ -67,15 +72,18 @@ class StreamDataSourceFactory @Inject constructor(
             .setCache(playerCache.cache)
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        return ResolvingDataSource.Factory(cached) { spec -> resolve(spec) }
+        // DefaultDataSource: file:// (скачанные лайки) — с диска, http(s) — через кэш стрима.
+        return ResolvingDataSource.Factory(DefaultDataSource.Factory(context, cached)) { spec -> resolve(spec) }
     }
 
-    fun currentQuality(): StreamQuality =
-        if (connection.isOnUnmeteredNetwork) settings.current.qualityWifi else settings.current.qualityMobile
+    fun currentQuality(): StreamQuality = settings.current.quality
 
     private fun resolve(spec: DataSpec): DataSpec {
         if (spec.uri.scheme != MediaItemFactory.SCHEME) return spec
         val songId = spec.uri.lastPathSegment ?: throw IOException("Пустой id трека")
+        connection.activeAccountId?.let { offline.localFile(it, songId) }?.let { file ->
+            return spec.buildUpon().setUri(Uri.fromFile(file)).setKey(null).build()
+        }
         val quality = currentQuality()
         val codec = settings.current.transcodeCodec
         val params = StreamParamsResolver.resolve(quality, codec)

@@ -3,6 +3,7 @@ package ru.bodro.music.ui.screens.player
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -38,6 +40,8 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,11 +60,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -80,7 +87,11 @@ import ru.bodro.music.ui.util.formatMs
 
 private enum class PlayerSheet { None, Queue, Lyrics, Sleep }
 
-/** Полноэкранный плеер: фон и акцент в цвет обложки, waveform-сикбар, бейдж качества. */
+/**
+ * Полноэкранный плеер: фон и акцент в цвет обложки, waveform-сикбар.
+ * Дизлайк и лайк — по краям от кнопок переключения; внизу единый блок «повтор / перемешивание / текст».
+ * Очередь, таймер сна и волна по треку — в меню «⋮».
+ */
 @Composable
 fun FullPlayerScreen(
     onCollapse: () -> Unit,
@@ -98,6 +109,7 @@ fun FullPlayerScreen(
     val content = colors?.onBackground ?: MaterialTheme.colorScheme.onSurface
     val accent = colors?.accent ?: MaterialTheme.colorScheme.primary
     var sheet by rememberSaveable { mutableStateOf(PlayerSheet.None) }
+    var menuOpen by remember { mutableStateOf(false) }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     var coverDrag by remember { mutableFloatStateOf(0f) }
 
@@ -135,10 +147,21 @@ fun FullPlayerScreen(
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    textAlign = TextAlign.Center,
                 )
-                IconButton(onClick = { actions.showSongMenu(song) }) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.action_more), tint = content)
+                Box {
+                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("player-menu")) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.action_more), tint = content)
+                    }
+                    PlayerMenu(
+                        expanded = menuOpen,
+                        sleepActive = state.sleepTimer != null,
+                        onDismiss = { menuOpen = false },
+                        onQueue = { sheet = PlayerSheet.Queue },
+                        onSleep = { sheet = PlayerSheet.Sleep },
+                        onWave = { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) },
+                        onSongActions = { actions.showSongMenu(song) },
+                    )
                 }
             }
             Spacer(Modifier.weight(0.5f))
@@ -171,65 +194,32 @@ fun FullPlayerScreen(
                 )
             }
             Spacer(Modifier.weight(0.5f))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+            // Название, исполнитель и альбом — на всю ширину.
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    song.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = content,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("player-title"),
+                )
+                Text(
+                    song.artist.orEmpty(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(enabled = song.artistId != null) { song.artistId?.let(navigator::openArtist) },
+                )
+                song.album?.let { album ->
                     Text(
-                        song.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = content,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("player-title"),
-                    )
-                    Text(
-                        song.artist.orEmpty(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = accent,
+                        album,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = content.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(enabled = song.artistId != null) { song.artistId?.let(navigator::openArtist) },
-                    )
-                    song.album?.let { album ->
-                        Text(
-                            album,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = content.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable(enabled = song.albumId != null) { song.albumId?.let(navigator::openAlbum) },
-                        )
-                    }
-                }
-                IconButton(onClick = { actions.toggleDislike(song) }, modifier = Modifier.testTag("player-dislike")) {
-                    Icon(
-                        painterResource(R.drawable.ic_heart_broken),
-                        contentDescription = stringResource(
-                            if (reaction ==
-                                Reaction.Disliked
-                            ) {
-                                R.string.action_undislike
-                            } else {
-                                R.string.action_dislike
-                            },
-                        ),
-                        tint = if (reaction == Reaction.Disliked) accent else content.copy(alpha = 0.8f),
-                        modifier = Modifier.testTag(if (reaction == Reaction.Disliked) "icon-disliked" else "icon-not-disliked"),
-                    )
-                }
-                IconButton(onClick = { actions.toggleLike(song) }, modifier = Modifier.testTag("player-like")) {
-                    Icon(
-                        if (reaction == Reaction.Liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        contentDescription = stringResource(
-                            if (reaction ==
-                                Reaction.Liked
-                            ) {
-                                R.string.action_unlike
-                            } else {
-                                R.string.action_like
-                            },
-                        ),
-                        tint = if (reaction == Reaction.Liked) accent else content,
-                        modifier = Modifier.testTag(if (reaction == Reaction.Liked) "icon-liked" else "icon-not-liked"),
+                        modifier = Modifier.clickable(enabled = song.albumId != null) { song.albumId?.let(navigator::openAlbum) },
                     )
                 }
             }
@@ -245,8 +235,6 @@ fun FullPlayerScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(formatMs(state.positionMs), style = MaterialTheme.typography.labelMedium, color = content.copy(alpha = 0.75f))
                 Spacer(Modifier.weight(1f))
-                state.quality?.let { badge -> QualityChip(badge.label, badge.lossless, accent, content) }
-                Spacer(Modifier.weight(1f))
                 Text(
                     "−" + formatMs((state.durationMs - state.positionMs).coerceAtLeast(0)),
                     style = MaterialTheme.typography.labelMedium,
@@ -255,12 +243,16 @@ fun FullPlayerScreen(
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = viewModel::cycleRepeat, modifier = Modifier.testTag("player-repeat")) {
-                    Icon(
-                        if (state.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        contentDescription = stringResource(R.string.action_repeat),
-                        tint = if (state.repeatMode == RepeatMode.Off) content.copy(alpha = 0.6f) else accent,
-                    )
+                val disliked = reaction == Reaction.Disliked
+                ReactionButton(
+                    active = disliked,
+                    onClick = { actions.toggleDislike(song) },
+                    description = stringResource(if (disliked) R.string.action_undislike else R.string.action_dislike),
+                    content = content,
+                    buttonTag = "player-dislike",
+                    iconTag = if (disliked) "icon-disliked" else "icon-not-disliked",
+                ) { tint, description ->
+                    Icon(painterResource(R.drawable.ic_heart_broken), contentDescription = description, tint = tint)
                 }
                 IconButton(onClick = viewModel::previous, modifier = Modifier.size(56.dp)) {
                     Icon(
@@ -294,35 +286,52 @@ fun FullPlayerScreen(
                         modifier = Modifier.size(40.dp),
                     )
                 }
-                IconButton(onClick = viewModel::toggleShuffle, modifier = Modifier.testTag("player-shuffle")) {
+                val liked = reaction == Reaction.Liked
+                ReactionButton(
+                    active = liked,
+                    onClick = { actions.toggleLike(song) },
+                    description = stringResource(if (liked) R.string.action_unlike else R.string.action_like),
+                    content = content,
+                    buttonTag = "player-like",
+                    iconTag = if (liked) "icon-liked" else "icon-not-liked",
+                ) { tint, description ->
                     Icon(
-                        Icons.Rounded.Shuffle,
-                        contentDescription = stringResource(R.string.action_shuffle),
-                        tint = if (state.shuffle) accent else content.copy(alpha = 0.6f),
+                        if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = description,
+                        tint = tint,
                     )
                 }
             }
             Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            // Нижняя панель — единый блок: повтор, перемешивание, текст песни.
+            Row(
+                Modifier
+                    .padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(content.copy(alpha = 0.10f))
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .testTag("player-bottom-bar"),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 BottomAction(
-                    Icons.Rounded.Bedtime,
-                    stringResource(R.string.player_sleep_timer),
+                    if (state.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                    stringResource(R.string.action_repeat),
                     content,
-                    active = state.sleepTimer != null,
-                ) {
-                    sheet =
-                        PlayerSheet.Sleep
-                }
-                BottomAction(Icons.AutoMirrored.Rounded.QueueMusic, stringResource(R.string.player_queue), content, tag = "open-queue") {
-                    sheet =
-                        PlayerSheet.Queue
-                }
+                    active = state.repeatMode != RepeatMode.Off,
+                    tag = "player-repeat",
+                    onClick = viewModel::cycleRepeat,
+                )
+                BottomAction(
+                    Icons.Rounded.Shuffle,
+                    stringResource(R.string.action_shuffle),
+                    content,
+                    active = state.shuffle,
+                    tag = "player-shuffle",
+                    onClick = viewModel::toggleShuffle,
+                )
                 BottomAction(Icons.Rounded.Lyrics, stringResource(R.string.player_lyrics), content, tag = "open-lyrics") {
-                    sheet =
-                        PlayerSheet.Lyrics
-                }
-                BottomAction(Icons.Rounded.Waves, stringResource(R.string.player_wave_by_track), content) {
-                    actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre)))
+                    sheet = PlayerSheet.Lyrics
                 }
             }
         }
@@ -351,7 +360,7 @@ fun FullPlayerScreen(
 
 @Composable
 private fun BottomAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     tint: Color,
     active: Boolean = false,
@@ -360,26 +369,71 @@ private fun BottomAction(
 ) {
     val accent = LocalPlayerColors.current?.accent ?: MaterialTheme.colorScheme.primary
     IconButton(onClick = onClick, modifier = if (tag != null) Modifier.testTag(tag) else Modifier) {
-        Icon(icon, contentDescription = label, tint = if (active) accent else tint.copy(alpha = 0.85f))
+        Icon(icon, contentDescription = label, tint = if (active) accent else tint.copy(alpha = 0.6f))
+    }
+}
+
+/** Лайк/дизлайк: поставленная отметка — красная обводка и подложка, чтобы было сразу видно. */
+@Composable
+private fun ReactionButton(
+    active: Boolean,
+    onClick: () -> Unit,
+    description: String,
+    content: Color,
+    buttonTag: String,
+    iconTag: String,
+    icon: @Composable (tint: Color, description: String) -> Unit,
+) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .then(if (active) Modifier.background(ReactionRed.copy(alpha = 0.18f)).border(2.dp, ReactionRed, CircleShape) else Modifier)
+            .clickable(onClick = onClick, role = Role.Button)
+            .testTag(buttonTag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.testTag(iconTag)) { icon(if (active) ReactionRed else content.copy(alpha = 0.8f), description) }
+    }
+}
+
+private val ReactionRed = Color(0xFFE53935)
+
+@Composable
+private fun PlayerMenu(
+    expanded: Boolean,
+    sleepActive: Boolean,
+    onDismiss: () -> Unit,
+    onQueue: () -> Unit,
+    onSleep: () -> Unit,
+    onWave: () -> Unit,
+    onSongActions: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        PlayerMenuItem(Icons.AutoMirrored.Rounded.QueueMusic, R.string.player_queue, "open-queue", onDismiss, onQueue)
+        PlayerMenuItem(
+            Icons.Rounded.Bedtime,
+            if (sleepActive) R.string.player_sleep_timer_on else R.string.player_sleep_timer,
+            "open-sleep",
+            onDismiss,
+            onSleep,
+        )
+        PlayerMenuItem(Icons.Rounded.Waves, R.string.player_wave_by_track, "open-wave", onDismiss, onWave)
+        PlayerMenuItem(Icons.Rounded.MoreHoriz, R.string.player_song_actions, "open-song-menu", onDismiss, onSongActions)
     }
 }
 
 @Composable
-fun QualityChip(label: String, lossless: Boolean, accent: Color, content: Color) {
-    Row(
-        Modifier
-            .clip(CircleShape)
-            .background(content.copy(alpha = 0.10f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .testTag("quality-badge"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        if (lossless) {
-            Text(stringResource(R.string.quality_lossless), style = MaterialTheme.typography.labelSmall, color = accent)
-        }
-        Text(label, style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.85f))
-    }
+private fun PlayerMenuItem(icon: ImageVector, label: Int, tag: String, onDismiss: () -> Unit, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(stringResource(label)) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        onClick = {
+            onDismiss()
+            onClick()
+        },
+        modifier = Modifier.testTag(tag),
+    )
 }
 
 private fun Color.compositeOver(background: Color): Color {

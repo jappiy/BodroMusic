@@ -20,6 +20,8 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,7 +50,7 @@ import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.theme.LocalPlayerColors
 
 /**
- * Мини-плеер над нижней панелью: обложка, название, исполнитель, сердце, play/pause, тонкий прогресс.
+ * Мини-плеер над нижней панелью: обложка, название, исполнитель, сердце, назад / play-pause / вперёд, тонкий прогресс.
  * Свайп вверх — полный плеер, влево/вправо — следующий/предыдущий трек.
  */
 @Composable
@@ -128,22 +130,32 @@ fun MiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = onToggleLike, modifier = Modifier.testTag("mini-like")) {
+            IconButton(onClick = onToggleLike, modifier = Modifier.size(40.dp).testTag("mini-like")) {
                 Icon(
                     if (reaction == Reaction.Liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = stringResource(if (reaction == Reaction.Liked) R.string.action_unlike else R.string.action_like),
                     tint = if (reaction == Reaction.Liked) accent else content,
                 )
             }
+            IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp).testTag("mini-previous")) {
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.action_previous), tint = content)
+            }
             Box(contentAlignment = Alignment.Center) {
                 if (state.isBuffering) CircularProgressIndicator(Modifier.size(36.dp), color = accent, strokeWidth = 2.dp)
-                IconButton(onClick = onTogglePlay, modifier = Modifier.testTag("mini-play")) {
+                IconButton(onClick = onTogglePlay, modifier = Modifier.size(40.dp).testTag("mini-play")) {
                     Icon(
                         if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
                         tint = content,
                     )
                 }
+            }
+            IconButton(onClick = onNext, enabled = state.hasNext, modifier = Modifier.size(40.dp).testTag("mini-next")) {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = stringResource(R.string.action_next),
+                    tint = if (state.hasNext) content else content.copy(alpha = 0.4f),
+                )
             }
         }
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f

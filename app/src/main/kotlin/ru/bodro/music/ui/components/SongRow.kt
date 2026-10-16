@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +49,8 @@ fun SongRow(
     number: Int? = null,
     showCover: Boolean = number == null,
     menuContext: SongMenuContext = SongMenuContext(),
+    /** Показать в подписи число прослушиваний (группа «Любимые треки»). */
+    showPlays: Boolean = false,
 ) {
     val actions = LocalAppActions.current
     val reaction = LocalReactions.current.of(song)
@@ -90,8 +93,9 @@ fun SongRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val plays = song.playCount?.takeIf { showPlays && it > 0 }?.toInt()?.let { pluralStringResource(R.plurals.plays, it, it) }
             Text(
-                listOfNotNull(song.artist, song.duration.takeIf { it > 0 }?.let { formatDuration(it.toLong()) }).joinToString(" · "),
+                listOfNotNull(song.artist, song.duration.takeIf { it > 0 }?.let { formatDuration(it.toLong()) }, plays).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

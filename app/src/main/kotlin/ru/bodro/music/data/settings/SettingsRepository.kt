@@ -31,11 +31,13 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
     val coverColors: Boolean = true,
     val dynamicColor: Boolean = false,
-    val qualityWifi: StreamQuality = StreamQuality.Original,
-    val qualityMobile: StreamQuality = StreamQuality.Kbps192,
+    /** Качество воспроизведения: «Оригинал» или «Медленный интернет» (минимальный битрейт) — одно на все сети. */
+    val quality: StreamQuality = StreamQuality.Original,
     val transcodeCodec: TranscodeCodec = TranscodeCodec.Mp3,
     val cacheSizeMb: Int = DEFAULT_CACHE_MB,
     val resumeOnStart: Boolean = true,
+    /** Скачивать лайкнутые треки в память телефона для прослушивания без сети. */
+    val downloadLiked: Boolean = false,
     val logLevel: NetworkLogLevel = NetworkLogLevel.Normal,
     val waveDiscoveryShare: Float = DEFAULT_DISCOVERY,
     /** Пропуски раньше этого момента не учитываются волной («Сбросить статистику пропусков»). */
@@ -45,7 +47,11 @@ data class AppSettings(
     companion object {
         const val DEFAULT_CACHE_MB = 1024
         const val DEFAULT_DISCOVERY = 0.2f
-        val CACHE_SIZES_MB = listOf(256, 512, 1024, 2048, 4096, 8192)
+        const val MIN_CACHE_MB = 100
+        const val MAX_CACHE_MB = 100_000
+
+        /** Варианты качества в настройках. */
+        val QUALITIES = listOf(StreamQuality.Original, StreamQuality.Kbps128)
     }
 }
 
@@ -71,11 +77,11 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.theme] = updated.themeMode.name
             prefs[Keys.coverColors] = updated.coverColors
             prefs[Keys.dynamicColor] = updated.dynamicColor
-            prefs[Keys.qualityWifi] = updated.qualityWifi.name
-            prefs[Keys.qualityMobile] = updated.qualityMobile.name
+            prefs[Keys.quality] = updated.quality.name
             prefs[Keys.codec] = updated.transcodeCodec.name
             prefs[Keys.cacheSize] = updated.cacheSizeMb
             prefs[Keys.resume] = updated.resumeOnStart
+            prefs[Keys.downloadLiked] = updated.downloadLiked
             prefs[Keys.logLevel] = updated.logLevel.name
             prefs[Keys.discovery] = updated.waveDiscoveryShare
             prefs[Keys.skipReset] = updated.skipStatsResetAt
@@ -88,11 +94,11 @@ class SettingsRepository @Inject constructor(
         themeMode = enumOr(this[Keys.theme], ThemeMode.System),
         coverColors = this[Keys.coverColors] ?: true,
         dynamicColor = this[Keys.dynamicColor] ?: false,
-        qualityWifi = enumOr(this[Keys.qualityWifi], StreamQuality.Original),
-        qualityMobile = enumOr(this[Keys.qualityMobile], StreamQuality.Kbps192),
+        quality = enumOr(this[Keys.quality], StreamQuality.Original).let { if (it.isOriginal) it else StreamQuality.Kbps128 },
         transcodeCodec = enumOr(this[Keys.codec], TranscodeCodec.Mp3),
         cacheSizeMb = this[Keys.cacheSize] ?: AppSettings.DEFAULT_CACHE_MB,
         resumeOnStart = this[Keys.resume] ?: true,
+        downloadLiked = this[Keys.downloadLiked] ?: false,
         logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
         waveDiscoveryShare = this[Keys.discovery] ?: AppSettings.DEFAULT_DISCOVERY,
         skipStatsResetAt = this[Keys.skipReset] ?: 0,
@@ -106,11 +112,11 @@ class SettingsRepository @Inject constructor(
         val theme = stringPreferencesKey("theme")
         val coverColors = booleanPreferencesKey("cover_colors")
         val dynamicColor = booleanPreferencesKey("dynamic_color")
-        val qualityWifi = stringPreferencesKey("quality_wifi")
-        val qualityMobile = stringPreferencesKey("quality_mobile")
+        val quality = stringPreferencesKey("quality")
         val codec = stringPreferencesKey("transcode_codec")
         val cacheSize = intPreferencesKey("cache_size_mb")
         val resume = booleanPreferencesKey("resume_on_start")
+        val downloadLiked = booleanPreferencesKey("download_liked")
         val logLevel = stringPreferencesKey("log_level")
         val discovery = floatPreferencesKey("wave_discovery")
         val skipReset = longPreferencesKey("skip_stats_reset_at")

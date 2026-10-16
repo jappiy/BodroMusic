@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -122,11 +123,6 @@ fun HomeScreen(
                     }, data.recentAlbums, { onShowAllAlbums(AlbumSort.Recent) }, { it.id }) { album ->
                         BigAlbumCard(album, onClick = { navigator.openAlbum(album.id) })
                     }
-                    carousel("frequent", {
-                        stringResource(R.string.home_frequent)
-                    }, data.frequentAlbums, { onShowAllAlbums(AlbumSort.Frequent) }, { it.id }) { album ->
-                        AlbumCard(album, onClick = { navigator.openAlbum(album.id) })
-                    }
                     carousel("artists", {
                         stringResource(R.string.home_random_artists)
                     }, data.randomArtists, onShowArtists, { it.id }) { artist ->
@@ -151,6 +147,8 @@ private fun WaveHero(player: PlayerUiState, onOpenWave: () -> Unit, onTogglePlay
     Box(
         Modifier
             .fillMaxWidth()
+            // Блок не должен заходить под системную строку состояния (edge-to-edge).
+            .statusBarsPadding()
             .padding(start = 12.dp, end = 12.dp, top = 12.dp)
             .clip(RoundedCornerShape(28.dp))
             .clickable(onClick = onOpenWave)

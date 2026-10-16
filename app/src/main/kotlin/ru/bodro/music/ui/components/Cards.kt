@@ -138,7 +138,7 @@ fun BigAlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-fun ArtistCircle(artist: Artist, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 112.dp) {
+fun ArtistCircle(artist: Artist, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 112.dp, subtitle: String? = null) {
     Column(
         modifier.width(size).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -152,6 +152,16 @@ fun ArtistCircle(artist: Artist, onClick: () -> Unit, modifier: Modifier = Modif
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
+        subtitle?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

@@ -145,7 +145,7 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
                                 TopLevel.entries.forEach { tab ->
                                     NavigationRailItem(
                                         selected = selectedTab == tab,
-                                        onClick = { navController.navigateTopLevel(tab) },
+                                        onClick = { navController.onTabClick(tab, selectedTab) },
                                         icon = { Icon(tab.icon, contentDescription = null) },
                                         label = { Text(stringResource(tab.label)) },
                                         modifier = Modifier.testTag(tab.tag),
@@ -182,7 +182,7 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
                                             TopLevel.entries.forEach { tab ->
                                                 NavigationBarItem(
                                                     selected = selectedTab == tab,
-                                                    onClick = { navController.navigateTopLevel(tab) },
+                                                    onClick = { navController.onTabClick(tab, selectedTab) },
                                                     icon = { Icon(tab.icon, contentDescription = null) },
                                                     label = { Text(stringResource(tab.label)) },
                                                     modifier = Modifier.testTag(tab.tag),
@@ -231,6 +231,19 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
                 onDismiss = viewModel::dismissPlaylistPicker,
             )
         }
+    }
+}
+
+/**
+ * Нажатие на вкладку: если открыт другой раздел — вернуться в него на тот экран, где был пользователь;
+ * повторное нажатие на уже открытый раздел — на начальный экран раздела.
+ */
+private fun NavHostController.onTabClick(tab: TopLevel, selected: TopLevel) {
+    if (tab == selected) {
+        val atRoot = currentBackStackEntry?.destination?.hasRoute(tab.routeClass) == true
+        if (!atRoot && !popBackStack(tab.route, inclusive = false)) navigateTopLevel(tab)
+    } else {
+        navigateTopLevel(tab)
     }
 }
 

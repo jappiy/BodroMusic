@@ -52,7 +52,7 @@ class PlaybackUiTest {
 
         compose.onNodeWithTag("mini-player").performClick()
         compose.waitForTag("full-player")
-        compose.waitForTag("quality-badge")
+        compose.waitForTag("player-bottom-bar")
 
         compose.onNodeWithTag("player-like").performClick()
         compose.waitForTag("icon-liked")

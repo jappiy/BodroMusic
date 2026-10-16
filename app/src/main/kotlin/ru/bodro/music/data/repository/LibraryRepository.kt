@@ -26,7 +26,6 @@ data class HomeData(
     val starredSongs: List<Song>,
     val newestAlbums: List<Album>,
     val recentAlbums: List<Album>,
-    val frequentAlbums: List<Album>,
     val randomArtists: List<Artist>,
     val playlists: List<Playlist>,
 ) {
@@ -34,10 +33,18 @@ data class HomeData(
         get() = starredSongs.isEmpty() &&
             newestAlbums.isEmpty() &&
             recentAlbums.isEmpty() &&
-            frequentAlbums.isEmpty() &&
             randomArtists.isEmpty() &&
             playlists.isEmpty()
 }
+
+/** Статистика прослушиваний пользователя (по счётчикам Navidrome). */
+data class ListeningStats(
+    val totalPlays: Long,
+    val topArtists: List<ArtistPlays>,
+    val topSongs: List<Song>,
+)
+
+data class ArtistPlays(val artist: Artist, val plays: Long)
 
 enum class AlbumSort(val type: AlbumListType) {
     Name(AlbumListType.AlphabeticalByName),
@@ -65,6 +72,7 @@ class LibraryRepository @Inject constructor(
     private val mutex = Mutex()
     private var artistsCache: Cached<List<Artist>>? = null
     private var genresCache: Cached<List<Genre>>? = null
+    private var statsCache: Cached<ListeningStats>? = null
     private val albumCache = object : LinkedHashMap<String, Cached<AlbumDetails>>(32, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Cached<AlbumDetails>>?) = size > 64
     }
@@ -73,14 +81,12 @@ class LibraryRepository @Inject constructor(
         val starred = async { starred() }
         val newest = async { client.getAlbumList2(AlbumListType.Newest, size = 20) }
         val recent = async { client.getAlbumList2(AlbumListType.Recent, size = 20) }
-        val frequent = async { client.getAlbumList2(AlbumListType.Frequent, size = 20) }
         val artists = async { artists().shuffled().take(20) }
         val playlists = async { client.getPlaylists() }
         HomeData(
             starredSongs = starred.await().songs.take(30),
             newestAlbums = newest.await(),
             recentAlbums = recent.await(),
-            frequentAlbums = frequent.await(),
             randomArtists = artists.await(),
             playlists = playlists.await(),
         )
@@ -168,6 +174,41 @@ class LibraryRepository @Inject constructor(
 
     suspend fun song(id: String): Song = client.getSong(id)
 
+    /**
+     * Счётчик прослушиваний, любимые исполнители и треки — по `playCount` Navidrome (учитываются все клиенты).
+     * Альбомы `frequent` идут по убыванию прослушиваний; у альбома счётчик = сумма прослушиваний его треков.
+     */
+    suspend fun listeningStats(force: Boolean = false): ListeningStats = coroutineScope {
+        val accountId = connection.activeAccountId
+        val cached = statsCache?.takeIf { it.accountId == accountId && clock.now() - it.atMs < TTL_MS }
+        if (!force && cached != null) return@coroutineScope cached.value
+        val played = buildList {
+            var offset = 0
+            do {
+                val page = client.getAlbumList2(AlbumListType.Frequent, size = STATS_PAGE, offset = offset)
+                addAll(page.filter { (it.playCount ?: 0) > 0 })
+                offset += STATS_PAGE
+            } while (page.size == STATS_PAGE && offset < STATS_MAX_ALBUMS)
+        }
+        val knownArtists = runCatching { artists() }.getOrDefault(emptyList()).associateBy { it.id }
+        val topArtists = played.filter { it.artistId != null }
+            .groupBy { it.artistId!! }
+            .map { (id, albums) ->
+                val artist = knownArtists[id] ?: Artist(id = id, name = albums.first().artist.orEmpty(), coverArt = "ar-$id")
+                ArtistPlays(artist, albums.sumOf { it.playCount ?: 0 })
+            }
+            .sortedByDescending { it.plays }
+            .take(TOP_ARTISTS)
+        val topSongs = played.take(TOP_SONG_ALBUMS)
+            .map { async { runCatching { album(it.id).songs }.getOrDefault(emptyList()) } }
+            .flatMap { it.await() }
+            .filter { (it.playCount ?: 0) > 0 }
+            .sortedByDescending { it.playCount }
+            .take(TOP_FAVORITE_SONGS)
+        ListeningStats(played.sumOf { it.playCount ?: 0 }, topArtists, topSongs)
+            .also { statsCache = Cached(it, clock.now(), accountId) }
+    }
+
     suspend fun lyrics(song: Song): Lyrics? {
         val accountId = connection.activeAccountId ?: return null
         val useOpenSubsonic = "songLyrics" in accounts.extensionsOf(accountId)
@@ -178,11 +219,17 @@ class LibraryRepository @Inject constructor(
         artistsCache = null
         genresCache = null
         albumCache.clear()
+        statsCache = null
     }
 
     companion object {
         const val PAGE = 60
         const val TOP_SONGS = 10
+        private const val STATS_PAGE = 500
+        private const val STATS_MAX_ALBUMS = 5_000
+        private const val TOP_ARTISTS = 15
+        private const val TOP_SONG_ALBUMS = 20
+        private const val TOP_FAVORITE_SONGS = 20
         private const val TTL_MS = 10 * 60 * 1000L
     }
 }

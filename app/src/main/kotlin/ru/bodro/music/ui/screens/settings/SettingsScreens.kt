@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -28,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -36,16 +39,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
@@ -188,37 +199,46 @@ fun <T> ChoiceGroup(title: String, options: List<T>, selected: T, label: @Compos
 @Composable
 fun qualityLabel(quality: StreamQuality): String = when (quality) {
     StreamQuality.Original -> stringResource(R.string.quality_original)
-    else -> stringResource(R.string.quality_kbps, quality.maxBitRate ?: 0)
+    else -> stringResource(R.string.quality_slow, quality.maxBitRate ?: 0)
 }
 
 @Composable
 fun PlaybackSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val used by viewModel.cacheUsed.collectAsStateWithLifecycle()
+    val offline by viewModel.offlineUsage.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
+    LaunchedEffect(settings.downloadLiked) {
+        // Скачивание идёт в фоне — обновлять счётчик, пока экран открыт.
+        while (true) {
+            viewModel.refreshOfflineUsage()
+            delay(OFFLINE_REFRESH_MS)
+        }
+    }
     Scaffold(topBar = { BodroTopBar(stringResource(R.string.settings_playback), onBack) }) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
-            ChoiceGroup(stringResource(R.string.settings_quality_wifi), StreamQuality.entries, settings.qualityWifi, {
+            ChoiceGroup(stringResource(R.string.settings_quality), AppSettings.QUALITIES, settings.quality, {
                 qualityLabel(it)
             }) { q ->
-                viewModel.update { it.copy(qualityWifi = q) }
+                viewModel.update { it.copy(quality = q) }
             }
-            ChoiceGroup(stringResource(R.string.settings_quality_mobile), StreamQuality.entries, settings.qualityMobile, {
-                qualityLabel(it)
-            }) { q ->
-                viewModel.update { it.copy(qualityMobile = q) }
+            if (!settings.quality.isOriginal) {
+                ChoiceGroup(stringResource(R.string.settings_codec), TranscodeCodec.entries, settings.transcodeCodec, {
+                    it.format.uppercase()
+                }) { c ->
+                    viewModel.update { it.copy(transcodeCodec = c) }
+                }
             }
-            ChoiceGroup(stringResource(R.string.settings_codec), TranscodeCodec.entries, settings.transcodeCodec, {
-                it.format.uppercase()
-            }) { c ->
-                viewModel.update { it.copy(transcodeCodec = c) }
-            }
-            ChoiceGroup(
-                stringResource(R.string.settings_cache_size),
-                AppSettings.CACHE_SIZES_MB,
-                settings.cacheSizeMb,
-                { formatBytes(it.toLong() * 1024 * 1024) },
-            ) { size -> viewModel.update { it.copy(cacheSizeMb = size) } }
+            val offlineSummary = offline?.takeIf { it.count > 0 }?.let {
+                "\n" + stringResource(R.string.settings_download_liked_used, it.count, formatBytes(it.bytes))
+            }.orEmpty()
+            SwitchRow(
+                stringResource(R.string.settings_download_liked),
+                stringResource(R.string.settings_download_liked_summary) + offlineSummary,
+                settings.downloadLiked,
+                { v -> viewModel.update { it.copy(downloadLiked = v) } },
+            )
+            CacheSizeField(settings.cacheSizeMb) { size -> viewModel.update { it.copy(cacheSizeMb = size) } }
             Text(
                 stringResource(R.string.settings_cache_restart_hint) +
                     (used?.let { "\n" + stringResource(R.string.settings_cache_used, formatBytes(it)) } ?: ""),
@@ -246,6 +266,48 @@ fun PlaybackSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hi
         }
     }
 }
+
+/** Размер кэша вводится вручную (в мегабайтах); сохраняется по «Готово» на клавиатуре или при уходе с поля. */
+@Composable
+private fun CacheSizeField(currentMb: Int, onSave: (Int) -> Unit) {
+    var text by remember(currentMb) { mutableStateOf(currentMb.toString()) }
+    val value = text.toIntOrNull()
+    val valid = value != null && value in AppSettings.MIN_CACHE_MB..AppSettings.MAX_CACHE_MB
+    val focus = LocalFocusManager.current
+    val save = {
+        if (value != null && valid && value != currentMb) onSave(value)
+        if (!valid) text = currentMb.toString()
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { input -> text = input.filter(Char::isDigit).take(6) },
+        label = { Text(stringResource(R.string.settings_cache_size)) },
+        suffix = { Text(stringResource(R.string.unit_mb)) },
+        supportingText = {
+            Text(
+                if (value != null && valid) {
+                    formatBytes(value.toLong() * 1024 * 1024)
+                } else {
+                    stringResource(R.string.settings_cache_size_range, AppSettings.MIN_CACHE_MB, AppSettings.MAX_CACHE_MB)
+                },
+            )
+        },
+        isError = !valid,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            save()
+            focus.clearFocus()
+        }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
+            .onFocusChanged { if (!it.isFocused) save() }
+            .testTag("cache-size-field"),
+    )
+}
+
+private const val OFFLINE_REFRESH_MS = 5_000L
 
 @Composable
 fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {

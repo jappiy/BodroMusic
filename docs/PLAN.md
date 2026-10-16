@@ -23,6 +23,7 @@
 - `data/repository`: `LibraryRepository`, `PlaylistRepository`, `ReactionRepository`, `ScrobbleRepository`, `HistoryRepository`, `WaveRepository`, `LogRepository`, `SearchHistoryRepository`.
 - `data/settings`: `SettingsRepository` (DataStore).
 - `sync`: `SyncWorker` (скробблы + реакции), `SyncScheduler`.
+- `data/offline`: `OfflineStore` (скачанные лайки в `files/offline/<accountId>/<songId>`), `OfflineSyncWorker`, `OfflineScheduler` (настройка «Скачивать понравившиеся треки», только Wi-Fi).
 - `playback`: `PlaybackService` (`MediaLibraryService`), `PlayerConnection` (MediaController → `StateFlow`), `QueuePersister`, `WaveQueueManager`, `ScrobbleController`, `StreamDataSourceFactory` (ResolvingDataSource + SimpleCache), `SleepTimerController`.
 - `ui`: тема, компоненты, экраны (Главная, Коллекция, Поиск, Настройки, Плеер, Волна, Альбом, Исполнитель, Плейлист, Логи, История версий…).
 
@@ -55,5 +56,7 @@
 - Дизлайк = `setRating(id, 1)`; при синхронизации все треки с `userRating == 1` считаются дизлайкнутыми.
 - Офлайн-реакции схлопываются в одно изменение «состояние на сервере → желаемое».
 - Стрим-URL подписывается в момент открытия (`ResolvingDataSource`), поэтому смена LAN/WAN и качества
-  применяется без пересборки очереди; ключ кэша — `songId + качество`.
+  применяется без пересборки очереди; ключ кэша — `songId + качество`. Если трек скачан (лайк + «Скачивать
+  понравившиеся треки»), вместо URL подставляется `file://` скачанного файла.
+- Качество одно на все сети (с 0.10.0): «Оригинал» или «Медленный интернет» (128 kbps).
 - Retrofit не используется: Subsonic — это один шаблон запроса, `SubsonicClient` на OkHttp проще и прозрачнее для логов.

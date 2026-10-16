@@ -107,6 +107,9 @@
     <!-- Коллекция -->
     <string name="collection_wave">Моя волна по коллекции</string>
     <string name="collection_favorite_artists">Любимые исполнители</string>
+    <string name="collection_favorite_tracks">Любимые треки</string>
+    <string name="collection_starred_artists">Отмеченные исполнители</string>
+    <string name="collection_total_plays">Всего прослушиваний: %1$s</string>
     <string name="collection_favorite_albums">Любимые альбомы</string>
     <string name="collection_library">Вся библиотека</string>
     <string name="liked_title">Мне нравится</string>
@@ -185,6 +188,8 @@
     <string name="player_sleep_timer">Таймер сна</string>
     <string name="player_wave_by_track">Волна по треку</string>
     <string name="player_now_playing">Сейчас играет</string>
+    <string name="player_sleep_timer_on">Таймер сна (включён)</string>
+    <string name="player_song_actions">Действия с треком</string>
     <string name="quality_lossless">Без потерь</string>
     <string name="queue_drag">Перетащить</string>
     <string name="queue_remove">Убрать из очереди</string>
@@ -207,8 +212,13 @@
     <string name="settings_versions">История версий</string>
     <string name="settings_versions_summary">Что нового в BodroMusic</string>
     <string name="settings_about">О приложении</string>
-    <string name="settings_quality_wifi">Качество по Wi-Fi</string>
-    <string name="settings_quality_mobile">Качество в мобильной сети</string>
+    <string name="settings_quality">Качество воспроизводимых песен</string>
+    <string name="quality_slow">Медленный интернет (%1$d kbps)</string>
+    <string name="settings_download_liked">Скачивать понравившиеся треки</string>
+    <string name="settings_download_liked_summary">На телефон загружаются только лайкнутые треки — они играют без интернета. Скачивание идёт по Wi-Fi; снятый лайк удаляет файл, выключение — все скачанные файлы.</string>
+    <string name="settings_download_liked_used">Скачано: %1$d · %2$s</string>
+    <string name="settings_cache_size_range">От %1$d до %2$d МБ</string>
+    <string name="unit_mb">МБ</string>
     <string name="settings_codec">Формат при перекодировании</string>
     <string name="quality_original">Оригинал (без потерь)</string>
     <string name="quality_kbps">%1$d kbps</string>
@@ -313,6 +323,12 @@
         <item quantity="few">%1$d трека из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
         <item quantity="many">%1$d треков из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
         <item quantity="other">%1$d трека из списка «%2$s» будут удалены с сервера навсегда и попадут в чёрный список. Отменить это нельзя.</item>
+    </plurals>
+    <plurals name="plays">
+        <item quantity="one">%d прослушивание</item>
+        <item quantity="few">%d прослушивания</item>
+        <item quantity="many">%d прослушиваний</item>
+        <item quantity="other">%d прослушивания</item>
     </plurals>
     <plurals name="albums">
         <item quantity="one">%d альбом</item>

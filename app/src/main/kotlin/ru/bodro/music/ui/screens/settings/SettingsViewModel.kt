@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ru.bodro.music.data.offline.OfflineStore
+import ru.bodro.music.data.offline.OfflineUsage
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.di.Clock
@@ -17,12 +19,20 @@ import ru.bodro.music.playback.PlayerCache
 class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val cache: PlayerCache,
+    private val offline: OfflineStore,
     private val clock: Clock,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> = repository.settings
 
     private val _cacheUsed = MutableStateFlow<Long?>(null)
     val cacheUsed: StateFlow<Long?> = _cacheUsed.asStateFlow()
+
+    private val _offlineUsage = MutableStateFlow<OfflineUsage?>(null)
+    val offlineUsage: StateFlow<OfflineUsage?> = _offlineUsage.asStateFlow()
+
+    fun refreshOfflineUsage() {
+        viewModelScope.launch { _offlineUsage.value = runCatching { offline.usage() }.getOrNull() }
+    }
 
     fun update(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { repository.update(transform) }
