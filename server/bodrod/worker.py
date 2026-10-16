@@ -1,6 +1,7 @@
 """Фоновая обработка заявок. Каждый шаг — одно короткое действие, состояние хранится в БД (переживает рестарт).
 
-Трек: queued → (уже в библиотеке? → completed) → searching (slskd) → downloading → importing → completed.
+Трек: queued → (уже в библиотеке? → completed) → searching (slskd) → downloading → [placing] → importing → completed.
+placing — bodrod сам кладёт файл в библиотеку с тегами (если заданы SLSKD_DOWNLOADS_DIR и LIBRARY_DIR).
 Исполнитель: queued → downloading (Lidarr качает дискографию) → completed.
 """
 
@@ -10,7 +11,8 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from .clients.lidarr import LidarrClient
 from .clients.navidrome import NavidromeClient
@@ -20,9 +22,24 @@ from .db import DownloadRequest, Store
 from .matching import rank_candidates
 from .metadata.discover import find_in_library
 from .models import RequestKind, RequestStatus
+from .placement import (
+    Tags,
+    choose_destination,
+    find_local_file,
+    place_file,
+    relative_path,
+    remove_source,
+)
 from .text import search_text
 
 log = logging.getLogger(__name__)
+
+CoverFetcher = Callable[[str], Awaitable[tuple[bytes, str] | None]]
+
+
+async def _no_cover(url: str) -> tuple[bytes, str] | None:
+    return None
+
 
 MAX_ERRORS = 8
 SEARCH_POLL_S = 3
@@ -45,6 +62,7 @@ class Worker:
         slskd: SlskdClient | None,
         lidarr: LidarrClient | None,
         clock: Callable[[], float] = time.time,
+        cover_fetcher: CoverFetcher = _no_cover,
     ) -> None:
         self._store = store
         self._settings = settings
@@ -52,6 +70,7 @@ class Worker:
         self._slskd = slskd
         self._lidarr = lidarr
         self._clock = clock
+        self._cover_fetcher = cover_fetcher
         self._wakeup = asyncio.Event()
 
     def wake(self) -> None:
@@ -103,6 +122,8 @@ class Worker:
                 await self._track_search(r)
             case RequestStatus.DOWNLOADING:
                 await self._track_download(r)
+            case RequestStatus.PLACING:
+                await self._track_place(r)
             case RequestStatus.IMPORTING:
                 await self._track_import(r)
 
@@ -184,11 +205,13 @@ class Worker:
             return
         if transfer.succeeded:
             r.progress = 1.0
-            r.status = RequestStatus.IMPORTING
             r.message = "Добавляем в библиотеку"
-            r.state["importStartedAt"] = now
-            await self._scan()
-            r.next_check_at = now + IMPORT_POLL_S
+            if self._settings.placement_enabled:
+                r.status = RequestStatus.PLACING
+                r.state["placeStartedAt"] = now
+                r.next_check_at = now
+                return
+            await self._start_import(r)
             return
         if transfer.failed:
             log.info("Заявка %s: загрузка %s завершилась: %s", r.id, c["filename"], transfer.state)
@@ -208,6 +231,79 @@ class Worker:
             return
         r.next_check_at = now + DOWNLOAD_POLL_S
 
+    async def _start_import(self, r: DownloadRequest) -> None:
+        now = self._clock()
+        r.status = RequestStatus.IMPORTING
+        r.message = "Добавляем в библиотеку"
+        r.state["importStartedAt"] = now
+        await self._scan()
+        r.next_check_at = now + IMPORT_POLL_S
+
+    async def _track_place(self, r: DownloadRequest) -> None:
+        """Найти скачанный файл, положить в библиотеку под понятным именем, прописать теги и обложку."""
+        settings = self._settings
+        downloads, library = settings.slskd_downloads_dir, settings.library_dir
+        assert downloads is not None and library is not None
+        c = r.state["candidates"][r.state["index"]]
+        now = self._clock()
+
+        dest_raw = r.state.get("destPath")
+        if dest_raw and Path(dest_raw).exists():
+            # Рестарт после переименования, но до сохранения состояния: файл уже на месте.
+            log.info("Заявка %s: файл уже размещён в %s", r.id, dest_raw)
+            await self._after_place(r, Path(dest_raw), None)
+            return
+
+        local = r.state.get("localPath")
+        source = Path(local) if local and Path(local).is_file() else None
+        if source is None:
+            source = await asyncio.to_thread(find_local_file, downloads, c["filename"], int(c.get("size") or 0) or None)
+            if source is None:
+                if now - r.state.get("placeStartedAt", now) > settings.place_find_timeout_s:
+                    self._finish(
+                        r, RequestStatus.FAILED, f"Файл скачан, но не найден в папке загрузок slskd ({downloads})"
+                    )
+                else:
+                    r.next_check_at = now + DOWNLOAD_POLL_S
+                return
+            r.state["localPath"] = str(source)
+            log.info("Заявка %s: найден файл %s", r.id, source)
+
+        tags = Tags(artist=r.artist, title=r.title or source.stem, album=r.album)
+        rel = relative_path(
+            settings.library_layout, artist=tags.artist, title=tags.title, album=tags.album, extension=source.suffix
+        )
+        dest, already = await asyncio.to_thread(choose_destination, Path(library), rel, source, tags)
+        if already:
+            log.info("Заявка %s: такой файл уже есть в библиотеке: %s", r.id, dest)
+            await self._after_place(r, dest, source)
+            return
+        r.state["destPath"] = str(dest)
+        self._store.save(r)  # путь назначения запомнен до копирования — рестарт не создаст дубль
+
+        cover = None
+        if r.cover_url:
+            try:
+                cover = await self._cover_fetcher(r.cover_url)
+            except Exception as e:  # noqa: BLE001 — без обложки трек всё равно нужен
+                log.warning("Заявка %s: обложку скачать не удалось: %s", r.id, e)
+        written = await asyncio.to_thread(place_file, source, dest, tags, cover)
+        log.info("Заявка %s: положен в %s, теги: %s", r.id, dest, ", ".join(written) or "нет")
+        await self._after_place(r, dest, source)
+
+    async def _after_place(self, r: DownloadRequest, dest: Path, source: Path | None) -> None:
+        settings = self._settings
+        assert settings.library_dir is not None and settings.slskd_downloads_dir is not None
+        if source is not None and settings.delete_source and source.exists() and source != dest:
+            await asyncio.to_thread(remove_source, source, settings.slskd_downloads_dir)
+            log.info("Заявка %s: исходник удалён: %s", r.id, source)
+        r.state["destPath"] = str(dest)
+        try:
+            r.state["relPath"] = str(dest.relative_to(settings.library_dir))
+        except ValueError:
+            r.state["relPath"] = str(dest)
+        await self._start_import(r)
+
     async def _track_import(self, r: DownloadRequest) -> None:
         now = self._clock()
         if await self._navidrome.is_scanning():
@@ -220,7 +316,13 @@ class Worker:
             return
         started = r.state.get("importStartedAt", now)
         if now - started > self._settings.import_timeout_s:
-            self._finish(r, RequestStatus.COMPLETED, "Файл скачан, но Navidrome пока не нашёл трек — проверьте теги")
+            rel = r.state.get("relPath")
+            message = (
+                f"Файл положен в {rel}, но Navidrome его не нашёл"
+                if rel
+                else "Файл скачан, но Navidrome пока не нашёл трек — проверьте теги"
+            )
+            self._finish(r, RequestStatus.COMPLETED, message)
             return
         if now - started > RESCAN_AFTER_S and not r.state.get("rescanned"):
             r.state["rescanned"] = True

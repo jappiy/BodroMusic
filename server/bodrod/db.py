@@ -76,7 +76,8 @@ class DownloadRequest:
             title=self.title,
             album=self.album,
             cover_url=self.cover_url,
-            status=self.status,
+            # Для приложения размещение — часть «Добавляем в библиотеку»; клиенты 0.8.0 не знают статуса placing.
+            status=RequestStatus.IMPORTING if self.status == RequestStatus.PLACING else self.status,
             message=self.message,
             progress=self.progress,
             song_id=self.song_id,

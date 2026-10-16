@@ -47,6 +47,30 @@ class Services:
     auth_cache: dict[str, tuple[str, float]]
 
 
+COVER_MAX_BYTES = 2 * 1024 * 1024
+COVER_TIMEOUT_S = 10
+
+
+def make_cover_fetcher(http: httpx.AsyncClient):
+    """Обложка из каталога: только картинка, не больше 2 МБ, таймаут 10 с. `None` — обложки нет."""
+
+    async def fetch(url: str) -> tuple[bytes, str] | None:
+        async with http.stream("GET", url, timeout=COVER_TIMEOUT_S) as response:
+            response.raise_for_status()
+            mime = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            if not mime.startswith("image/"):
+                return None
+            data = bytearray()
+            async for chunk in response.aiter_bytes():
+                data.extend(chunk)
+                if len(data) > COVER_MAX_BYTES:
+                    log.warning("Обложка больше 2 МБ, пропускаем: %s", url)
+                    return None
+            return bytes(data), mime
+
+    return fetch
+
+
 def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     os.makedirs(settings.data_dir, exist_ok=True)
     store = Store(settings.db_path)
@@ -74,7 +98,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         store=store,
         navidrome=navidrome,
         discover=DiscoverService(providers, navidrome),
-        worker=Worker(store, settings, navidrome, slskd, lidarr),
+        worker=Worker(store, settings, navidrome, slskd, lidarr, cover_fetcher=make_cover_fetcher(http)),
         auth_cache={},
     )
 

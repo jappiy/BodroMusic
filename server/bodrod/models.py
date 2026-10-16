@@ -52,6 +52,8 @@ class RequestStatus(StrEnum):
     QUEUED = "queued"
     SEARCHING = "searching"
     DOWNLOADING = "downloading"
+    """Файл скачан, bodrod кладёт его в библиотеку и прописывает теги."""
+    PLACING = "placing"
     IMPORTING = "importing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -63,7 +65,13 @@ class RequestStatus(StrEnum):
 
 
 ACTIVE_STATUSES = frozenset(
-    {RequestStatus.QUEUED, RequestStatus.SEARCHING, RequestStatus.DOWNLOADING, RequestStatus.IMPORTING}
+    {
+        RequestStatus.QUEUED,
+        RequestStatus.SEARCHING,
+        RequestStatus.DOWNLOADING,
+        RequestStatus.PLACING,
+        RequestStatus.IMPORTING,
+    }
 )
 
 

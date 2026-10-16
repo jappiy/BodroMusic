@@ -5,10 +5,14 @@ services:
     image: ghcr.io/jappiy/bodromusic-server:latest
     container_name: bodrod
     restart: unless-stopped
+    # Владелец папки с музыкой: под ним создаются файлы в библиотеке (узнать: `id <пользователь>`).
+    user: "1000:1000"
     ports:
       - "8790:8790"
     volumes:
       - ./bodrod-data:/data
+      # Общая папка музыки на запись: и загрузки slskd, и библиотека Navidrome.
+      - /srv/music:/music
     environment:
       # Navidrome: админ-учётка нужна, чтобы запускать сканирование и проверять, есть ли трек в библиотеке.
       NAVIDROME_URL: http://navidrome:4533
@@ -17,6 +21,12 @@ services:
       # slskd — скачивание отдельных треков. Ключ: slskd.yml → web.authentication.api_keys.
       SLSKD_URL: http://slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
+      # bodrod сам кладёт скачанное в библиотеку и прописывает теги. Без этих двух строк —
+      # прежнее поведение: папка загрузок slskd должна быть внутри библиотеки.
+      SLSKD_DOWNLOADS_DIR: /music/slsk
+      LIBRARY_DIR: /music/library
+      # LIBRARY_LAYOUT: "{artist}/{album}/{artist} - {title}"
+      # DELETE_SOURCE: "true"
       # Lidarr — скачивание всей дискографии исполнителя. Ключ: Settings → General → API Key.
       LIDARR_URL: http://lidarr:8686
       LIDARR_API_KEY: ${LIDARR_API_KEY}

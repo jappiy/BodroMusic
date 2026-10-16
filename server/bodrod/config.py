@@ -9,7 +9,12 @@ DEFAULT_FORMATS = ("flac", "mp3", "m4a", "ogg", "opus", "aac", "wav", "alac")
 
 
 def _opt(name: str) -> str | None:
+    """Значение переменной; `<NAME>_FILE` — путь к файлу с секретом (например, смонтированному в /secrets)."""
     value = os.environ.get(name, "").strip()
+    path = os.environ.get(f"{name}_FILE", "").strip()
+    if not value and path:
+        with open(path, encoding="utf-8") as f:
+            value = f.read().strip()
     return value or None
 
 
@@ -49,6 +54,14 @@ class Settings:
     allowed_formats: tuple[str, ...] = field(default=DEFAULT_FORMATS)
     min_bitrate: int = 192
 
+    """Папка загрузок slskd, как она смонтирована в контейнер bodrod."""
+    slskd_downloads_dir: str | None = None
+    """Куда bodrod кладёт скачанные треки (внутри библиотеки Navidrome)."""
+    library_dir: str | None = None
+    library_layout: str = "{artist}/{album}/{artist} - {title}"
+    delete_source: bool = True
+    place_find_timeout_s: int = 60
+
     @property
     def slskd_enabled(self) -> bool:
         return bool(self.slskd_url and self.slskd_api_key)
@@ -56,6 +69,11 @@ class Settings:
     @property
     def lidarr_enabled(self) -> bool:
         return bool(self.lidarr_url and self.lidarr_api_key)
+
+    @property
+    def placement_enabled(self) -> bool:
+        """Класть файлы в библиотеку самим. Без этих папок — прежнее поведение: ждать скан Navidrome."""
+        return bool(self.slskd_downloads_dir and self.library_dir)
 
     @property
     def db_path(self) -> str:
@@ -91,4 +109,8 @@ class Settings:
             import_timeout_s=_int("IMPORT_TIMEOUT_S", 15 * 60),
             allowed_formats=tuple(f.strip().lower() for f in formats.split(",")) if formats else DEFAULT_FORMATS,
             min_bitrate=_int("MIN_BITRATE", 192),
+            slskd_downloads_dir=_opt("SLSKD_DOWNLOADS_DIR"),
+            library_dir=_opt("LIBRARY_DIR"),
+            library_layout=_opt("LIBRARY_LAYOUT") or "{artist}/{album}/{artist} - {title}",
+            delete_source=(_opt("DELETE_SOURCE") or "true").lower() not in ("false", "0", "no"),
         )
