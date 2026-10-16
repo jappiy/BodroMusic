@@ -1,11 +1,13 @@
 package ru.bodro.music
 
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -40,6 +42,7 @@ class LogsAndVersionsTest {
 
     @Test
     fun logsShowRequestsWithMaskedSecrets() {
+        compose.onNodeWithTag("settings-screen").performScrollToNode(hasTestTag("settings-logs"))
         compose.onNodeWithTag("settings-logs").performClick()
         compose.waitForTag("logs-list")
         compose.waitForText("getAlbumList2")
@@ -53,6 +56,7 @@ class LogsAndVersionsTest {
 
     @Test
     fun versionsShowCurrentVersion() {
+        compose.onNodeWithTag("settings-screen").performScrollToNode(hasTestTag("settings-versions"))
         compose.onNodeWithTag("settings-versions").performClick()
         compose.waitForTag("versions-screen")
         compose.onNodeWithTag("current-version").assertTextContains(BuildConfig.VERSION_NAME, substring = true)

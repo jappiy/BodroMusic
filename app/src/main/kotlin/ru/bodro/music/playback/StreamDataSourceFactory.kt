@@ -85,7 +85,11 @@ class StreamDataSourceFactory @Inject constructor(
      * Тот же ключ кэша, что и у плеера. Скачанные лайки и уже закэшированное повторно не качаются.
      */
     suspend fun prefetch(songId: String, bytes: Long) = withContext(Dispatchers.IO) {
-        val spec = resolve(DataSpec.Builder().setUri(MediaItemFactory.songUri(songId)).setLength(bytes).build())
+        val spec = try {
+            resolve(DataSpec.Builder().setUri(MediaItemFactory.songUri(songId)).setLength(bytes).build())
+        } catch (_: IOException) {
+            return@withContext // нет активной учётки
+        }
         if (spec.uri.scheme == "file") return@withContext
         val writer = CacheWriter(cached.createDataSource(), spec, null, null)
         val cancel = coroutineContext[Job]?.invokeOnCompletion { writer.cancel() }
@@ -93,6 +97,9 @@ class StreamDataSourceFactory @Inject constructor(
             writer.cache()
         } catch (_: IOException) {
             // Нет сети или отменено — плеер скачает сам.
+        } catch (e: IllegalStateException) {
+            // Предзагрузка — не повод ронять плеер.
+            android.util.Log.w("StreamPrefetch", "Предзагрузка $songId не удалась", e)
         } finally {
             cancel?.dispose()
         }
