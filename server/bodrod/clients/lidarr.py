@@ -122,3 +122,23 @@ class LidarrClient:
     async def queue_size(self, artist_id: int) -> int:
         items = await self._request("GET", "/queue/details", params={"artistId": artist_id}) or []
         return len(items)
+
+    # region Удаление файлов
+
+    async def artists(self) -> list[dict[str, Any]]:
+        return await self._request("GET", "/artist") or []
+
+    async def track_files(self, artist_id: int) -> list[dict[str, Any]]:
+        return await self._request("GET", "/trackfile", params={"artistId": artist_id}) or []
+
+    async def delete_track_file(self, track_file_id: int) -> None:
+        await self._request("DELETE", f"/trackfile/{track_file_id}")
+
+    async def album_file_count(self, album_id: int) -> int:
+        album = await self._request("GET", f"/album/{album_id}") or {}
+        return int((album.get("statistics") or {}).get("trackFileCount") or 0)
+
+    async def unmonitor_album(self, album_id: int) -> None:
+        await self._request("PUT", "/album/monitor", json={"albumIds": [album_id], "monitored": False})
+
+    # endregion

@@ -106,3 +106,54 @@ class ServiceInfo(ApiModel):
     track_downloads: bool
     artist_downloads: bool
     metadata_sources: list[str]
+    """Раздел «На удаление» настроен (задан NAVIDROME_DB)."""
+    cleanup: bool = False
+    """Пользователь — администратор Navidrome (только ему доступны удаление и чёрный список)."""
+    admin: bool = False
+
+
+class CleanupUser(ApiModel):
+    username: str
+    is_admin: bool
+
+
+class DislikedSong(ApiModel):
+    id: str
+    title: str
+    artist: str
+    album: str | None = None
+    album_id: str | None = None
+    duration: int | None = None
+    size: int | None = None
+    suffix: str | None = None
+    bit_rate: int | None = None
+    """Путь относительно папки музыки."""
+    path: str
+    disliked_by: list[str] = Field(default_factory=list)
+
+
+class DeleteSongsRequest(ApiModel):
+    ids: list[str] = Field(min_length=1, max_length=5000)
+
+
+class DeleteSongResult(ApiModel):
+    id: str
+    ok: bool
+    message: str
+
+
+class BlockEntryOut(ApiModel):
+    id: int
+    artist: str
+    title: str
+    album: str | None = None
+    created_by: str
+    created_at: int
+    """Сколько раз файл удалялся (первое удаление + повторные появления)."""
+    removed_count: int
+    last_removed_at: int | None = None
+
+
+class BlocklistPage(ApiModel):
+    total: int
+    items: list[BlockEntryOut]

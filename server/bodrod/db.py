@@ -36,11 +36,39 @@ CREATE TABLE IF NOT EXISTS requests (
 );
 CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(username, created_at);
 CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
+CREATE TABLE IF NOT EXISTS blocklist (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    artist TEXT NOT NULL,
+    title TEXT NOT NULL,
+    album TEXT,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    removed_count INTEGER NOT NULL DEFAULT 0,
+    last_removed_at INTEGER
+);
 """
 
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def block_key(artist: str | None, title: str | None) -> str:
+    """Чёрный список: исполнитель + название без регистра, пунктуации, скобок и feat."""
+    return f"{normalize(artist)}\x1f{normalize(title)}"  # не \0: SQLite LIKE обрывает строку на NUL
+
+
+@dataclass
+class BlockEntry:
+    id: int
+    artist: str
+    title: str
+    album: str | None
+    created_by: str
+    created_at: int
+    removed_count: int
+    last_removed_at: int | None
 
 
 def dedup_key(kind: RequestKind, artist: str, title: str | None) -> str:
@@ -252,6 +280,74 @@ class Store:
     def delete(self, request_id: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
+
+    # region Чёрный список
+
+    def block(self, artist: str, title: str, album: str | None, username: str) -> BlockEntry:
+        """Добавить трек в чёрный список (повторное добавление — та же запись) и учесть удалённый файл."""
+        key = block_key(artist, title)
+        ts = now_ms()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO blocklist (key, artist, title, album, created_by, created_at, removed_count, "
+                "last_removed_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?) "
+                "ON CONFLICT(key) DO UPDATE SET removed_count = removed_count + 1, "
+                "last_removed_at = excluded.created_at",
+                (key, artist.strip(), title.strip(), album, username, ts, ts),
+            )
+            row = self._conn.execute("SELECT * FROM blocklist WHERE key = ?", (key,)).fetchone()
+        return _block_from_row(row)
+
+    def mark_removed(self, key: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE blocklist SET removed_count = removed_count + 1, last_removed_at = ? WHERE key = ?",
+                (now_ms(), key),
+            )
+
+    def blocked_keys(self) -> set[str]:
+        with self._lock:
+            return {r[0] for r in self._conn.execute("SELECT key FROM blocklist")}
+
+    def is_blocked(self, artist: str | None, title: str | None) -> bool:
+        with self._lock:
+            row = self._conn.execute("SELECT 1 FROM blocklist WHERE key = ?", (block_key(artist, title),)).fetchone()
+        return row is not None
+
+    def list_blocked(self, query: str | None, limit: int, offset: int) -> tuple[int, list[BlockEntry]]:
+        """Поиск по словам запроса в исполнителе и названии (нормализованных), новые сверху."""
+        words = [w for w in normalize(query).split(" ") if w]
+        where = " AND ".join("key LIKE ?" for _ in words) or "1 = 1"
+        params = [f"%{w}%" for w in words]
+        with self._lock:
+            total = self._conn.execute(f"SELECT COUNT(*) FROM blocklist WHERE {where}", params).fetchone()[0]
+            rows = self._conn.execute(
+                f"SELECT * FROM blocklist WHERE {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
+        return total, [_block_from_row(r) for r in rows]
+
+    def unblock(self, entry_id: int) -> BlockEntry | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM blocklist WHERE id = ?", (entry_id,)).fetchone()
+            if row is not None:
+                self._conn.execute("DELETE FROM blocklist WHERE id = ?", (entry_id,))
+        return _block_from_row(row) if row else None
+
+    # endregion
+
+
+def _block_from_row(row: sqlite3.Row) -> BlockEntry:
+    return BlockEntry(
+        id=row["id"],
+        artist=row["artist"],
+        title=row["title"],
+        album=row["album"],
+        created_by=row["created_by"],
+        created_at=row["created_at"],
+        removed_count=row["removed_count"],
+        last_removed_at=row["last_removed_at"],
+    )
 
 
 def _from_row(row: sqlite3.Row) -> DownloadRequest:
