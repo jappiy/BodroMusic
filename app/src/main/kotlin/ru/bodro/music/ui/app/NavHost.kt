@@ -12,9 +12,9 @@ import ru.bodro.music.data.repository.AlbumSort
 import ru.bodro.music.ui.screens.album.AlbumScreen
 import ru.bodro.music.ui.screens.artist.ArtistScreen
 import ru.bodro.music.ui.screens.collection.CollectionScreen
-import ru.bodro.music.ui.screens.downloads.DownloadsScreen
 import ru.bodro.music.ui.screens.collection.DislikedScreen
 import ru.bodro.music.ui.screens.collection.LikedScreen
+import ru.bodro.music.ui.screens.downloads.DownloadsScreen
 import ru.bodro.music.ui.screens.home.HomeScreen
 import ru.bodro.music.ui.screens.library.AlbumsScreen
 import ru.bodro.music.ui.screens.library.ArtistsScreen

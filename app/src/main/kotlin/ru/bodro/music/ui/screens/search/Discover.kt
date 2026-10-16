@@ -387,8 +387,12 @@ private fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, ca
     val librarySongId = track.librarySongId ?: request?.songId?.takeIf { request.status == RequestStatus.Completed }
     val activeOrDone = request != null && (request.status.isActive || request.status == RequestStatus.Completed)
     val onClick: (() -> Unit)? = when {
-        librarySongId != null -> { { callbacks.onPlay(librarySongId) } }
-        canDownload && !activeOrDone -> { { callbacks.onDownload(track) } }
+        librarySongId != null -> {
+            { callbacks.onPlay(librarySongId) }
+        }
+        canDownload && !activeOrDone -> {
+            { callbacks.onDownload(track) }
+        }
         else -> null
     }
     Row(

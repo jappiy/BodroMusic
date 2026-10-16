@@ -75,11 +75,11 @@ class DownloadsRepository @Inject constructor(
     val isConfigured: Boolean get() = config() != null
 
     private fun config(): DownloadsConfig? {
-        val accountId = connection.activeAccountId ?: return null
-        val raw = urls.value[accountId] ?: return null
-        val base = DownloadsConfig.normalizeUrl(raw) ?: return null
-        val navidrome = connection.current() ?: return null
-        return DownloadsConfig(base, navidrome.username, navidrome.password)
+        val base = connection.activeAccountId
+            ?.let { urls.value[it] }
+            ?.let(DownloadsConfig::normalizeUrl)
+        val navidrome = connection.current()
+        return if (base != null && navidrome != null) DownloadsConfig(base, navidrome.username, navidrome.password) else null
     }
 
     /** Проверяет адрес (не сохраняя его): сервис отвечает и принимает учётку. */

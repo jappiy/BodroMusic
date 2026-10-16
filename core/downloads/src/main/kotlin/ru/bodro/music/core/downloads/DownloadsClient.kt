@@ -91,7 +91,10 @@ class DownloadsClient(
         path: List<String>,
         params: List<Pair<String, String>> = emptyList(),
         override: DownloadsConfig? = null,
-    ): T = execute(Request.Builder().url(url(path, params, override)).get(), override) { downloadsJson.decodeFromString(serializer<T>(), it) }
+    ): T {
+        val request = Request.Builder().url(url(path, params, override)).get()
+        return execute(request, override) { body -> downloadsJson.decodeFromString(serializer<T>(), body) }
+    }
 
     private fun requireConfig(override: DownloadsConfig?): DownloadsConfig =
         override ?: config() ?: throw DownloadsException(DownloadsError.NotConfigured)
