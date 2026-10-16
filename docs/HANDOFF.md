@@ -143,3 +143,32 @@ Smoke-тест против реального Navidrome: скопировать
 
 Правило проекта (из ТЗ): каждое изменение функциональности — запись в `CHANGELOG.md` и повышение
 `versionCode`/`versionName` в `app/build.gradle.kts`. Язык UI — русский, строки только в `strings.xml`.
+
+## 9. В работе: раздел «На удаление» (запрос владельца от 2026-10-16)
+
+Задача (дословно по смыслу):
+1. В Настройках раздел **«На удаление»**: списки «Не нравятся всем», «Не нравятся мне», «Не нравятся <username>»;
+   в списке — треки с дизлайком; кнопка «Удалить всё» для текущего списка (с подтверждением) и удаление по одному.
+   «Удалить» = удалить файл с сервера окончательно + **блоклист**, чтобы Lidarr/slskd/bodrod не скачали трек заново.
+2. Во вкладке «Коллекция» убрать строку «Не нравится».
+
+Что выяснено по коду:
+- Дизлайк = `setRating(id, 1)` у текущего пользователя. Subsonic API отдаёт только **свои** рейтинги, поэтому
+  дизлайки других пользователей видит только сервер: bodrod должен читать БД Navidrome (`navidrome.db`,
+  таблица `annotation`, `item_type='media_file'`, `rating=1`) — нужна папка данных Navidrome в контейнере bodrod (read-only).
+- Удаление файла и блоклист — новая часть bodrod (`server/`): путь файла из `media_file.path`, удаление файла,
+  в Lidarr — `DELETE /api/v1/trackfile/{id}` + снятие мониторинга альбома, блоклист в SQLite bodrod
+  (проверять в `POST /api/v1/requests` и в воркере перед размещением), затем `startScan`.
+- Строка «Не нравится» в коллекции — `ui/screens/collection/CollectionScreens.kt` (`onOpenDisliked`, `DislikedScreen`).
+
+Статус: заданы встречные вопросы владельцу, реализация не начата.
+
+### Продолжение на компьютере владельца (Windows, папка `C:\Проекты\BodroMusic`)
+
+```powershell
+# первый раз
+git clone -b claude/new-session-fi1p6v https://github.com/jappiy/BodroMusic.git "C:\Проекты\BodroMusic"
+# если папка уже есть
+cd "C:\Проекты\BodroMusic"; git fetch origin; git switch claude/new-session-fi1p6v; git pull
+# дальше: запустить `claude` в этой папке и попросить «продолжи по docs/HANDOFF.md, раздел 9»
+```
