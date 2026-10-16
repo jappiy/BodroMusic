@@ -30,6 +30,14 @@ jobs:
         run: ./gradlew test testDebugUnitTest --continue
       - name: Static analysis
         run: ./gradlew lintDebug ktlintCheck detekt --continue
+      - name: Report static analysis problems as annotations
+        # Логи раннера не всегда доступны снаружи, а аннотации видны через API check-runs.
+        if: failure()
+        run: |
+          for f in $(find . -path '*/build/reports/*' \( -name '*.txt' \) \( -path '*ktlint*' -o -path '*detekt*' -o -name 'lint-results*' \) -size +0); do
+            body=$(head -c 3500 "$f" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=$f::$body"
+          done
       - name: Upload APKs
         if: always()
         uses: actions/upload-artifact@v4
