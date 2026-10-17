@@ -20,6 +20,8 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PeopleAlt
+import androidx.compose.material.icons.rounded.ReportProblem
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -71,8 +73,8 @@ import ru.bodro.music.ui.util.formatTime
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
-/** Виды записей отчёта (как их называет bodrod). `null` — все. */
-val MaintenanceKinds = listOf(null, "duplicate", "album", "short", "tags", "cover")
+/** Виды записей отчёта (как их называет bodrod). `null` — все, `attention` — только «требует внимания». */
+val MaintenanceKinds = listOf(null, "attention", "duplicate", "album", "artist_merge", "short", "tags", "cover", "mismatch")
 
 data class MaintenanceUi(
     val loading: Boolean = true,
@@ -289,14 +291,31 @@ private fun runLine(run: MaintenanceRun): String {
 
 @Composable
 private fun statsLine(run: MaintenanceRun): String? {
-    val parts = listOf(
-        "duplicates_removed" to R.string.maintenance_stat_duplicates,
-        "albums_merged" to R.string.maintenance_stat_albums,
-        "short_removed" to R.string.maintenance_stat_short,
-        "tags_fixed" to R.string.maintenance_stat_tags,
-        "covers_added" to R.string.maintenance_stat_covers,
-    ).mapNotNull { (key, label) -> run.stats[key]?.takeIf { it > 0 }?.let { stringResource(label, it) } }
-    val found = listOf("short_found", "tags_problems", "covers_missing").sumOf { run.stats[it] ?: 0 }
+    // В пробном режиме ничего не сделано — «будет убрано», а не «убрано».
+    val labels = if (run.dryRun) {
+        listOf(
+            "duplicates_removed" to R.string.maintenance_plan_duplicates,
+            "albums_merged" to R.string.maintenance_plan_albums,
+            "artists_merged" to R.string.maintenance_plan_artists,
+            "short_removed" to R.string.maintenance_plan_short,
+            "tags_fixed" to R.string.maintenance_plan_tags,
+            "covers_added" to R.string.maintenance_plan_covers,
+        )
+    } else {
+        listOf(
+            "duplicates_removed" to R.string.maintenance_stat_duplicates,
+            "albums_merged" to R.string.maintenance_stat_albums,
+            "artists_merged" to R.string.maintenance_stat_artists,
+            "short_removed" to R.string.maintenance_stat_short,
+            "tags_fixed" to R.string.maintenance_stat_tags,
+            "covers_added" to R.string.maintenance_stat_covers,
+        )
+    }
+    val parts = labels.mapNotNull { (key, label) -> run.stats[key]?.takeIf { it > 0 }?.let { stringResource(label, it) } }
+    // «Требует внимания» (`attention`): не найдены теги и обложки, пропущенные короткие, чужие релизы.
+    // bodrod 0.4.0 этого ключа не писал и считал `short_found` только по пропущенным.
+    val found = run.stats["attention"]
+        ?: listOf("short_found", "tags_problems", "covers_missing").sumOf { run.stats[it] ?: 0 }
     val all = parts + listOfNotNull(found.takeIf { it > 0 }?.let { stringResource(R.string.maintenance_stat_found, it) })
     val songs = run.stats["songs"]
     return when {
@@ -313,7 +332,11 @@ private fun ActionRow(action: MaintenanceAction, onRestore: () -> Unit) {
             Icon(
                 kindIcon(action.kind),
                 contentDescription = kindLabel(action.kind),
-                tint = if (action.applied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                tint = when {
+                    action.applied -> MaterialTheme.colorScheme.primary
+                    action.planned -> MaterialTheme.colorScheme.secondary
+                    else -> MaterialTheme.colorScheme.tertiary
+                },
             )
         },
         headlineContent = { Text(action.title ?: action.album ?: action.path.orEmpty(), maxLines = 2) },
@@ -347,8 +370,11 @@ private fun ActionRow(action: MaintenanceAction, onRestore: () -> Unit) {
 private fun kindLabel(kind: String?): String = stringResource(
     when (kind) {
         null -> R.string.maintenance_kind_all
+        "attention" -> R.string.maintenance_kind_attention
         "duplicate" -> R.string.maintenance_kind_duplicate
         "album" -> R.string.maintenance_kind_album
+        "artist_merge" -> R.string.maintenance_kind_artist_merge
+        "mismatch" -> R.string.maintenance_kind_mismatch
         "short" -> R.string.maintenance_kind_short
         "tags" -> R.string.maintenance_kind_tags
         "cover" -> R.string.maintenance_kind_cover
@@ -359,6 +385,8 @@ private fun kindLabel(kind: String?): String = stringResource(
 private fun kindIcon(kind: String): ImageVector = when (kind) {
     "duplicate" -> Icons.Rounded.ContentCopy
     "album" -> Icons.Rounded.Album
+    "artist_merge" -> Icons.Rounded.PeopleAlt
+    "mismatch" -> Icons.Rounded.ReportProblem
     "short" -> Icons.Rounded.Timer
     "tags" -> Icons.AutoMirrored.Rounded.Label
     "cover" -> Icons.Rounded.Image

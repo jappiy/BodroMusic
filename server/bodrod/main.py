@@ -23,6 +23,7 @@ from .config import Settings
 from .db import MaintenanceAction, MaintenanceRun, Store
 from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
+from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
 from .models import (
     ArtistPopular,
@@ -116,11 +117,18 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     navidrome_db = NavidromeDb(settings.navidrome_db) if settings.navidrome_db else None
     files_lock = asyncio.Lock()
     cleanup = CleanupService(settings, store, navidrome, navidrome_db, lidarr, files_lock) if navidrome_db else None
-    maintenance = (
-        MaintenanceService(settings, store, navidrome, navidrome_db, lidarr, providers, cover_fetcher, files_lock)
-        if navidrome_db and settings.maintenance_enabled
-        else None
-    )
+    maintenance = None
+    if navidrome_db and settings.maintenance_enabled:
+        cover_chain = build_chain(settings.cover_providers, http, providers, settings.discogs_token)
+        tag_chain = build_chain(settings.tag_providers, http, providers, settings.discogs_token)
+        log.info(
+            "Источники обложек: %s; тегов: %s",
+            ", ".join(p.name for p in cover_chain) or "нет",
+            ", ".join(p.name for p in tag_chain if p.tags) or "нет",
+        )
+        maintenance = MaintenanceService(
+            settings, store, navidrome, navidrome_db, lidarr, cover_chain, tag_chain, cover_fetcher, files_lock
+        )
     return Services(
         settings=settings,
         store=store,

@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 
 from .clients.slskd import SlskdFile, SlskdResponse
-from .text import contains_all, normalize, tokens
+from .text import contains_all, normalize, to_latin, tokens, translit
 
 # Версии, которые не нужны, если пользователь их явно не искал.
 UNWANTED = (
@@ -63,12 +63,13 @@ def score_file(
     """Оценка файла или `None`, если он точно не подходит."""
     if not file.extension or file.extension not in allowed_formats:
         return None
-    name = normalize(_basename(file.filename))
-    path = normalize(file.filename.replace("\\", " ").replace("/", " "), strip_extras=False)
-    title_tokens = tokens(title)
+    # Сравнение в латинице: файл «Kirkorov - Luiza» подходит к заявке «Киркоров — Луиза».
+    name = translit(_basename(file.filename))
+    path = to_latin(normalize(file.filename.replace("\\", " ").replace("/", " "), strip_extras=False))
+    title_tokens = [translit(t) for t in tokens(title)]
     if not title_tokens or not contains_all(name, title_tokens):
         return None
-    artist_names = [a for a in (normalize(x) for x in artist.split(",")) if a]
+    artist_names = [a for a in (translit(x) for x in artist.split(",")) if a]
     if not any(contains_all(path, a.split(" ")) for a in artist_names):
         return None
     wanted_title = normalize(title, strip_extras=False)

@@ -2,6 +2,9 @@
 
 Трек: queued → (уже в библиотеке? → completed) → searching (slskd) → downloading → [placing] → importing → completed.
 placing — bodrod сам кладёт файл в библиотеку с тегами (если заданы SLSKD_DOWNLOADS_DIR и LIBRARY_DIR).
+Поиски в Soulseek идут очередью: не больше `SLSKD_PARALLEL_SEARCHES` одновременно, с паузой между запусками.
+Каждая заявка пробует до трёх запросов (`text.search_queries`); не нашли ни по одному — заявка ждёт
+`SLSKD_RETRY_INTERVAL_S` и пробует снова, до `SLSKD_RETRY_ROUNDS` раз, и только потом завершается с ошибкой.
 Исполнитель: queued → downloading (Lidarr качает дискографию) → completed.
 """
 
@@ -15,6 +18,8 @@ import time
 import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+
+import httpx
 
 from .clients.lidarr import LidarrClient
 from .clients.navidrome import NavidromeClient
@@ -32,7 +37,7 @@ from .placement import (
     relative_path,
     remove_source,
 )
-from .text import search_text
+from .text import search_queries
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +90,7 @@ class Worker:
         self._clock = clock
         self._cover_fetcher = cover_fetcher
         self._wakeup = asyncio.Event()
+        self._last_search_at = 0.0
 
     def wake(self) -> None:
         self._wakeup.set()
@@ -153,20 +159,53 @@ class Worker:
                 await self._track_import(r)
 
     async def _track_start(self, r: DownloadRequest) -> None:
+        if self._slskd is None:
+            self._finish(r, RequestStatus.FAILED, "slskd не настроен на сервере")
+            return
+        now = self._clock()
+        wait = self._search_wait(r, now)
+        if wait > 0:
+            if not r.state.get("retryRound"):
+                r.message = "В очереди на поиск в Soulseek"
+            r.next_check_at = now + wait
+            return
         title = r.title or ""
         existing = await find_in_library(self._navidrome, r.artist, title)
         if existing:
             r.song_id = existing
             self._finish(r, RequestStatus.COMPLETED, "Уже есть в библиотеке")
             return
-        if self._slskd is None:
-            self._finish(r, RequestStatus.FAILED, "slskd не настроен на сервере")
-            return
-        search_id = await self._slskd.start_search(search_text(r.artist.split(",")[0], title), self._timeout())
-        r.state = {"searchId": search_id, "searchStartedAt": self._clock()}
+        r.state = {
+            "queries": search_queries(r.artist, title),
+            "attempt": 0,
+            "tried": [],
+            "retryRound": r.state.get("retryRound", 0),
+        }
+        await self._start_search(r)
+
+    def _search_wait(self, r: DownloadRequest, now: float) -> float:
+        """Сколько подождать до запуска поиска: заняты все `SLSKD_PARALLEL_SEARCHES` или не прошла пауза."""
+        busy = sum(
+            1
+            for other in self._store.list_active()
+            if other.id != r.id and other.kind == RequestKind.TRACK and other.status == RequestStatus.SEARCHING
+        )
+        if busy >= self._settings.slskd_parallel_searches:
+            return SEARCH_POLL_S
+        return max(0.0, self._last_search_at + self._settings.slskd_search_gap_s - now)
+
+    async def _start_search(self, r: DownloadRequest) -> None:
+        assert self._slskd is not None
+        queries = r.state["queries"]
+        attempt = int(r.state.get("attempt", 0))
+        query = queries[attempt]
+        search_id = await self._slskd.start_search(query, self._timeout())
+        now = self._clock()
+        self._last_search_at = now
+        r.state.update({"searchId": search_id, "searchStartedAt": now})
         r.status = RequestStatus.SEARCHING
-        r.message = "Ищем в Soulseek"
-        r.next_check_at = self._clock() + SEARCH_POLL_S
+        r.message = f"Ищем в Soulseek: «{query}»" + (f" (запрос {attempt + 1} из {len(queries)})" if attempt else "")
+        r.next_check_at = now + SEARCH_POLL_S
 
     def _timeout(self) -> int:
         return self._settings.slskd_search_timeout_s
@@ -189,12 +228,45 @@ class Worker:
             min_bitrate=self._settings.min_bitrate,
             limit=self._settings.slskd_max_candidates,
         )
-        log.info("Заявка %s: %s ответов, %s подходящих файлов", r.id, len(responses), len(candidates))
-        if not candidates:
-            self._finish(r, RequestStatus.FAILED, "Не нашли подходящий файл в Soulseek")
+        queries = r.state.get("queries") or [""]
+        attempt = int(r.state.get("attempt", 0))
+        files = sum(len(p.files) for p in responses)
+        tried = r.state.setdefault("tried", [])
+        tried.append(
+            {"query": queries[attempt], "responses": len(responses), "files": files, "matched": len(candidates)}
+        )
+        log.info(
+            "Заявка %s: «%s» — %s ответов, %s файлов, %s подходящих",
+            r.id, queries[attempt], len(responses), files, len(candidates),
+        )  # fmt: skip
+        if candidates:
+            r.state = {"candidates": [c.to_state() for c in candidates], "index": -1, "tried": tried}
+            await self._next_candidate(r)
             return
-        r.state = {"candidates": [c.to_state() for c in candidates], "index": -1}
-        await self._next_candidate(r)
+        if attempt + 1 < len(queries):
+            r.state["attempt"] = attempt + 1
+            await self._start_search(r)
+            return
+        self._search_failed(r, tried)
+
+    def _search_failed(self, r: DownloadRequest, tried: list[dict]) -> None:
+        """Ни один запрос не дал подходящего файла: повторить позже или завершить с отчётом о запросах."""
+        summary = "; ".join(
+            f"«{t['query']}» — ответов {t['responses']}, файлов {t['files']}, подходящих {t['matched']}" for t in tried
+        )
+        retry = int(r.state.get("retryRound", 0))
+        rounds = self._settings.slskd_retry_rounds
+        if retry < rounds:
+            interval_s = self._settings.slskd_retry_interval_s
+            interval = f"{interval_s / 3600:g} ч" if interval_s >= 3600 else f"{interval_s // 60} мин"
+            r.state = {"retryRound": retry + 1, "tried": tried}
+            r.status = RequestStatus.QUEUED
+            r.message = (
+                f"Не нашли в Soulseek, повторим через {interval} (повтор {retry + 1} из {rounds}). Запросы: {summary}"
+            )
+            r.next_check_at = self._clock() + interval_s
+            return
+        self._finish(r, RequestStatus.FAILED, f"Не нашли подходящий файл в Soulseek. Запросы: {summary}")
 
     async def _next_candidate(self, r: DownloadRequest) -> None:
         assert self._slskd is not None
@@ -372,7 +444,14 @@ class Worker:
             return
 
         artist_id = int(r.state["lidarrId"])
-        stats = await self._lidarr.stats(artist_id)
+        try:
+            stats = await self._lidarr.stats(artist_id)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 404:
+                raise
+            # Исполнителя удалили в Lidarr: повторять запрос бессмысленно.
+            self._finish(r, RequestStatus.FAILED, "Артист удалён из Lidarr — создайте заявку заново")
+            return
         queue = await self._lidarr.queue_size(artist_id)
         files = stats.track_file_count
         if files != r.state.get("files", 0):

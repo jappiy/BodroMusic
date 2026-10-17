@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS maintenance_actions (
     path TEXT,
     details TEXT NOT NULL,
     quarantine_id INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    planned INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_actions_run ON maintenance_actions(run_id, id);
 CREATE TABLE IF NOT EXISTS quarantine (
@@ -93,6 +94,17 @@ CREATE TABLE IF NOT EXISTS maintenance_checked (
     checked_at INTEGER NOT NULL
 );
 """
+
+
+SCHEMA_VERSION = 1
+"""Версия данных (`PRAGMA user_version`). 1 — очищен кэш проверок обслуживания, записанный пробными запусками 0.4.0,
+у действий появился признак `planned` (исправление запланировано пробным запуском)."""
+DRY_RUN_SUFFIX = " (пробный запуск — ничего не изменено)"
+"""Так bodrod 0.4.0 помечал запланированные исправления пробного запуска."""
+
+ATTENTION = "attention"
+"""Фильтр отчёта «требует внимания»: не исправлено и нужно посмотреть человеку."""
+ATTENTION_KINDS = ("tags", "cover", "short", "mismatch")
 
 
 def now_ms() -> int:
@@ -143,6 +155,8 @@ class MaintenanceAction:
     created_at: int
     """Файл лежит в карантине, и его можно вернуть."""
     restorable: bool = False
+    """Исправление запланировано пробным запуском (ничего не изменено)."""
+    planned: bool = False
 
 
 @dataclass
@@ -208,6 +222,21 @@ class Store:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        version = self._conn.execute("PRAGMA user_version").fetchone()[0]
+        columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(maintenance_actions)")}
+        if "planned" not in columns:
+            self._conn.execute("ALTER TABLE maintenance_actions ADD COLUMN planned INTEGER NOT NULL DEFAULT 0")
+            self._conn.execute(
+                "UPDATE maintenance_actions SET planned = 1 WHERE details LIKE ?", (f"%{DRY_RUN_SUFFIX}",)
+            )
+        if version < 1:
+            # bodrod 0.4.0 писал отметки «проверено» и в пробном режиме — по ним настоящий запуск пропустил бы файлы.
+            self._conn.execute("DELETE FROM maintenance_checked")
+        if version < SCHEMA_VERSION:
+            self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def close(self) -> None:
         with self._lock:
@@ -472,12 +501,25 @@ class Store:
         album: str | None = None,
         path: str | None = None,
         quarantine_id: int | None = None,
+        planned: bool = False,
     ) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO maintenance_actions (run_id, kind, applied, artist, title, album, path, details, "
-                "quarantine_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (run_id, kind, int(applied), artist, title, album, path, details, quarantine_id, now_ms()),
+                "quarantine_id, created_at, planned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    kind,
+                    int(applied),
+                    artist,
+                    title,
+                    album,
+                    path,
+                    details,
+                    quarantine_id,
+                    now_ms(),
+                    int(planned),
+                ),
             )
             return int(cur.lastrowid)
 
@@ -489,7 +531,10 @@ class Store:
         if run_id is not None:
             where.append("a.run_id = ?")
             params.append(run_id)
-        if kind:
+        if kind == ATTENTION:
+            where.append(f"a.applied = 0 AND a.planned = 0 AND a.kind IN ({','.join('?' for _ in ATTENTION_KINDS)})")
+            params.extend(ATTENTION_KINDS)
+        elif kind:
             where.append("a.kind = ?")
             params.append(kind)
         clause = " AND ".join(where) or "1 = 1"
@@ -572,6 +617,10 @@ class Store:
                 (key, signature, now_ms()),
             )
 
+    def clear_checked(self) -> int:
+        with self._lock:
+            return self._conn.execute("DELETE FROM maintenance_checked").rowcount
+
     def track_durations(self) -> dict[str, int]:
         """id трека в Navidrome → длительность по каталогу (мс) для треков, скачанных через bodrod."""
         with self._lock:
@@ -611,6 +660,7 @@ def _action_from_row(row: sqlite3.Row) -> MaintenanceAction:
         quarantine_id=row["quarantine_id"],
         created_at=row["created_at"],
         restorable=bool(row["restorable"]),
+        planned=bool(row["planned"]),
     )
 
 

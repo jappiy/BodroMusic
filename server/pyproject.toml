@@ -1,6 +1,6 @@
 [project]
 name = "bodrod"
-version = "0.4.0"
+version = "0.5.0"
 description = "Сервис загрузок BodroMusic: slskd + Lidarr + Navidrome"
 requires-python = ">=3.12"
 

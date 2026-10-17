@@ -11,13 +11,15 @@ services:
       - "8790:8790"
     volumes:
       - ./bodrod-data:/data
+      # Секреты файлами (chmod 600): navidrome_password — пароль админа Navidrome, в YAML и переменных его нет.
+      - ./secrets:/secrets:ro
       # Общая папка музыки на запись: и загрузки slskd, и библиотека Navidrome.
       - /srv/music:/music
     environment:
       # Navidrome: админ-учётка нужна, чтобы запускать сканирование и проверять, есть ли трек в библиотеке.
       NAVIDROME_URL: http://navidrome:4533
       NAVIDROME_ADMIN_USER: admin
-      NAVIDROME_ADMIN_PASSWORD: ${NAVIDROME_ADMIN_PASSWORD}
+      # Пароль читается из /secrets/navidrome_password (NAVIDROME_ADMIN_PASSWORD_FILE — если файл в другом месте).
       # slskd — скачивание отдельных треков. Ключ: slskd.yml → web.authentication.api_keys.
       SLSKD_URL: http://slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
@@ -36,3 +38,6 @@ services:
       # LIDARR_METADATA_PROFILE_ID: "1"
       # Необязательно: OAuth-токен Яндекс Музыки (без него поиск тоже работает, но каталог может быть урезан).
       # YANDEX_MUSIC_TOKEN: ${YANDEX_MUSIC_TOKEN}
+      # Обслуживание библиотеки: источники обложек и тегов по порядку (по умолчанию так).
+      # COVER_PROVIDERS: yandex,deezer,itunes,musicbrainz
+      # TAG_PROVIDERS: musicbrainz,yandex,deezer

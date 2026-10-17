@@ -49,6 +49,8 @@ class FakeWorld:
     deezer_tracks: list[dict[str, Any]] = field(default_factory=list)
     deezer_artists: list[dict[str, Any]] = field(default_factory=list)
     slskd_responses: list[dict[str, Any]] = field(default_factory=list)
+    """Ответы по тексту запроса (если задано — вместо `slskd_responses`)."""
+    slskd_responses_by_text: dict[str, list[dict[str, Any]]] | None = None
     slskd_searches: dict[str, dict[str, Any]] = field(default_factory=dict)
     """username → {filename: state}."""
     slskd_transfers: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
@@ -123,6 +125,9 @@ class FakeWorld:
             if request.method == "DELETE":
                 return httpx.Response(204)
             if len(parts) == 4 and parts[3] == "responses":
+                if self.slskd_responses_by_text is not None:
+                    text = self.slskd_searches[parts[2]]["searchText"]
+                    return httpx.Response(200, json=self.slskd_responses_by_text.get(text, []))
                 return httpx.Response(200, json=self.slskd_responses)
             return httpx.Response(200, json={"id": parts[2], "isComplete": True, "state": "Completed, TimedOut"})
         if path.startswith("/transfers/downloads/"):
@@ -176,7 +181,8 @@ class FakeWorld:
             return httpx.Response(201, json=artist)
         if path.startswith("/artist/") and request.method == "GET":
             artist_id = int(path.rsplit("/", 1)[-1])
-            return httpx.Response(200, json=next(a for a in self.lidarr_artists if a["id"] == artist_id))
+            artist = next((a for a in self.lidarr_artists if a["id"] == artist_id), None)
+            return httpx.Response(200, json=artist) if artist else httpx.Response(404, json={"message": "NotFound"})
         if path.startswith("/artist/") and request.method == "PUT":
             self.lidarr_updates.append(json.loads(request.content))
             return httpx.Response(202, json=json.loads(request.content))

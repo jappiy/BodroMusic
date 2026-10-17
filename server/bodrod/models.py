@@ -206,10 +206,11 @@ class MaintenanceStatus(ApiModel):
 class MaintenanceActionOut(ApiModel):
     id: int
     run_id: int
-    """short / duplicate / album / tags / cover."""
+    """short / duplicate / album / artist_merge / tags / cover / mismatch."""
     kind: str
-    """`True` — исправлено; `False` — только найдено (в отчёт)."""
+    """`True` — исправлено; `False` — только найдено (в отчёт) или запланировано пробным запуском (`planned`)."""
     applied: bool
+    planned: bool = False
     artist: str | None = None
     title: str | None = None
     album: str | None = None

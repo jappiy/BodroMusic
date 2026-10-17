@@ -110,7 +110,7 @@ slskd сохраняет готовый файл в `/downloads/<имя роди
 | Контейнер | Образ | Роль |
 | --- | --- | --- |
 | `bodrod-secrets` | `alpine:3.20` | Одноразовый при каждом старте: достаёт `ApiKey` из `lidarr/config.xml` и ключ slskd из `slskd.yml`, пишет `/volume1/docker/bodrod/secrets/env` (`chmod 600`), делает `chown -R 1027:100` для `env` и `data` |
-| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1; новый образ 0.4.0 — `8c78ba8`, обновить по заданиям 003 и 005), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки» |
+| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1; новый образ 0.5.0 — по заданию 006, обновить по заданиям 003, 005 и 006), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки» |
 
 Ключевые настройки `bodrod`:
 ```yaml
@@ -125,7 +125,7 @@ environment:
   PYTHONUTF8: "1"
   NAVIDROME_URL: http://navidrome:4533
   NAVIDROME_ADMIN_USER: bodrod                 # отдельный админ Navidrome
-  NAVIDROME_ADMIN_PASSWORD: "…"                # только в YAML проекта на сервере
+  # пароль — с 0.5.0 только файлом /secrets/navidrome_password (600, владелец 1027), в YAML его нет
   LIDARR_URL: http://lidarr:8686
   SLSKD_URL: http://slskd:5030
   SLSKD_DOWNLOADS_DIR: /music/slsk
@@ -133,8 +133,10 @@ environment:
   # YANDEX_MUSIC_TOKEN: не задан, поиск Яндекса идёт анонимно
   # с 0.3.0 (задание 003): NAVIDROME_DB, LIDARR_MUSIC_DIR, SLSK_WORKER_QUEUE + том папки Navidrome
   # с 0.4.0 (задание 005): TZ, MAINTENANCE_DRY_RUN (первый прогон), при желании MAINTENANCE_AT, QUARANTINE_DAYS
+  # с 0.5.0 (задание 006): при желании COVER_PROVIDERS, TAG_PROVIDERS, SLSKD_PARALLEL_SEARCHES, SLSKD_RETRY_*;
+  #   DISCOGS_TOKEN — файлом /secrets/discogs_token
 ```
-Регламент 0.4.0 пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
+Регламент (с 0.4.0) пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
 `/volume2/music/.bodrod-quarantine` (30 дней, внутри `.ndignore`). Файлы из папок исполнителей Lidarr не трогает.
 Пакет `bodromusic-server` на GHCR публичный, теги — короткие хеши коммитов. В проекте тег закреплён, `latest` не используется.
 
@@ -257,6 +259,7 @@ queued ─► (уже в библиотеке? → completed)
 Что и когда менялось на сервере — в файлах заданий `docs/history/` (индекс — `docs/HANDOFF.md`, раздел 10).
 Развёртывание bodrod 0.2.x (сессия 2026-10-16) — [`docs/history/002-bodrod-deploy.md`](history/002-bodrod-deploy.md).
 bodrod 0.4.0 (регламент обслуживания библиотеки) — [`docs/history/005-maintenance-artist-playback.md`](history/005-maintenance-artist-playback.md).
+bodrod 0.5.0 (исправления регламента и заявок, пароль из `/secrets`) — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
 
 ---
 
@@ -265,8 +268,9 @@ bodrod 0.4.0 (регламент обслуживания библиотеки) 
 - Ключ Lidarr: `/volume1/docker/bodromusic/lidarr/config.xml` (`<ApiKey>`).
 - Ключ slskd: `/volume1/docker/slskd/slskd.yml` → `web.authentication.api_keys.worker.key`.
 - Для bodrod оба ключа копируются в `/volume1/docker/bodrod/secrets/env` (600, владелец 1027) при каждом старте проекта.
-- Пароль служебного админа Navidrome `bodrod` записан **открытым текстом в YAML проекта `bodrod`** в DSM.
-  Лучше перенести его в `secrets/` по той же схеме.
+- Пароль служебного админа Navidrome `bodrod`: с bodrod 0.5.0 читается из `/volume1/docker/bodrod/secrets/navidrome_password`
+  (600, владелец 1027) — смонтирован как `/secrets/navidrome_password`. Пока проект не обновлён по заданию 006, пароль
+  ещё лежит открытым текстом в YAML проекта `bodrod`; после переноса — убрать строку из YAML и сменить пароль.
 - Пароли Navidrome для `liked2lidarr` — в его compose (`NAVIDROME_PASSWORD_1/2`).
 - Не выводить содержимое этих файлов в логи и ответы.
 
@@ -286,6 +290,6 @@ bodrod 0.4.0 (регламент обслуживания библиотеки) 
 5. **AudioMuse-AI:** агент прописан в Navidrome, но плагина и сервера нет. Либо установить, либо убрать из `ND_AGENTS`.
 6. **Отдельная «волна» для жены:** сейчас разделение есть на уровне учёток Navidrome и двух экземпляров Explo;
    проверить, что «Моя волна» в приложении считается по учётке, а не по общей библиотеке.
-7. **Пароль `bodrod` в YAML:** перенести в `secrets/`.
+7. **Пароль `bodrod` в YAML:** перенести в `secrets/navidrome_password` при обновлении до bodrod 0.5.0 (задание 006).
 8. **Внешний доступ:** через встроенный reverse proxy DSM с Let's Encrypt на DDNS. Порты 4533 и 8790 на роутере не открывать.
 9. **Порт 50300 на Keenetic** для slskd: проверить проброс, без него меньше пиров и хуже поиск.

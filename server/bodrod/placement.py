@@ -253,6 +253,75 @@ def _cover_ogg(audio, cover: tuple[bytes, str] | None) -> bool:  # noqa: ANN001
     return True
 
 
+def embed_cover(path: Path, cover: tuple[bytes, str]) -> bool:
+    """Вшить обложку в файл, если её там нет. `False` — уже есть или формат не поддерживается."""
+    import mutagen
+    from mutagen.flac import FLAC
+    from mutagen.mp3 import MP3
+    from mutagen.mp4 import MP4, MP4Cover
+    from mutagen.oggopus import OggOpus
+    from mutagen.oggvorbis import OggVorbis
+
+    audio = mutagen.File(path)
+    data, mime = cover
+    if isinstance(audio, FLAC):
+        added = _cover_flac(audio, cover)
+    elif isinstance(audio, OggVorbis | OggOpus):
+        added = _cover_ogg(audio, cover)
+    elif isinstance(audio, MP3):
+        from mutagen.id3 import APIC
+
+        if audio.tags is None:
+            audio.add_tags()
+        added = not audio.tags.getall("APIC")
+        if added:
+            audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+    elif isinstance(audio, MP4):
+        if audio.tags is None:
+            audio.add_tags()
+        added = not audio.tags.get("covr")
+        if added:
+            kind = MP4Cover.FORMAT_PNG if mime == "image/png" else MP4Cover.FORMAT_JPEG
+            audio.tags["covr"] = [MP4Cover(data, imageformat=kind)]
+    else:
+        return False
+    if added:
+        audio.save(**({"v2_version": 4} if isinstance(audio, MP3) else {}))
+    return added
+
+
+def read_embedded_cover(path: Path) -> tuple[bytes, str] | None:
+    """Встроенная обложка файла (картинка и MIME) — для соседних треков того же альбома."""
+    try:
+        import mutagen
+
+        audio = mutagen.File(path)
+    except Exception:  # noqa: BLE001 — битый файл
+        return None
+    if audio is None:
+        return None
+    pictures = getattr(audio, "pictures", None)
+    if pictures:
+        return pictures[0].data, pictures[0].mime or "image/jpeg"
+    tags = audio.tags
+    if tags is None:
+        return None
+    with contextlib.suppress(Exception):
+        if hasattr(tags, "getall") and tags.getall("APIC"):
+            apic = tags.getall("APIC")[0]
+            return apic.data, apic.mime or "image/jpeg"
+        covr = tags.get("covr") if hasattr(tags, "get") else None
+        if covr:
+            return bytes(covr[0]), "image/png" if covr[0].imageformat == covr[0].FORMAT_PNG else "image/jpeg"
+        block = tags.get("metadata_block_picture") if hasattr(tags, "get") else None
+        if block:
+            from mutagen.flac import Picture
+
+            picture = Picture(base64.b64decode(block[0]))
+            return picture.data, picture.mime or "image/jpeg"
+    return None
+
+
 def _tag_mp3(audio, tags: Tags, cover: tuple[bytes, str] | None) -> bool:  # noqa: ANN001
     from mutagen.id3 import APIC, TALB, TIT2, TPE1, TPE2
 

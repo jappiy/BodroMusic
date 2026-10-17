@@ -158,14 +158,16 @@ data class MaintenanceStatus(
     val lastRun: MaintenanceRun? = null,
 )
 
-/** Что сделал (или нашёл) регламент. [kind]: short / duplicate / album / tags / cover. */
+/** Что сделал (или нашёл) регламент. [kind]: short / duplicate / album / artist_merge / tags / cover / mismatch. */
 @Serializable
 data class MaintenanceAction(
     val id: Long,
     val runId: Long,
     val kind: String,
-    /** `true` — исправлено; `false` — только найдено. */
+    /** `true` — исправлено; `false` — только найдено или запланировано пробным запуском ([planned]). */
     val applied: Boolean,
+    /** Пробный запуск: исправление было бы сделано, но файлы не менялись. */
+    val planned: Boolean = false,
     val artist: String? = null,
     val title: String? = null,
     val album: String? = null,

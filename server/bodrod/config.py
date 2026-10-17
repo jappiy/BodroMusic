@@ -3,19 +3,53 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 DEFAULT_FORMATS = ("flac", "mp3", "m4a", "ogg", "opus", "aac", "wav", "alac")
 
 
-def _opt(name: str) -> str | None:
-    """Значение переменной; `<NAME>_FILE` — путь к файлу с секретом (например, смонтированному в /secrets)."""
+DEFAULT_COVER_PROVIDERS = ("yandex", "deezer", "itunes", "musicbrainz")
+DEFAULT_TAG_PROVIDERS = ("musicbrainz", "yandex", "deezer")
+SECRETS_DIR = "/secrets"
+_COMMENT = re.compile(r"\s+#.*$")
+
+
+def _opt(name: str, default_file: str | None = None) -> str | None:
+    """Значение переменной; `<NAME>_FILE` — путь к файлу с секретом (например, смонтированному в /secrets).
+
+    `default_file` — файл, который читается, если не задано ни то, ни другое (пароль в `/secrets`).
+    """
     value = os.environ.get(name, "").strip()
     path = os.environ.get(f"{name}_FILE", "").strip()
+    if not value and not path and default_file and os.path.isfile(default_file):
+        path = default_file
     if not value and path:
         with open(path, encoding="utf-8") as f:
             value = f.read().strip()
     return value or None
+
+
+def _secret(name: str, default_file: str | None = None) -> str | None:
+    """Ключ для HTTP-заголовка: без комментария `# …` в конце строки и только ASCII.
+
+    Кириллица в заголовке роняет httpx ошибкой `'ascii' codec can't encode` на каждом запросе — лучше
+    остановиться при старте с понятным сообщением.
+    """
+    value = _opt(name, default_file)
+    if value is None:
+        return None
+    value = _COMMENT.sub("", value.splitlines()[0]).strip().strip("\"'")
+    if not value.isascii():
+        raise RuntimeError(f"{name}: в значении есть не-ASCII символы (комментарий или опечатка?) — проверьте секрет")
+    return value or None
+
+
+def _list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    value = _opt(name)
+    if value is None:
+        return default
+    return tuple(p.strip().lower() for p in value.split(",") if p.strip())
 
 
 def _int(name: str, default: int) -> int:
@@ -46,11 +80,22 @@ class Settings:
 
     yandex_token: str | None = None
     deezer_enabled: bool = True
+    """Источники обложек и тегов для обслуживания, по порядку: yandex, deezer, itunes, musicbrainz, discogs."""
+    cover_providers: tuple[str, ...] = DEFAULT_COVER_PROVIDERS
+    tag_providers: tuple[str, ...] = DEFAULT_TAG_PROVIDERS
+    """Токен Discogs (необязательно): без него Discogs в цепочке пропускается."""
+    discogs_token: str | None = None
 
     data_dir: str = "/data"
     worker_interval_s: float = 3.0
     slskd_search_timeout_s: int = 25
     slskd_max_candidates: int = 5
+    """Сколько поисков в Soulseek идёт одновременно и пауза между их запусками (секунды)."""
+    slskd_parallel_searches: int = 2
+    slskd_search_gap_s: int = 5
+    """Не нашли ни по одному запросу — повторить через столько секунд, не больше `slskd_retry_rounds` раз."""
+    slskd_retry_interval_s: int = 6 * 3600
+    slskd_retry_rounds: int = 3
     """Сколько ждать, пока пир начнёт отдавать файл (очередь у него), прежде чем пробовать следующий источник."""
     slskd_stall_timeout_s: int = 20 * 60
     import_timeout_s: int = 15 * 60
@@ -128,7 +173,7 @@ class Settings:
     def from_env(cls) -> Settings:
         navidrome = _opt("NAVIDROME_URL")
         user = _opt("NAVIDROME_ADMIN_USER")
-        password = _opt("NAVIDROME_ADMIN_PASSWORD")
+        password = _opt("NAVIDROME_ADMIN_PASSWORD", os.path.join(SECRETS_DIR, "navidrome_password"))
         if not (navidrome and user and password):
             raise RuntimeError("Нужно задать NAVIDROME_URL, NAVIDROME_ADMIN_USER и NAVIDROME_ADMIN_PASSWORD")
         formats = _opt("ALLOWED_FORMATS")
@@ -139,17 +184,24 @@ class Settings:
             navidrome_admin_user=user,
             navidrome_admin_password=password,
             slskd_url=_opt("SLSKD_URL"),
-            slskd_api_key=_opt("SLSKD_API_KEY"),
+            slskd_api_key=_secret("SLSKD_API_KEY"),
             lidarr_url=_opt("LIDARR_URL"),
-            lidarr_api_key=_opt("LIDARR_API_KEY"),
+            lidarr_api_key=_secret("LIDARR_API_KEY"),
             lidarr_root_folder=_opt("LIDARR_ROOT_FOLDER"),
             lidarr_quality_profile_id=int(quality) if quality else None,
             lidarr_metadata_profile_id=int(metadata) if metadata else None,
-            yandex_token=_opt("YANDEX_MUSIC_TOKEN"),
+            yandex_token=_secret("YANDEX_MUSIC_TOKEN"),
             deezer_enabled=(_opt("DEEZER_ENABLED") or "true").lower() != "false",
+            cover_providers=_list("COVER_PROVIDERS", DEFAULT_COVER_PROVIDERS),
+            tag_providers=_list("TAG_PROVIDERS", DEFAULT_TAG_PROVIDERS),
+            discogs_token=_secret("DISCOGS_TOKEN", os.path.join(SECRETS_DIR, "discogs_token")),
             data_dir=_opt("DATA_DIR") or "/data",
             slskd_search_timeout_s=_int("SLSKD_SEARCH_TIMEOUT_S", 25),
             slskd_max_candidates=_int("SLSKD_MAX_CANDIDATES", 5),
+            slskd_parallel_searches=max(1, _int("SLSKD_PARALLEL_SEARCHES", 2)),
+            slskd_search_gap_s=_int("SLSKD_SEARCH_GAP_S", 5),
+            slskd_retry_interval_s=_int("SLSKD_RETRY_INTERVAL_S", 6 * 3600),
+            slskd_retry_rounds=_int("SLSKD_RETRY_ROUNDS", 3),
             slskd_stall_timeout_s=_int("SLSKD_STALL_TIMEOUT_S", 20 * 60),
             import_timeout_s=_int("IMPORT_TIMEOUT_S", 15 * 60),
             allowed_formats=tuple(f.strip().lower() for f in formats.split(",")) if formats else DEFAULT_FORMATS,
