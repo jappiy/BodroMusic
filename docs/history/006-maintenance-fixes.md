@@ -2,7 +2,7 @@
 
 - **Дата:** 2026-10-17
 - **Версии:** приложение 0.12.0 (`versionCode 12`), bodrod 0.5.0
-- **Релиз с APK:** локально собраны `dist/BodroMusic-0.12.0.apk` и `-debug.apk`; релиз на GitHub — запустить Release вручную (версия `0.12.0`)
+- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0 (`BodroMusic-0.12.0.apk`, `BodroMusic-0.12.0-debug.apk`)
 - **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:0c5b78e` (bodrod 0.5.0, `server.yml` зелёный)
 - **Статус:** реализовано; CI зелёный на `0c5b78e` (Android: сборка, unit-тесты, lint, эмулятор; Server: pytest, ruff, образ).
   Локально — pytest (78), ruff, ktlint, detekt, unit-тесты, Android Lint, сборка debug и release.
@@ -133,8 +133,6 @@
 
 ## Что осталось / проверить
 
-- Запустить Release (Actions → Release → Run workflow, версия `0.12.0`) и записать сюда ссылку на релиз —
-  во встроенном браузере агента GitHub не залогинен, `gh` не установлен, пуш тегов запрещён.
 - На реальной библиотеке: два пробных запуска, тест-кейсы задания, качество совпадений iTunes и MusicBrainz для
   русской музыки, нагрузка MusicBrainz (1 запрос/с при `MAINTENANCE_CATALOG_LIMIT=200` — до ~3 минут на теги).
 - Нельзя проверить из тестов: есть ли у Cover Art Archive картинка для выбранного релиза (если нет — берётся

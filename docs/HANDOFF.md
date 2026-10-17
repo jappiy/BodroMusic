@@ -59,14 +59,14 @@
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
 - Текущая версия приложения: **0.12.0** (`versionCode 12`), задаётся в `app/build.gradle.kts`.
   Версия сервиса загрузок bodrod: **0.5.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.9.0
-  (`BodroMusic-0.9.0.apk` — release с R8; `BodroMusic-0.9.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0
+  (`BodroMusic-0.12.0.apk` — release с R8; `BodroMusic-0.12.0-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
 **CI полностью зелёный** на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006): сборка debug и release, unit-тесты,
-Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, образ `0c5b78e`. Релиз v0.12.0 — запустить вручную, см. [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
+Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, образ `0c5b78e`. Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0, подробности — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
 Предыдущее состояние: CI зелёный на `c650fe9` (0.11.0), образ bodrod 0.4.0 — `8c78ba8`.
 
 | Пункт ТЗ (раздел 1) | Статус |
@@ -261,4 +261,6 @@ cd "C:\Projects\BodroMusic"; git fetch origin; git switch claude/new-session-fi1
 - JDK из Android Studio (`C:\Program Files\Android\Android Studio\jbr`) — **25**, а Gradle 8.14 на нём не запускается.
   Портативный Temurin 17 лежит в `C:\tools\jdk17`. В Git Bash: `export JAVA_HOME=C:/tools/jdk17 ANDROID_HOME="$LOCALAPPDATA/Android/Sdk"`.
 - Python 3.12 есть (`py -3`); для тестов сервера — venv с `pip install -r server/requirements-dev.txt`.
-- `gh` не установлен: статус CI — через публичный API GitHub (репозиторий публичный), запуск Release — вручную в Actions.
+- `gh` не установлен: статус CI — через публичный API GitHub (репозиторий публичный). Release запускается через API
+  (`POST …/actions/workflows/release.yml/dispatches`) с токеном из Git Credential Manager (`git credential fill`),
+  если владелец залогинен в git на этом компьютере; иначе — вручную в Actions.
