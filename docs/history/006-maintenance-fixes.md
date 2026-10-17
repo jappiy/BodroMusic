@@ -2,9 +2,10 @@
 
 - **Дата:** 2026-10-17
 - **Версии:** приложение 0.12.0 (`versionCode 12`), bodrod 0.5.0
-- **Релиз с APK:** см. раздел «Что осталось / проверить»
-- **Образ bodrod:** см. раздел «Что нужно сделать на сервере»
-- **Статус:** реализовано; локально — pytest (78), ruff, ktlint, detekt, unit-тесты, Android Lint, сборка debug и release.
+- **Релиз с APK:** локально собраны `dist/BodroMusic-0.12.0.apk` и `-debug.apk`; релиз на GitHub — запустить Release вручную (версия `0.12.0`)
+- **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:0c5b78e` (bodrod 0.5.0, `server.yml` зелёный)
+- **Статус:** реализовано; CI зелёный на `0c5b78e` (Android: сборка, unit-тесты, lint, эмулятор; Server: pytest, ruff, образ).
+  Локально — pytest (78), ruff, ktlint, detekt, unit-тесты, Android Lint, сборка debug и release.
   На реальном сервере и на телефоне не проверено. `MAINTENANCE_DRY_RUN` остаётся `true`.
 
 ## Задание
@@ -112,10 +113,10 @@
    `bodrod-secrets` делает `chown` только для `env` и `data` — владельца файла пароля поставить вручную (или
    добавить в его команду `chown 1027:100 /secrets/navidrome_password`).
 2. В YAML проекта `bodrod` убрать строку `NAVIDROME_ADMIN_PASSWORD: "…"` и обновить образ (тег — хеш коммита
-   с bodrod 0.5.0 после зелёного `server.yml`). Том `/volume1/docker/bodrod/secrets:/secrets:ro` уже подключён;
+   `0c5b78e`). Том `/volume1/docker/bodrod/secrets:/secrets:ro` уже подключён;
    bodrod сам читает `/secrets/navidrome_password`.
    ```yaml
-   image: ghcr.io/jappiy/bodromusic-server:<хеш>
+   image: ghcr.io/jappiy/bodromusic-server:0c5b78e
    environment:
      MAINTENANCE_DRY_RUN: "true"     # остаётся до проверки отчёта
      # COVER_PROVIDERS: yandex,deezer,itunes,musicbrainz   — по умолчанию
@@ -132,8 +133,8 @@
 
 ## Что осталось / проверить
 
-- Дождаться зелёного CI (`android.yml`, `server.yml`), запустить Release (версия `0.12.0`), записать сюда ссылку
-  на релиз и тег образа bodrod.
+- Запустить Release (Actions → Release → Run workflow, версия `0.12.0`) и записать сюда ссылку на релиз —
+  во встроенном браузере агента GitHub не залогинен, `gh` не установлен, пуш тегов запрещён.
 - На реальной библиотеке: два пробных запуска, тест-кейсы задания, качество совпадений iTunes и MusicBrainz для
   русской музыки, нагрузка MusicBrainz (1 запрос/с при `MAINTENANCE_CATALOG_LIMIT=200` — до ~3 минут на теги).
 - Нельзя проверить из тестов: есть ли у Cover Art Archive картинка для выбранного релиза (если нет — берётся

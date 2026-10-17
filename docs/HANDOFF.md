@@ -65,8 +65,8 @@
 
 ## 2. Статус
 
-**0.12.0 / bodrod 0.5.0** (задание 006): локально зелёные pytest, ruff, ktlint, detekt, unit-тесты, Android Lint,
-сборка debug и release; CI и релиз — см. [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
+**CI полностью зелёный** на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006): сборка debug и release, unit-тесты,
+Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, образ `0c5b78e`. Релиз v0.12.0 — запустить вручную, см. [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
 Предыдущее состояние: CI зелёный на `c650fe9` (0.11.0), образ bodrod 0.4.0 — `8c78ba8`.
 
 | Пункт ТЗ (раздел 1) | Статус |
