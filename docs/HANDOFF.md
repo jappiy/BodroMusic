@@ -59,16 +59,14 @@
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
 - Текущая версия приложения: **0.13.0** (`versionCode 13`), задаётся в `app/build.gradle.kts`.
   Версия сервиса загрузок bodrod: **0.6.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0
-  (`BodroMusic-0.12.0.apk` — release с R8; `BodroMusic-0.12.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.13.0
+  (`BodroMusic-0.13.0.apk` — release с R8; `BodroMusic-0.13.0-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
-Задание 007 (0.13.0 / bodrod 0.6.0, Last.fm) — локально pytest и ruff зелёные, пуш, CI и релиз v0.13.0 ещё не сделаны.
-**CI полностью зелёный** на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006): сборка debug и release, unit-тесты,
-Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, образ `0c5b78e`. Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0, подробности — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
-Предыдущее состояние: CI зелёный на `c650fe9` (0.11.0), образ bodrod 0.4.0 — `8c78ba8`.
+**CI полностью зелёный** на `6425a2c` (0.13.0 / bodrod 0.6.0, задание 007, Last.fm): Android и `server.yml`, образ `6425a2c`. Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.13.0, подробности — [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md).
+Предыдущее состояние: CI зелёный на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006), релиз v0.12.0.
 
 | Пункт ТЗ (раздел 1) | Статус |
 |---|---|
@@ -206,7 +204,7 @@ Smoke-тест против реального Navidrome: скопировать
 0. Обновить проект `bodrod` на сервере до 0.5.0: пароль Navidrome — в `/secrets/navidrome_password`, убрать его из YAML,
    два пробных прогона регламента подряд (счётчики должны совпасть) — раздел «Что нужно сделать на сервере» в
    [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md). `MAINTENANCE_DRY_RUN=false` владелец включает сам.
-1. Закрыть задание 007: пуш, зелёный CI, релиз v0.13.0, тег образа bodrod 0.6.0; на сервере — ключ
+1. На сервере: образ bodrod 0.6.0 (`6425a2c`) и ключ
    `/secrets/lastfm_api_key` (раздел «Что нужно сделать на сервере» в [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md)).
    Следующая порция замечаний владельца — новое задание `docs/history/008-…`.
    Проверить на телефоне: из 004 — офлайн-лайки, счётчики «Коллекции»; из 005 — старт и переключение треков,
