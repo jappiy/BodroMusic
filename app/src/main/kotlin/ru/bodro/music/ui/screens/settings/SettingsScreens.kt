@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Leaderboard
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.ReceiptLong
@@ -76,6 +77,7 @@ fun SettingsScreen(
     onOpenAccounts: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenWave: () -> Unit,
+    onOpenCharts: () -> Unit = {},
     onOpenAppearance: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenCleanup: () -> Unit,
@@ -110,6 +112,15 @@ fun SettingsScreen(
             )
         }
         item { SettingsEntry(Icons.Rounded.Waves, R.string.settings_wave, R.string.settings_wave_summary, onOpenWave, "settings-wave") }
+        item {
+            SettingsEntry(
+                Icons.Rounded.Leaderboard,
+                R.string.charts_settings_title,
+                R.string.settings_charts_summary,
+                onOpenCharts,
+                "settings-charts",
+            )
+        }
         item {
             SettingsEntry(
                 Icons.Rounded.Palette,

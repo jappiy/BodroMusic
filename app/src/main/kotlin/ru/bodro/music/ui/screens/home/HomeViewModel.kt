@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ru.bodro.music.core.downloads.Chart
+import ru.bodro.music.data.reco.ChartsRepository
 import ru.bodro.music.data.repository.HomeData
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.playback.PlayerConnection
@@ -19,7 +21,13 @@ import ru.bodro.music.ui.util.toUiError
 class HomeViewModel @Inject constructor(
     private val library: LibraryRepository,
     private val connection: PlayerConnection,
+    private val charts: ChartsRepository,
 ) : ViewModel() {
+    private val _charts = MutableStateFlow<List<Chart>>(emptyList())
+
+    /** Чарты bodrod для раздела под «Моей волной». */
+    val chartList: StateFlow<List<Chart>> = _charts.asStateFlow()
+
     private val _state = MutableStateFlow<LoadState<HomeData>>(LoadState.Loading)
     val state: StateFlow<LoadState<HomeData>> = _state.asStateFlow()
 
@@ -32,7 +40,12 @@ class HomeViewModel @Inject constructor(
         load()
     }
 
+    private fun loadCharts() {
+        viewModelScope.launch { _charts.value = charts.home() }
+    }
+
     fun load() {
+        loadCharts()
         viewModelScope.launch {
             if (_state.value !is LoadState.Content) _state.value = LoadState.Loading
             _state.value = runCatching { library.home() }
@@ -43,6 +56,7 @@ class HomeViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             _refreshing.value = true
+            loadCharts()
             library.invalidate()
             runCatching { library.home() }
                 .onSuccess { _state.value = LoadState.Content(it) }

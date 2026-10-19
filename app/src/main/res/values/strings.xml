@@ -550,4 +550,14 @@
     <string name="reco_harvest_last">%1$s</string>
     <string name="reco_harvest_never">ещё не запускался</string>
     <string name="reco_harvest_running">идёт</string>
+    <string name="home_charts">Чарты</string>
+    <string name="chart_updated">Обновлён %1$s</string>
+    <string name="chart_available">Можно слушать %1$d из %2$d</string>
+    <string name="chart_state_downloading">Качается</string>
+    <string name="chart_download">Скачать</string>
+    <string name="charts_settings_title">Чарты на главной</string>
+    <string name="settings_charts_summary">Какие чарты показывать под «Моей волной» и в каком порядке</string>
+    <string name="charts_settings_empty">Чарты появятся, когда в настройках задан сервис загрузок bodrod 0.11.0 или новее</string>
+    <string name="action_move_up">Выше</string>
+    <string name="action_move_down">Ниже</string>
 </resources>

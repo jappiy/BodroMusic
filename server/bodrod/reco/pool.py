@@ -270,6 +270,12 @@ class PoolService:
                 return "rejected"
         return None
 
+    async def expire_owner(self, track_id: int, username: str) -> None:
+        """Снять владельца (например, чарт выпустил трек) и удалить файл, если трек больше никто не держит."""
+        async with self._lock:
+            self._set_status(track_id, username, "expired")
+            await self._settle(track_id)
+
     def _set_status(self, track_id: int, username: str, status: str) -> None:
         self._store.execute(
             "UPDATE pool_owners SET status = ?, status_at = ? WHERE track_id = ? AND username = ?",
@@ -487,9 +493,9 @@ class PoolService:
     async def _expire(self) -> None:
         before = self._clock() - self._settings.expire_days * DAY_MS
         rows = self._store.query(
-            "SELECT track_id, username FROM pool_owners WHERE status = 'in_pool' "
+            "SELECT track_id, username FROM pool_owners WHERE status = 'in_pool' AND username != ? "
             "AND MAX(added_at, COALESCE(last_played_at, 0), status_at) < ?",
-            (before,),
+            (CHARTS_OWNER, before),
         )
         for r in rows:
             self._set_status(int(r["track_id"]), r["username"], "expired")

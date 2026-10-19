@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.bodro.music.R
+import ru.bodro.music.core.downloads.Chart
 import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.WaveMode
 import ru.bodro.music.core.model.WaveSettings
@@ -58,6 +59,7 @@ import ru.bodro.music.ui.components.LoadingState
 import ru.bodro.music.ui.components.PlaylistCard
 import ru.bodro.music.ui.components.SongCard
 import ru.bodro.music.ui.components.carousel
+import ru.bodro.music.ui.screens.charts.ChartCard
 import ru.bodro.music.ui.screens.wave.TrackCapsule
 import ru.bodro.music.ui.screens.wave.WaveBackground
 import ru.bodro.music.ui.screens.wave.WaveChip
@@ -74,8 +76,10 @@ fun HomeScreen(
     onShowLiked: () -> Unit,
     onShowArtists: () -> Unit,
     onShowPlaylists: () -> Unit,
+    onOpenChart: (Chart) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    val charts by viewModel.chartList.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
@@ -86,6 +90,9 @@ fun HomeScreen(
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "hero") { WaveHero(player, onOpenWave, onTogglePlay = viewModel::togglePlay) }
             item(key = "mixes") { MixesRow() }
+            carousel("charts", { stringResource(R.string.home_charts) }, charts, null, { it.id }) { chart ->
+                ChartCard(chart, onClick = { onOpenChart(chart) })
+            }
             when (val s = state) {
                 LoadState.Loading -> item(key = "loading") { Box(Modifier.height(240.dp)) { LoadingState() } }
                 is LoadState.Error -> item(key = "error") {

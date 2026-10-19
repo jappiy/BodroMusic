@@ -118,6 +118,13 @@ class YandexApi(Protocol):
 
     async def lyrics(self, track_id: str) -> str | None: ...
 
+    async def chart(self) -> list[YTrack]:
+        """Чарт Яндекс Музыки (по порядку)."""
+        info = await self._call(lambda c: c.chart())
+        playlist = getattr(info, "chart", None) if info else None
+        shorts = (getattr(playlist, "tracks", None) or []) if playlist else []
+        return [_convert_track(s.track) for s in shorts if getattr(s, "track", None) is not None]
+
     async def liked_tracks(self) -> list[YTrack]: ...
 
     async def playlists(self) -> list[tuple[str, list[YTrack]]]: ...

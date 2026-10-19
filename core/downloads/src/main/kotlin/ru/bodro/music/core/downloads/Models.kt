@@ -342,6 +342,37 @@ data class PoolHidden(
     val artistIds: List<String> = emptyList(),
 )
 
+/** Чарт (bodrod 0.11.0+): [covers] — обложки первых треков для коллажа. */
+@Serializable
+data class Chart(
+    val id: String,
+    val title: String,
+    val source: String = "",
+    val updatedAt: Long? = null,
+    val covers: List<String> = emptyList(),
+    val size: Int = 0,
+)
+
+/**
+ * Позиция чарта. [movement]: up / down / same / new. [state]: library и pool — можно слушать ([songId]);
+ * downloading — качается; unavailable — нет на сервере.
+ */
+@Serializable
+data class ChartEntry(
+    val position: Int,
+    val artist: String,
+    val title: String,
+    val album: String? = null,
+    val coverUrl: String? = null,
+    val durationMs: Long? = null,
+    val prevPosition: Int? = null,
+    val movement: String = "same",
+    val state: String = "unavailable",
+    val songId: String? = null,
+) {
+    val isPlayable: Boolean get() = songId != null && (state == "library" || state == "pool")
+}
+
 /** Источник движка рекомендаций: [weight] — ручной (0..3), [learnedWeight] — выученный по доле promote. */
 @Serializable
 data class EngineSource(

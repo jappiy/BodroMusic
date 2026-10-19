@@ -202,6 +202,14 @@ class DownloadsClient(
 
     // endregion
 
+    // region Чарты (bodrod 0.11.0+)
+
+    suspend fun charts(): List<Chart> = get(listOf("api", "v1", "charts"))
+
+    suspend fun chart(id: String): List<ChartEntry> = get(listOf("api", "v1", "charts", id))
+
+    // endregion
+
     // region Рекомендации: движок кандидатов и архив Яндекса (только администраторы, bodrod 0.10.0+)
 
     suspend fun engine(): EngineStatus = get(listOf("api", "v1", "reco", "engine"))

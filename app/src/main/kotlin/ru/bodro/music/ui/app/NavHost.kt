@@ -11,6 +11,8 @@ import androidx.navigation.toRoute
 import ru.bodro.music.data.repository.AlbumSort
 import ru.bodro.music.ui.screens.album.AlbumScreen
 import ru.bodro.music.ui.screens.artist.ArtistScreen
+import ru.bodro.music.ui.screens.charts.ChartScreen
+import ru.bodro.music.ui.screens.charts.ChartsSettingsScreen
 import ru.bodro.music.ui.screens.collection.CollectionScreen
 import ru.bodro.music.ui.screens.collection.LikedScreen
 import ru.bodro.music.ui.screens.downloads.DownloadsScreen
@@ -59,6 +61,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onShowLiked = { navController.navigate(LikedRoute) },
                 onShowArtists = { navController.navigate(ArtistsRoute) },
                 onShowPlaylists = { navController.navigate(PlaylistsRoute) },
+                onOpenChart = { navController.navigate(ChartRoute(it.id, it.title)) },
             )
         }
         composable<CollectionRoute> {
@@ -80,6 +83,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenAccounts = { navController.navigate(AccountsRoute) },
                 onOpenPlayback = { navController.navigate(PlaybackSettingsRoute) },
                 onOpenWave = { navController.navigate(WaveSettingsRoute) },
+                onOpenCharts = { navController.navigate(ChartsSettingsRoute) },
                 onOpenAppearance = { navController.navigate(AppearanceRoute) },
                 onOpenDownloads = { navController.navigate(DownloadsRoute) },
                 onOpenCleanup = { navController.navigate(CleanupRoute) },
@@ -130,5 +134,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<ExportArtistsRoute> { ExportArtistsScreen(onBack = back) }
         composable<PoolRoute> { PoolScreen(onBack = back) }
         composable<RecoRoute> { RecoScreen(onBack = back) }
+        composable<ChartRoute> { ChartScreen(onBack = back) }
+        composable<ChartsSettingsRoute> { ChartsSettingsScreen(onBack = back) }
     }
 }

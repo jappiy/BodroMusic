@@ -27,6 +27,8 @@ import kotlinx.serialization.builtins.serializer
 import okhttp3.OkHttpClient
 import ru.bodro.music.core.downloads.ArtistPopular
 import ru.bodro.music.core.downloads.BlocklistPage
+import ru.bodro.music.core.downloads.Chart
+import ru.bodro.music.core.downloads.ChartEntry
 import ru.bodro.music.core.downloads.CleanupUser
 import ru.bodro.music.core.downloads.DeleteSongResult
 import ru.bodro.music.core.downloads.DiscoverArtist
@@ -203,6 +205,10 @@ class DownloadsRepository @Inject constructor(
     suspend fun poolHidden(): PoolHidden = client.poolHidden()
 
     suspend fun refillPool() = client.refillPool()
+
+    suspend fun charts(): List<Chart> = client.charts()
+
+    suspend fun chart(id: String): List<ChartEntry> = client.chart(id)
 
     suspend fun engine(): EngineStatus = client.engine()
 

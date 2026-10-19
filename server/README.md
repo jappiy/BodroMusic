@@ -114,6 +114,8 @@ HTTP разрешён только для адресов локальной се
 | `ENGINE_SEED_HALF_LIFE_DAYS`, `ENGINE_MAX_SEEDS` | нет | Полураспад веса семени 90 дней, до 60 семян |
 | `LISTENBRAINZ_TOKEN` | нет | Токен ListenBrainz для LB Radio (или файл `/secrets/listenbrainz_token`) |
 | `LISTENBRAINZ_USERS` | нет | `пользователь Navidrome:имя в LB,…` — плейлисты Weekly Exploration / Weekly Jams |
+| `CHARTS` | нет | Какие чарты обновлять (по id через запятую): `yandex`, `deezer_world`, `deezer_russia`, `lastfm_world`, `lastfm_russia`, `apple_ru`, `listenbrainz`; пусто — все |
+| `CHARTS_DOWNLOAD_TOP` | нет | Недостающие из топ-30 каждого чарта качаются в общий пул (`0` — не качать) |
 | `DISCOVERY_DIR` | нет | Discovery-пул (виден Navidrome), по умолчанию `<MUSIC_DIR>/_discovery` |
 | `DATA_DIR`, `PORT`, `LOG_LEVEL` | нет | `/data`, `8790`, `INFO` |
 
@@ -217,6 +219,15 @@ HTTP разрешён только для адресов локальной се
 `pool:<пользователь>` в обычную цепочку источников (Яндекс → slskd → YouTube) и кладётся в `DISCOVERY_DIR`;
 сначала пул пополняется из резерва. Скробблинг в ListenBrainz для пользователей включается в Navidrome
 (`ND_LISTENBRAINZ_ENABLED=true`, затем токен LB в профиле каждого пользователя).
+
+## Чарты (0.11.0)
+
+`bodrod/reco/charts.py` раз в сутки снимает чарты: Яндекс Музыка (`chart`, пока отвечает), Deezer (`/chart/0/tracks`,
+плейлист Top Russia), Last.fm (`chart.getTopTracks`, `geo.getTopTracks` для России), Apple Music RSS most-played `ru`,
+ListenBrainz (топ записей за неделю). Хранится снимок с позицией и прошлой позицией (движение: вверх, вниз, новинка).
+Чарт, который не ответил, скрывается до следующего удачного обновления. Каждый трек сопоставляется с библиотекой и
+пулом; недостающие из топ-`CHARTS_DOWNLOAD_TOP` ставятся в пул с владельцем `charts` (заявки `pool:charts`). Лайк
+любого пользователя переводит такой трек в библиотеку; выпавший из всех чартов и не слушавшийся 30 дней — удаляется.
 
 ## Размещение в библиотеке
 
@@ -399,6 +410,9 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | POST | `/api/v1/pool/status` | `{ids: [...]}` → `{id: статус}` только для треков пула |
 | GET | `/api/v1/pool/hidden` | Что приложение прячет: `songIds` пула, `albumIds` и `artistIds`, у которых все треки в пуле |
 | POST | `/api/v1/pool/refill` | Пополнить пул сейчас (202) |
+| GET | `/api/v1/charts` | Доступные чарты: `id`, `title`, `updatedAt`, `covers` (4 обложки), `size` |
+| GET | `/api/v1/charts/{id}` | Позиции: `position`, `prevPosition`, `movement` (`up`/`down`/`same`/`new`), `state` (`library`/`pool`/`downloading`/`unavailable`), `songId` |
+| POST | `/api/v1/charts/refresh` | Обновить чарты сейчас (только админ) |
 | GET / PUT | `/api/v1/reco/engine` | Источники движка: `enabled`, `weight`, `learnedWeight`, счётчики; PUT `{enabled?, weights?, newArtistShare?}` (только админ) |
 | GET | `/api/v1/reco/engine/preview?limit=` | Что движок предложил бы пользователю сейчас (без загрузки) |
 | GET | `/api/v1/reco/harvest` | Архив Яндекса: по аккаунтам — сборщики (когда работали, отключены ли), лайки, рёбра, резерв (только админ) |

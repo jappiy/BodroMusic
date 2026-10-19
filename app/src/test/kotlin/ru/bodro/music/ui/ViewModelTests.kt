@@ -108,7 +108,8 @@ class ViewModelTests {
     fun `home loads content and maps errors`() = runTest(main.dispatcher) {
         val player = mockk<PlayerConnection> { every { state } returns MutableStateFlow(PlayerUiState()) }
         coEvery { library.home() } throws SubsonicException(SubsonicError.Api(40, "Wrong"))
-        val vm = HomeViewModel(library, player)
+        val charts = mockk<ru.bodro.music.data.reco.ChartsRepository> { coEvery { home() } returns emptyList() }
+        val vm = HomeViewModel(library, player, charts)
         advanceUntilIdle()
         assertEquals(R.string.error_wrong_credentials, (vm.state.value as LoadState.Error).error.message)
 

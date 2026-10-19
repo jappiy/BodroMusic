@@ -225,6 +225,9 @@ class Settings:
     """ListenBrainz: токен (LB Radio) и пользователи Navidrome → имя в LB (плейлисты Weekly Exploration / Jams)."""
     listenbrainz_token: str | None = None
     listenbrainz_users: dict[str, str] = field(default_factory=dict)
+    """Чарты (задача 4): какие обновлять (пусто — все) и сколько верхних недостающих качать в пул."""
+    charts: tuple[str, ...] = ()
+    charts_download_top: int = 30
 
     @property
     def archive_path(self) -> str:
@@ -376,6 +379,8 @@ class Settings:
             engine_max_seeds=_int("ENGINE_MAX_SEEDS", 60),
             listenbrainz_token=_secret("LISTENBRAINZ_TOKEN", os.path.join(SECRETS_DIR, "listenbrainz_token")),
             listenbrainz_users=_pairs("LISTENBRAINZ_USERS"),
+            charts=_list("CHARTS", ()),
+            charts_download_top=_int("CHARTS_DOWNLOAD_TOP", 30),
         )
 
 

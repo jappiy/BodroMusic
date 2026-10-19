@@ -67,3 +67,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object PoolRoute
 
 @Serializable data object RecoRoute
+
+@Serializable data class ChartRoute(val id: String, val title: String)
+
+@Serializable data object ChartsSettingsRoute

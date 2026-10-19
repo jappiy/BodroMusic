@@ -401,6 +401,31 @@ class PoolHidden(ApiModel):
     artist_ids: list[str] = []
 
 
+class ChartOut(ApiModel):
+    id: str
+    title: str
+    source: str
+    updated_at: int | None = None
+    """Обложки первых треков — для коллажа на карточке."""
+    covers: list[str] = []
+    size: int = 0
+
+
+class ChartEntryOut(ApiModel):
+    position: int
+    artist: str
+    title: str
+    album: str | None = None
+    cover_url: str | None = None
+    duration_ms: int | None = None
+    prev_position: int | None = None
+    """up / down / same / new."""
+    movement: str
+    """library / pool — можно слушать (`songId`); downloading — качается; unavailable — нет."""
+    state: str
+    song_id: str | None = None
+
+
 class EngineSourceOut(ApiModel):
     name: str
     title: str

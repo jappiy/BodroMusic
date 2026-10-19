@@ -30,6 +30,8 @@ from .models import (
     ArtistPopular,
     BlockEntryOut,
     BlocklistPage,
+    ChartEntryOut,
+    ChartOut,
     CleanupUser,
     CreateRequest,
     DeleteSongResult,
@@ -67,6 +69,7 @@ from .models import (
     TrackCandidate,
 )
 from .navidrome_db import NavidromeDb, NdSong
+from .reco.charts import ChartsService, ChartTrack, build_sources
 from .reco.engine import (
     CandidateEngine,
     DeezerAdapter,
@@ -113,6 +116,7 @@ class Services:
     harvester: YandexHarvester | None = None
     pool: PoolService | None = None
     engine: CandidateEngine | None = None
+    charts: ChartsService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -231,6 +235,12 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
             return await engine.refill(user, count, enqueue)
 
         pool.engine_refill = engine_refill
+
+    async def yandex_chart() -> list[ChartTrack]:
+        return [ChartTrack(t.artist, t.title, t.album, t.cover_url, t.duration_ms) for t in await yandex_api.chart()]
+
+    chart_sources = build_sources(http, lastfm, yandex_chart, settings.deezer_enabled)
+    charts = ChartsService(store, settings, chart_sources, library_index, pool)
     harvester = None
     if settings.harvest_enabled and settings.yandex_accounts:
         delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
@@ -256,6 +266,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         harvester=harvester,
         pool=pool,
         engine=engine,
+        charts=charts,
     )
 
 
@@ -296,6 +307,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 app.state.services.export,
                 app.state.services.harvester,
                 app.state.services.pool,
+                app.state.services.charts,
             ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
@@ -729,6 +741,29 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def pool_refill(user: User, svc: Svc) -> Response:
         pool = require_pool(svc)
         asyncio.create_task(pool.refill(user.username, force=True))  # noqa: RUF006 — фоновое пополнение
+        return Response(status_code=202)
+
+    # endregion
+
+    # region Чарты
+
+    @app.get("/api/v1/charts", response_model=list[ChartOut], response_model_by_alias=True)
+    async def charts_list(user: User, svc: Svc) -> list[ChartOut]:
+        if svc.charts is None:
+            return []
+        return [ChartOut(**c) for c in svc.charts.list()]
+
+    @app.get("/api/v1/charts/{chart_id}", response_model=list[ChartEntryOut], response_model_by_alias=True)
+    async def chart_entries(user: User, svc: Svc, chart_id: str) -> list[ChartEntryOut]:
+        entries = await svc.charts.entries(chart_id, user.username) if svc.charts else None
+        if entries is None:
+            raise HTTPException(404, "Чарт не найден или сейчас недоступен")
+        return [ChartEntryOut(**e) for e in entries]
+
+    @app.post("/api/v1/charts/refresh", status_code=202, response_class=Response)
+    async def charts_refresh(admin: Admin, svc: Svc) -> Response:
+        if svc.charts is not None:
+            asyncio.create_task(svc.charts.update(force=True))  # noqa: RUF006 — фоновое обновление
         return Response(status_code=202)
 
     # endregion
