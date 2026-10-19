@@ -339,10 +339,11 @@ private fun SubHeader(text: String) {
     )
 }
 
-@Composable
-private fun sourceName(source: String): String = when (source) {
+/** Название внешнего каталога bodrod для подписи «откуда данные». */
+internal fun sourceName(source: String): String = when (source) {
     "yandex" -> "Яндекс Музыка"
     "deezer" -> "Deezer"
+    "lastfm" -> "Last.fm"
     else -> source
 }
 

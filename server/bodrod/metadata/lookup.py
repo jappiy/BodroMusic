@@ -13,13 +13,16 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
 from .. import __version__
 from ..text import main_artist, normalize, similarity_any
 from .providers import MetadataProvider
+
+if TYPE_CHECKING:
+    from .lastfm import LastFmClient
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ SOURCE_NAMES = {
     "itunes": "iTunes",
     "musicbrainz": "MusicBrainz",
     "discogs": "Discogs",
+    "lastfm": "Last.fm",
     "local": "соседний файл",
 }
 
@@ -292,8 +296,11 @@ def build_chain(
     http: httpx.AsyncClient,
     catalogs: list[MetadataProvider],
     discogs_token: str | None,
+    lastfm: LastFmClient | None = None,
 ) -> list[LookupProvider]:
     """Источники по списку из настроек; неизвестные и ненастроенные пропускаются с предупреждением."""
+    from .lastfm import LastFmLookup
+
     by_name = {c.name: c for c in catalogs}
     chain: list[LookupProvider] = []
     for name in names:
@@ -308,6 +315,11 @@ def build_chain(
                 chain.append(DiscogsLookup(http, discogs_token))
             else:
                 log.info("Discogs в списке источников, но DISCOGS_TOKEN не задан — пропускаем")
+        elif name == "lastfm":
+            if lastfm is not None:
+                chain.append(LastFmLookup(lastfm))
+            else:
+                log.info("Last.fm в списке источников, но LASTFM_API_KEY не задан — пропускаем")
         else:
             log.warning("Неизвестный источник обложек/тегов: %s", name)
     return chain

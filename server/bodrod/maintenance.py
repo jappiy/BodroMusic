@@ -1025,6 +1025,8 @@ class MaintenanceService:
         for provider in chain:
             if ctx.catalog_budget <= 0:
                 break
+            if not getattr(provider, "available", True):
+                continue  # источник временно отключён после сбоев (Last.fm) — бюджет не тратим
             ctx.catalog_budget -= 1
             try:
                 hits = await provider.lookup(artist, title, album or None, duration_s)

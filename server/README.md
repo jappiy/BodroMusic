@@ -56,6 +56,8 @@ HTTP разрешён только для адресов локальной се
 | `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID` | нет | Профили; по умолчанию первые из Lidarr |
 | `YANDEX_MUSIC_TOKEN` | нет | OAuth-токен Яндекс Музыки. Без него поиск работает, но каталог может быть урезан |
 | `DEEZER_ENABLED` | нет | `false` — не использовать Deezer как запасной каталог |
+| `LASTFM_API_KEY` | нет | Ключ API Last.fm (или файл `/secrets/lastfm_api_key`), бесплатный: https://www.last.fm/api/account/create. Без него Last.fm везде пропускается |
+| `DISCOVER_PROVIDERS` | нет | Каталоги глобального поиска и «популярного исполнителя» по порядку, по умолчанию `yandex,deezer,lastfm` |
 | `ALLOWED_FORMATS` | нет | Допустимые форматы, по умолчанию `flac,mp3,m4a,ogg,opus,aac,wav,alac` |
 | `MIN_BITRATE` | нет | Минимальный битрейт lossy-файлов, по умолчанию 192 |
 | `SLSKD_SEARCH_TIMEOUT_S` | нет | Длительность поиска в Soulseek, по умолчанию 25 с |
@@ -81,8 +83,8 @@ HTTP разрешён только для адресов локальной се
 | `QUARANTINE_DAYS` | нет | Сколько дней хранить карантин, по умолчанию 30 |
 | `MAINTENANCE_CATALOG_LIMIT` | нет | Запросов к каталогу за один запуск (поиск тегов и обложек), по умолчанию 200 |
 | `MAINTENANCE_MIN_TRACK_S` | нет | Короче этого (секунды) — подозрительно короткий файл (только в отчёт), по умолчанию 10 |
-| `COVER_PROVIDERS` | нет | Источники обложек по порядку, по умолчанию `yandex,deezer,itunes,musicbrainz` (ещё `discogs`) |
-| `TAG_PROVIDERS` | нет | Источники тегов по порядку, по умолчанию `musicbrainz,yandex,deezer` (ещё `itunes`) |
+| `COVER_PROVIDERS` | нет | Источники обложек по порядку, по умолчанию `yandex,deezer,itunes,musicbrainz,lastfm` (ещё `discogs`) |
+| `TAG_PROVIDERS` | нет | Источники тегов по порядку, по умолчанию `musicbrainz,yandex,deezer,lastfm` (ещё `itunes`) |
 | `DISCOGS_TOKEN` | нет | Токен Discogs (или файл `/secrets/discogs_token`): без него `discogs` в списке пропускается |
 | `DATA_DIR`, `PORT`, `LOG_LEVEL` | нет | `/data`, `8790`, `INFO` |
 
@@ -195,7 +197,13 @@ Navidrome (раз в час) плюс 15 минут.
 
 Источники: `yandex`, `deezer` (каталог глобального поиска), `itunes` (iTunes Search API, обложки 1200×1200),
 `musicbrainz` (MusicBrainz + Cover Art Archive, не чаще 1 запроса в секунду, User-Agent с контактом),
-`discogs` (только обложки, нужен токен). Лимит запросов за запуск — `MAINTENANCE_CATALOG_LIMIT`.
+`discogs` (только обложки, нужен токен), `lastfm` (`track.getInfo` с автоисправлением опечаток, обложка альбома;
+нужен `LASTFM_API_KEY`). Лимит запросов за запуск — `MAINTENANCE_CATALOG_LIMIT`.
+
+**Last.fm — дополнительный канал** (с 0.6.0): по умолчанию стоит последним в каждой цепочке и срабатывает, когда
+остальные ничего не нашли или не ответили. Если Last.fm недоступен (3 сбоя подряд: тайм-аут, HTTP 5xx, ошибка
+лимита), bodrod 5 минут его не опрашивает — запросы сразу идут к остальным источникам, бюджет регламента не
+тратится. «Не найдено» (ошибка 6) сбоем не считается.
 
 **Пробный режим** (`MAINTENANCE_DRY_RUN=true`) ничего не меняет и ничего не запоминает: два пробных запуска подряд
 дают одинаковые счётчики. Запланированные исправления помечены `planned` и сформулированы как «будет убрано /

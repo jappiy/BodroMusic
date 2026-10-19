@@ -3,7 +3,7 @@ package ru.bodro.music.core.downloads
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** Трек из внешнего каталога (Яндекс Музыка / Deezer). [librarySongId] — если он уже есть в Navidrome. */
+/** Трек из внешнего каталога (Яндекс Музыка / Deezer / Last.fm). [librarySongId] — если он уже есть в Navidrome. */
 @Serializable
 data class DiscoverTrack(
     val title: String,

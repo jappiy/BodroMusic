@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 DEFAULT_FORMATS = ("flac", "mp3", "m4a", "ogg", "opus", "aac", "wav", "alac")
 
 
-DEFAULT_COVER_PROVIDERS = ("yandex", "deezer", "itunes", "musicbrainz")
-DEFAULT_TAG_PROVIDERS = ("musicbrainz", "yandex", "deezer")
+"""Last.fm — в конце: дополнительный канал, срабатывает, когда остальные не нашли или не ответили."""
+DEFAULT_COVER_PROVIDERS = ("yandex", "deezer", "itunes", "musicbrainz", "lastfm")
+DEFAULT_TAG_PROVIDERS = ("musicbrainz", "yandex", "deezer", "lastfm")
+DEFAULT_DISCOVER_PROVIDERS = ("yandex", "deezer", "lastfm")
 SECRETS_DIR = "/secrets"
 _COMMENT = re.compile(r"\s+#.*$")
 
@@ -80,11 +82,15 @@ class Settings:
 
     yandex_token: str | None = None
     deezer_enabled: bool = True
-    """Источники обложек и тегов для обслуживания, по порядку: yandex, deezer, itunes, musicbrainz, discogs."""
+    """Каталоги глобального поиска и популярного исполнителя, по порядку: yandex, deezer, lastfm."""
+    discover_providers: tuple[str, ...] = DEFAULT_DISCOVER_PROVIDERS
+    """Источники обложек и тегов для обслуживания, по порядку: yandex, deezer, itunes, musicbrainz, discogs, lastfm."""
     cover_providers: tuple[str, ...] = DEFAULT_COVER_PROVIDERS
     tag_providers: tuple[str, ...] = DEFAULT_TAG_PROVIDERS
     """Токен Discogs (необязательно): без него Discogs в цепочке пропускается."""
     discogs_token: str | None = None
+    """Ключ API Last.fm (необязательно): без него Last.fm везде пропускается."""
+    lastfm_api_key: str | None = None
 
     data_dir: str = "/data"
     worker_interval_s: float = 3.0
@@ -192,9 +198,11 @@ class Settings:
             lidarr_metadata_profile_id=int(metadata) if metadata else None,
             yandex_token=_secret("YANDEX_MUSIC_TOKEN"),
             deezer_enabled=(_opt("DEEZER_ENABLED") or "true").lower() != "false",
+            discover_providers=_list("DISCOVER_PROVIDERS", DEFAULT_DISCOVER_PROVIDERS),
             cover_providers=_list("COVER_PROVIDERS", DEFAULT_COVER_PROVIDERS),
             tag_providers=_list("TAG_PROVIDERS", DEFAULT_TAG_PROVIDERS),
             discogs_token=_secret("DISCOGS_TOKEN", os.path.join(SECRETS_DIR, "discogs_token")),
+            lastfm_api_key=_secret("LASTFM_API_KEY", os.path.join(SECRETS_DIR, "lastfm_api_key")),
             data_dir=_opt("DATA_DIR") or "/data",
             slskd_search_timeout_s=_int("SLSKD_SEARCH_TIMEOUT_S", 25),
             slskd_max_candidates=_int("SLSKD_MAX_CANDIDATES", 5),

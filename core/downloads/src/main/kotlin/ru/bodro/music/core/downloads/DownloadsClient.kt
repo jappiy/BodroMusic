@@ -61,7 +61,7 @@ class DownloadsClient(
     suspend fun artistTopTracks(artist: DiscoverArtist): List<DiscoverTrack> =
         get(listOf("api", "v1", "artists", "top"), listOf("source" to artist.source, "id" to artist.sourceId))
 
-    /** Популярные треки исполнителя из каталога (Яндекс Музыка) с отметкой «есть в библиотеке». */
+    /** Популярные треки исполнителя из каталога (Яндекс Музыка, запасные — Deezer и Last.fm) с отметкой «есть в библиотеке». */
     suspend fun artistPopular(name: String): ArtistPopular = get(listOf("api", "v1", "artists", "popular"), listOf("name" to name))
 
     /** Какие треки удалены из библиотеки или заменены другой копией (bodrod 0.4.0+). */

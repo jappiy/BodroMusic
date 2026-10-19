@@ -39,5 +39,8 @@ services:
       # Необязательно: OAuth-токен Яндекс Музыки (без него поиск тоже работает, но каталог может быть урезан).
       # YANDEX_MUSIC_TOKEN: ${YANDEX_MUSIC_TOKEN}
       # Обслуживание библиотеки: источники обложек и тегов по порядку (по умолчанию так).
-      # COVER_PROVIDERS: yandex,deezer,itunes,musicbrainz
-      # TAG_PROVIDERS: musicbrainz,yandex,deezer
+      # COVER_PROVIDERS: yandex,deezer,itunes,musicbrainz,lastfm
+      # TAG_PROVIDERS: musicbrainz,yandex,deezer,lastfm
+      # Last.fm — дополнительный канал для тегов, обложек и поиска; ключ — файлом /secrets/lastfm_api_key.
+      # LASTFM_API_KEY_FILE: /secrets/lastfm_api_key
+      # DISCOVER_PROVIDERS: yandex,deezer,lastfm

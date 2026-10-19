@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-17 (задание 006). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-19 (задание 007). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -57,14 +57,15 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.12.0** (`versionCode 12`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.5.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Текущая версия приложения: **0.13.0** (`versionCode 13`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.6.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
 - Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0
   (`BodroMusic-0.12.0.apk` — release с R8; `BodroMusic-0.12.0-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
+Задание 007 (0.13.0 / bodrod 0.6.0, Last.fm) — локально pytest и ruff зелёные, пуш, CI и релиз v0.13.0 ещё не сделаны.
 **CI полностью зелёный** на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006): сборка debug и release, unit-тесты,
 Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, образ `0c5b78e`. Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.12.0, подробности — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
 Предыдущее состояние: CI зелёный на `c650fe9` (0.11.0), образ bodrod 0.4.0 — `8c78ba8`.
@@ -88,7 +89,7 @@ Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, �
 
 ### Тесты
 - Unit: **141** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 8, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
-- Сервер (`server/tests`, pytest): **78**, в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
+- Сервер (`server/tests`, pytest): **90** (в т. ч. `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
 - Инструментальные: **9** — 8 проходят, 1 пропускается (`RealServerSmokeTest`, нет данных тестовой учётки).
   Тесты гоняют настоящее приложение против поддельного сервера `FakeNavidrome` (MockWebServer,
@@ -130,6 +131,9 @@ Android Lint, ktlint, detekt, эмулятор; `server.yml` — pytest, ruff, �
 - Повторное нажатие на выбранную вкладку — возврат к корню раздела (`BodroRoot.onTabClick`).
 - «Популярные треки» на экране исполнителя — из Яндекс Музыки через bodrod (`/api/v1/artists/popular`): скачанные
   и нескачанные (с загрузкой). Без bodrod — своя история + `getTopSongs`.
+- Last.fm (bodrod 0.6.0, `metadata/lastfm.py`) — дополнительный канал, последний в цепочках тегов, обложек и поиска
+  (`TAG_PROVIDERS`, `COVER_PROVIDERS`, `DISCOVER_PROVIDERS`); нужен `LASTFM_API_KEY`. После 3 сбоев подряд 5 минут
+  не опрашивается. Скробблинг в Last.fm — средствами Navidrome (`ND_LASTFM_*`), см. задание 007.
 
 ## 4. Сборка и проверка
 
@@ -202,7 +206,9 @@ Smoke-тест против реального Navidrome: скопировать
 0. Обновить проект `bodrod` на сервере до 0.5.0: пароль Navidrome — в `/secrets/navidrome_password`, убрать его из YAML,
    два пробных прогона регламента подряд (счётчики должны совпасть) — раздел «Что нужно сделать на сервере» в
    [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md). `MAINTENANCE_DRY_RUN=false` владелец включает сам.
-1. Следующая порция замечаний владельца — новое задание `docs/history/006-…`.
+1. Закрыть задание 007: пуш, зелёный CI, релиз v0.13.0, тег образа bodrod 0.6.0; на сервере — ключ
+   `/secrets/lastfm_api_key` (раздел «Что нужно сделать на сервере» в [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md)).
+   Следующая порция замечаний владельца — новое задание `docs/history/008-…`.
    Проверить на телефоне: из 004 — офлайн-лайки, счётчики «Коллекции»; из 005 — старт и переключение треков,
    экран исполнителя, теги «Моей волны».
 2. Сверка UI с референсами — нужны скриншоты в `docs/references/` (см. раздел 6.1 ТЗ).
@@ -226,7 +232,7 @@ Smoke-тест против реального Navidrome: скопировать
 Ночной регламент bodrod (`server/bodrod/maintenance.py`): обрезанные файлы, дубли треков (и файлов без тегов),
 дубли альбомов, «объединение исполнителя», чужие релизы в папках исполнителей, пустые теги и обложки.
 Источники обложек и тегов — цепочки `COVER_PROVIDERS` / `TAG_PROVIDERS` (`server/bodrod/metadata/lookup.py`:
-Яндекс, Deezer, iTunes, MusicBrainz + CAA, Discogs). Убранное — в карантин на 30 дней. Отчёт с фильтрами
+Яндекс, Deezer, iTunes, MusicBrainz + CAA, Discogs, Last.fm). Убранное — в карантин на 30 дней. Отчёт с фильтрами
 (в т. ч. «Требует внимания»), запуск и «Вернуть» — в приложении (`ui/screens/settings/MaintenanceScreen.kt`,
 только админы). Пробный режим ничего не пишет и не запоминает (два прогона подряд дают один отчёт).
 Правила и переменные — `server/README.md`; первый вариант — задание 005, исправления по реальной базе — задание 006.
@@ -244,6 +250,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 004 | 2026-10-16 | Замечания по интерфейсу, часть 1 (плеер, вкладки, главная, настройки, коллекция, офлайн-лайки) | app 0.10.0 | [004-ui-feedback-1.md](history/004-ui-feedback-1.md) |
 | 005 | 2026-10-16 | Регламент обслуживания библиотеки, популярное исполнителя из Яндекса, быстрый старт воспроизведения, мелкие правки | app 0.11.0, bodrod 0.4.0 | [005-maintenance-artist-playback.md](history/005-maintenance-artist-playback.md) |
 | 006 | 2026-10-17 | Исправления обслуживания библиотеки и заявок по разбору `bodrod.sqlite3`: пробный режим, дубли, короткие, альбомы, чужие релизы, источники обложек, очередь Soulseek, секреты | app 0.12.0, bodrod 0.5.0 | [006-maintenance-fixes.md](history/006-maintenance-fixes.md) |
+| 007 | 2026-10-19 | Last.fm — дополнительный канал тегов, обложек, глобального поиска и популярного исполнителя; ответ про скробблинг | app 0.13.0, bodrod 0.6.0 | [007-lastfm-channel.md](history/007-lastfm-channel.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)
 

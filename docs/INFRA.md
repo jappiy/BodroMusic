@@ -135,6 +135,7 @@ environment:
   # с 0.4.0 (задание 005): TZ, MAINTENANCE_DRY_RUN (первый прогон), при желании MAINTENANCE_AT, QUARANTINE_DAYS
   # с 0.5.0 (задание 006): при желании COVER_PROVIDERS, TAG_PROVIDERS, SLSKD_PARALLEL_SEARCHES, SLSKD_RETRY_*;
   #   DISCOGS_TOKEN — файлом /secrets/discogs_token
+  # с 0.6.0 (задание 007): при желании LASTFM_API_KEY — файлом /secrets/lastfm_api_key; без него Last.fm пропускается
 ```
 Регламент (с 0.4.0) пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
 `/volume2/music/.bodrod-quarantine` (30 дней, внутри `.ndignore`). Файлы из папок исполнителей Lidarr не трогает.

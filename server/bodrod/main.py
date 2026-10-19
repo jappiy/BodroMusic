@@ -23,6 +23,7 @@ from .config import Settings
 from .db import MaintenanceAction, MaintenanceRun, Store
 from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
+from .metadata.lastfm import LastFmClient, LastFmProvider
 from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
 from .models import (
@@ -113,14 +114,18 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     providers: list[MetadataProvider] = [YandexMusicProvider(http, settings.yandex_token)]
     if settings.deezer_enabled:
         providers.append(DeezerProvider(http))
+    lastfm = LastFmClient(http, settings.lastfm_api_key) if settings.lastfm_api_key else None
+    catalogs = {p.name: p for p in providers} | ({"lastfm": LastFmProvider(lastfm)} if lastfm else {})
+    discover_providers = [catalogs[name] for name in settings.discover_providers if name in catalogs]
+    log.info("Каталоги поиска: %s", ", ".join(p.name for p in discover_providers) or "нет")
     cover_fetcher = make_cover_fetcher(http)
     navidrome_db = NavidromeDb(settings.navidrome_db) if settings.navidrome_db else None
     files_lock = asyncio.Lock()
     cleanup = CleanupService(settings, store, navidrome, navidrome_db, lidarr, files_lock) if navidrome_db else None
     maintenance = None
     if navidrome_db and settings.maintenance_enabled:
-        cover_chain = build_chain(settings.cover_providers, http, providers, settings.discogs_token)
-        tag_chain = build_chain(settings.tag_providers, http, providers, settings.discogs_token)
+        cover_chain = build_chain(settings.cover_providers, http, providers, settings.discogs_token, lastfm)
+        tag_chain = build_chain(settings.tag_providers, http, providers, settings.discogs_token, lastfm)
         log.info(
             "Источники обложек: %s; тегов: %s",
             ", ".join(p.name for p in cover_chain) or "нет",
@@ -133,7 +138,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         settings=settings,
         store=store,
         navidrome=navidrome,
-        discover=DiscoverService(providers, navidrome),
+        discover=DiscoverService(discover_providers, navidrome),
         worker=Worker(store, settings, navidrome, slskd, lidarr, cover_fetcher=cover_fetcher),
         auth_cache={},
         cleanup=cleanup,

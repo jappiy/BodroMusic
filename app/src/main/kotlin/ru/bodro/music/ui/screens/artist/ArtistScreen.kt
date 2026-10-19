@@ -95,14 +95,19 @@ import ru.bodro.music.ui.components.SectionHeader
 import ru.bodro.music.ui.components.SongRow
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.screens.search.DiscoverTrackRow
+import ru.bodro.music.ui.screens.search.sourceName
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
 /**
- * Популярное по каталогу (Яндекс Музыка через bodrod): [inLibrary] — уже скачанные, в порядке популярности;
- * [missing] — ещё не скачанные, их можно поставить в загрузку.
+ * Популярное по каталогу bodrod (Яндекс Музыка, запасные — Deezer и Last.fm): [inLibrary] — уже скачанные,
+ * в порядке популярности; [missing] — ещё не скачанные, их можно поставить в загрузку; [source] — каталог.
  */
-data class ArtistPopularUi(val inLibrary: List<Song> = emptyList(), val missing: List<DiscoverTrack> = emptyList())
+data class ArtistPopularUi(
+    val inLibrary: List<Song> = emptyList(),
+    val missing: List<DiscoverTrack> = emptyList(),
+    val source: String? = null,
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -159,6 +164,7 @@ class ArtistViewModel @Inject constructor(
         _popular.value = ArtistPopularUi(
             inLibrary = songs,
             missing = popular.tracks.filter { it.librarySongId == null }.distinctBy { it.key },
+            source = popular.source,
         )
     }
 
@@ -213,6 +219,7 @@ private fun ArtistContent(details: ArtistDetails, topSongs: List<Song>, onBack: 
     val top = popular?.inLibrary?.takeIf { it.isNotEmpty() } ?: topSongs
     val visibleTop = if (showAllTop) top else top.take(TOP_SHOWN)
     val missing = popular?.missing.orEmpty()
+    val popularSource = popular?.source
     val visibleMissing = if (showAllMissing) missing else missing.take(TOP_SHOWN)
     val callbacks = remember(viewModel, source) {
         DiscoverCallbacks(
@@ -289,7 +296,7 @@ private fun ArtistContent(details: ArtistDetails, topSongs: List<Song>, onBack: 
                 Column(Modifier.testTag("artist-missing")) {
                     SectionHeader(stringResource(R.string.artist_popular_missing))
                     Text(
-                        stringResource(R.string.artist_popular_missing_hint),
+                        stringResource(R.string.artist_popular_missing_hint, sourceName(popularSource ?: "yandex")),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp),
