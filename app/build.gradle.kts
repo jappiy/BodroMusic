@@ -56,19 +56,33 @@ android {
         testInstrumentationRunnerArguments["navidromePassword"] = testProp("navidrome.test.password", "NAVIDROME_TEST_PASSWORD")
     }
 
+    // Постоянный ключ BodroMusic: в CI релиза — файл из секрета SIGNING_KEYSTORE_B64 (переменная BODRO_KEYSTORE),
+    // на компьютере владельца — его ~/.android/debug.keystore (стандартная debug-подпись). Это один и тот же ключ
+    // (SHA-256 сертификата c5146426…94de62). Не менять: с другой подписью Android не ставит обновление поверх.
+    val bodroKeystore = System.getenv("BODRO_KEYSTORE")?.takeIf { it.isNotBlank() }
+    signingConfigs {
+        if (bodroKeystore != null) {
+            create("bodro") {
+                storeFile = file(bodroKeystore)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+    val appSigning = signingConfigs.findByName("bodro") ?: signingConfigs.getByName("debug")
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            signingConfig = appSigning
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Постоянный ключ BodroMusic лежит на месте debug-ключа (~/.android/debug.keystore): на компьютере
-            // владельца — его собственный, в CI релиза — из секрета SIGNING_KEYSTORE_B64. Не менять: другая подпись —
-            // и Android не поставит обновление поверх (docs/HANDOFF.md, раздел 0.2).
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = appSigning
         }
     }
 

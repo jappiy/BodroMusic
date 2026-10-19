@@ -29,7 +29,8 @@
   4. запустить workflow **Release** вручную (`workflow_dispatch`, версия = новый `versionName`; пуш тегов запрещён — раздел 6);
   5. дождаться завершения и убедиться, что в релизе есть `BodroMusic-<версия>.apk` и `BodroMusic-<версия>-debug.apk`.
   6. подпись: все APK подписываются одним ключом (SHA-256 сертификата `c5146426…94de62`) — это
-     `~/.android/debug.keystore` компьютера владельца; в CI релиза он берётся из секрета `SIGNING_KEYSTORE_B64`, и
+     `~/.android/debug.keystore` компьютера владельца; в CI релиза он берётся из секрета `SIGNING_KEYSTORE_B64`
+     (переменная `BODRO_KEYSTORE` → `signingConfigs.bodro` в `app/build.gradle.kts`), и
      workflow проверяет отпечаток перед публикацией. Ключ не менять и не терять (копия — только в секрете GitHub):
      с другой подписью Android не ставит обновление поверх;
   7. на компьютере владельца — скачать оба APK из релиза в `C:\Projects\BodroMusic\dist\` (папка в `.gitignore`,
