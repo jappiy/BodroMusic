@@ -110,7 +110,7 @@ slskd сохраняет готовый файл в `/downloads/<имя роди
 | Контейнер | Образ | Роль |
 | --- | --- | --- |
 | `bodrod-secrets` | `alpine:3.20` | Одноразовый при каждом старте: достаёт `ApiKey` из `lidarr/config.xml` и ключ slskd из `slskd.yml`, пишет `/volume1/docker/bodrod/secrets/env` (`chmod 600`), делает `chown -R 1027:100` для `env` и `data` |
-| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1; новый образ 0.6.0 — `6425a2c`, обновить по заданиям 003, 005, 006 и 007), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки» |
+| `bodrod` | `ghcr.io/jappiy/bodromusic-server:e039796` (0.2.1; новый образ 0.7.0 — IMAGE_PENDING, обновить по заданиям 003, 005–008), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки»; с 0.7.0 — цепочка источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr, выгрузка из Яндекса; в образе ffmpeg |
 
 Ключевые настройки `bodrod`:
 ```yaml
@@ -130,12 +130,16 @@ environment:
   SLSKD_URL: http://slskd:5030
   SLSKD_DOWNLOADS_DIR: /music/slsk
   LIBRARY_DIR: /music/library
-  # YANDEX_MUSIC_TOKEN: не задан, поиск Яндекса идёт анонимно
+  # YANDEX_MUSIC_TOKEN: не задан, поиск Яндекса идёт анонимно (с 0.7.0 — файл /secrets/yandex_music_token)
   # с 0.3.0 (задание 003): NAVIDROME_DB, LIDARR_MUSIC_DIR, SLSK_WORKER_QUEUE + том папки Navidrome
   # с 0.4.0 (задание 005): TZ, MAINTENANCE_DRY_RUN (первый прогон), при желании MAINTENANCE_AT, QUARANTINE_DAYS
   # с 0.5.0 (задание 006): при желании COVER_PROVIDERS, TAG_PROVIDERS, SLSKD_PARALLEL_SEARCHES, SLSKD_RETRY_*;
   #   DISCOGS_TOKEN — файлом /secrets/discogs_token
   # с 0.6.0 (задание 007): при желании LASTFM_API_KEY — файлом /secrets/lastfm_api_key; без него Last.fm пропускается
+  # с 0.7.0 (задание 008): токен Яндекс Музыки — файлом /secrets/yandex_music_token (скачивание — с Плюсом);
+  #   при желании YOUTUBE_PROXY (или /secrets/youtube_proxy), SOURCES_ORDER, LIDARR_WANTED_SYNC=false;
+  #   yt-dlp обновляется сам в /data/ytdlp; файлы Яндекса и YouTube кладутся в LIBRARY_DIR, плейлисты выгрузки —
+  #   в /music/library/Плейлисты Яндекса/
 ```
 Регламент (с 0.4.0) пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
 `/volume2/music/.bodrod-quarantine` (30 дней, внутри `.ndignore`). Файлы из папок исполнителей Lidarr не трогает.

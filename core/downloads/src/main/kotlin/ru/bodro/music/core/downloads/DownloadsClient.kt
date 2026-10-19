@@ -47,7 +47,8 @@ sealed interface DownloadsError {
 
 class DownloadsException(val error: DownloadsError, cause: Throwable? = null) : Exception(error.toString(), cause)
 
-/** Клиент сервиса загрузок bodrod (папка `server/` в репозитории). */
+/** Клиент сервиса загрузок bodrod (папка `server/` в репозитории). Один метод на эндпоинт API. */
+@Suppress("TooManyFunctions")
 class DownloadsClient(
     private val http: OkHttpClient,
     private val config: () -> DownloadsConfig?,
@@ -83,6 +84,10 @@ class DownloadsClient(
 
     suspend fun downloadArtist(artist: DiscoverArtist): DownloadRequest =
         create(CreateRequestBody(kind = RequestKind.Artist, artist = artist.name, coverUrl = artist.coverUrl))
+
+    /** Альбом целиком по цепочке источников (bodrod 0.7.0+). */
+    suspend fun downloadAlbum(artist: String, album: String, coverUrl: String? = null): DownloadRequest =
+        create(CreateRequestBody(kind = RequestKind.Album, artist = artist, album = album, coverUrl = coverUrl))
 
     /** Активную заявку отменяет, завершённую — убирает из списка. */
     suspend fun delete(id: String) {
@@ -148,6 +153,47 @@ class DownloadsClient(
     }
 
     // endregion
+
+    // region Источники загрузки и выгрузка из Яндекса (только администраторы, bodrod 0.7.0+)
+
+    suspend fun sources(): DownloadSources = get(listOf("api", "v1", "sources"))
+
+    /** Новый порядок (все имена), переключатели источников и/или «Яндекс: метаданные»; `null` — не менять. */
+    suspend fun updateSources(
+        order: List<String>? = null,
+        enabled: Map<String, Boolean>? = null,
+        yandexMetadata: Boolean? = null,
+    ): DownloadSources = send("PUT", listOf("api", "v1", "sources"), SourcesUpdateBody(order, enabled, yandexMetadata))
+
+    suspend fun checkYandex(): DownloadSources = postEmpty(listOf("api", "v1", "sources", "yandex", "check"))
+
+    suspend fun updateYtDlp(): DownloadSources = postEmpty(listOf("api", "v1", "sources", "youtube", "update"))
+
+    suspend fun exportStatus(): ExportStatus = get(listOf("api", "v1", "yandex", "export"))
+
+    suspend fun startExport(likes: Boolean, playlists: Boolean, artists: Boolean): ExportStatus =
+        post(listOf("api", "v1", "yandex", "export", "start"), ExportStartBody(likes, playlists, artists))
+
+    suspend fun pauseExport(): ExportStatus = postEmpty(listOf("api", "v1", "yandex", "export", "pause"))
+
+    suspend fun exportArtists(): List<ExportArtist> = get(listOf("api", "v1", "yandex", "export", "artists"))
+
+    suspend fun refreshExportArtists(): List<ExportArtist> = postEmpty(listOf("api", "v1", "yandex", "export", "artists", "refresh"))
+
+    suspend fun selectExportArtists(ids: List<String>): List<ExportArtist> =
+        send("PUT", listOf("api", "v1", "yandex", "export", "artists"), ExportSelectBody(ids))
+
+    // endregion
+
+    private suspend inline fun <reified B, reified T> send(method: String, path: List<String>, body: B): T {
+        val payload = downloadsJson.encodeToString(serializer<B>(), body).toRequestBody(JSON)
+        return execute(Request.Builder().url(url(path)).method(method, payload), null) {
+            downloadsJson.decodeFromString(serializer<T>(), it)
+        }
+    }
+
+    private suspend inline fun <reified T> postEmpty(path: List<String>): T =
+        execute(Request.Builder().url(url(path)).post(EMPTY), null) { downloadsJson.decodeFromString(serializer<T>(), it) }
 
     private suspend inline fun <reified B, reified T> post(path: List<String>, body: B): T {
         val payload = downloadsJson.encodeToString(serializer<B>(), body).toRequestBody(JSON)

@@ -29,11 +29,13 @@ import ru.bodro.music.ui.screens.settings.AccountsScreen
 import ru.bodro.music.ui.screens.settings.AppearanceScreen
 import ru.bodro.music.ui.screens.settings.BlocklistScreen
 import ru.bodro.music.ui.screens.settings.CleanupScreen
+import ru.bodro.music.ui.screens.settings.ExportArtistsScreen
 import ru.bodro.music.ui.screens.settings.LogDetailScreen
 import ru.bodro.music.ui.screens.settings.LogsScreen
 import ru.bodro.music.ui.screens.settings.MaintenanceScreen
 import ru.bodro.music.ui.screens.settings.PlaybackSettingsScreen
 import ru.bodro.music.ui.screens.settings.SettingsScreen
+import ru.bodro.music.ui.screens.settings.SourcesScreen
 import ru.bodro.music.ui.screens.settings.VersionsScreen
 import ru.bodro.music.ui.screens.settings.WaveSettingsScreen
 import ru.bodro.music.ui.screens.wave.WaveScreen
@@ -80,6 +82,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenCleanup = { navController.navigate(CleanupRoute) },
                 onOpenBlocklist = { navController.navigate(BlocklistRoute) },
                 onOpenMaintenance = { navController.navigate(MaintenanceRoute) },
+                onOpenSources = { navController.navigate(SourcesRoute) },
                 onOpenVersions = { navController.navigate(VersionsRoute) },
                 onOpenLogs = { navController.navigate(LogsRoute) },
                 onOpenAbout = { navController.navigate(AboutRoute) },
@@ -117,5 +120,9 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<CleanupRoute> { CleanupScreen(onBack = back) }
         composable<BlocklistRoute> { BlocklistScreen(onBack = back) }
         composable<MaintenanceRoute> { MaintenanceScreen(onBack = back) }
+        composable<SourcesRoute> {
+            SourcesScreen(onBack = back, onOpenArtists = { navController.navigate(ExportArtistsRoute) })
+        }
+        composable<ExportArtistsRoute> { ExportArtistsScreen(onBack = back) }
     }
 }

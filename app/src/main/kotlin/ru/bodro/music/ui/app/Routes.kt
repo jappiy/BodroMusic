@@ -59,3 +59,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object BlocklistRoute
 
 @Serializable data object MaintenanceRoute
+
+@Serializable data object SourcesRoute
+
+@Serializable data object ExportArtistsRoute

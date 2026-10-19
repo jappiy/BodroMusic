@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MusicNote
@@ -219,6 +220,7 @@ private fun CheckStatus(check: CheckState) {
                 R.string.downloads_ok,
                 check.info.version,
                 stringResource(if (check.info.trackDownloads) R.string.downloads_yes else R.string.downloads_no),
+                stringResource(if (check.info.albumDownloads) R.string.downloads_yes else R.string.downloads_no),
                 stringResource(if (check.info.artistDownloads) R.string.downloads_yes else R.string.downloads_no),
             ),
             style = MaterialTheme.typography.bodyMedium,
@@ -242,26 +244,33 @@ private fun RequestRow(request: DownloadRequest, onDelete: () -> Unit, onPlay: (
     val isArtist = request.kind == RequestKind.Artist
     ListItem(
         headlineContent = {
-            Text(request.title ?: request.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(request.title ?: request.album ?: request.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = {
-            Text(
-                listOfNotNull(request.artist.takeIf { !isArtist }, statusText(request)).joinToString(" · "),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = if (request.status == RequestStatus.Failed) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            Column {
+                Text(
+                    listOfNotNull(request.artist.takeIf { !isArtist }, statusText(request)).joinToString(" · "),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (request.status == RequestStatus.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                SourceLine(request)
+            }
         },
         leadingContent = {
             RemoteImage(
                 request.coverUrl,
                 Modifier.size(48.dp),
                 if (isArtist) CircleShape else RoundedCornerShape(10.dp),
-                if (isArtist) Icons.Rounded.Person else Icons.Rounded.MusicNote,
+                when (request.kind) {
+                    RequestKind.Artist -> Icons.Rounded.Person
+                    RequestKind.Album -> Icons.Rounded.Album
+                    RequestKind.Track -> Icons.Rounded.MusicNote
+                },
             )
         },
         trailingContent = {
@@ -280,5 +289,30 @@ private fun RequestRow(request: DownloadRequest, onDelete: () -> Unit, onPlay: (
         modifier = Modifier
             .let { if (songId != null) it.clickable { onPlay(songId) } else it }
             .testTag("download-${request.id}"),
+    )
+}
+
+/** Итоговый источник («Яндекс Музыка, FLAC») и неудачные попытки цепочки до него. */
+@Composable
+private fun SourceLine(request: DownloadRequest) {
+    val misses = request.attempts.filter { it.result != "ok" }.map { attempt ->
+        val label = stringResource(
+            if (attempt.result == "skip") R.string.downloads_attempt_skip else R.string.downloads_attempt_fail,
+            attempt.title,
+        )
+        attempt.reason?.let { "$label ($it)" } ?: label
+    }
+    val lines = listOfNotNull(
+        request.source?.let { stringResource(R.string.downloads_source, it) },
+        misses.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.downloads_attempts, it.joinToString("; ")) },
+    )
+    if (lines.isEmpty()) return
+    Text(
+        lines.joinToString("\n"),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.testTag("download-source-${request.id}"),
     )
 }

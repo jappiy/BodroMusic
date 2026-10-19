@@ -87,7 +87,7 @@ class DownloadWatchWorker @AssistedInject constructor(
     }
 }
 
-fun DownloadRequest.label(): String = if (title != null) "$artist — $title" else artist
+fun DownloadRequest.label(): String = (title ?: album)?.let { "$artist — $it" } ?: artist
 
 @Singleton
 class DownloadWatchScheduler @Inject constructor(@ApplicationContext private val context: Context) {
@@ -122,10 +122,11 @@ class DownloadNotifications @Inject constructor(@ApplicationContext private val 
             when {
                 !ok -> R.string.downloads_notification_failed
                 request.kind == RequestKind.Artist -> R.string.downloads_notification_artist_done
+                request.kind == RequestKind.Album -> R.string.downloads_notification_album_done
                 else -> R.string.downloads_notification_track_done
             },
         )
-        val text = listOfNotNull(request.label(), request.message?.takeIf { !ok || request.kind == RequestKind.Artist })
+        val text = listOfNotNull(request.label(), request.message?.takeIf { !ok || request.kind != RequestKind.Track })
             .joinToString(" · ")
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)

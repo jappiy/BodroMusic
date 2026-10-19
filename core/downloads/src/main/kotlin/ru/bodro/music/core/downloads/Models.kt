@@ -56,6 +56,10 @@ enum class RequestKind {
     @SerialName("track")
     Track,
 
+    /** Альбом целиком (bodrod 0.7.0+). */
+    @SerialName("album")
+    Album,
+
     @SerialName("artist")
     Artist,
 }
@@ -102,9 +106,27 @@ data class DownloadRequest(
     val songId: String? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    /** Итоговый источник: «Яндекс Музыка, FLAC» (bodrod 0.7.0+). */
+    val source: String? = null,
+    /** Какие источники пробовались и с каким результатом. */
+    val attempts: List<SourceAttempt> = emptyList(),
 ) {
-    val key: String get() = if (kind == RequestKind.Artist) artistKey(artist) else requestKey(artist, title.orEmpty())
+    val key: String get() = when (kind) {
+        RequestKind.Artist -> artistKey(artist)
+        RequestKind.Album -> albumKey(artist, album.orEmpty())
+        RequestKind.Track -> requestKey(artist, title.orEmpty())
+    }
 }
+
+/** Попытка источника цепочки: [result] — `ok` (скачано), `fail` (не нашёл), `skip` (выключен или недоступен). */
+@Serializable
+data class SourceAttempt(
+    val source: String,
+    val title: String,
+    val result: String,
+    val reason: String? = null,
+    val at: Long = 0,
+)
 
 @Serializable
 data class ServiceInfo(
@@ -118,7 +140,56 @@ data class ServiceInfo(
     val admin: Boolean = false,
     /** Включено «Обслуживание библиотеки» (bodrod 0.4.0+). */
     val maintenance: Boolean = false,
+    /** Скачивание альбомов целиком (bodrod 0.7.0+). */
+    val albumDownloads: Boolean = false,
+    /** Есть экран «Источники загрузки» (bodrod 0.7.0+). */
+    val sources: Boolean = false,
 )
+
+/** Источник загрузки. [state]: `ok` — работает, `disabled` — выключен, `unavailable` — не может работать ([reason]). */
+@Serializable
+data class DownloadSource(
+    val name: String,
+    val title: String,
+    val enabled: Boolean,
+    val state: String,
+    val reason: String? = null,
+    /** track / album / artist. */
+    val kinds: List<String> = emptyList(),
+    /** Версия yt-dlp, когда проверялась подписка и т. п. */
+    val details: String? = null,
+)
+
+/** Цепочка источников по порядку и «Яндекс: метаданные». */
+@Serializable
+data class DownloadSources(
+    val sources: List<DownloadSource> = emptyList(),
+    val yandexMetadata: Boolean = true,
+    val yandexMetadataReason: String? = null,
+)
+
+@Serializable
+data class ExportCounts(val total: Int = 0, val done: Int = 0, val skipped: Int = 0, val failed: Int = 0, val pending: Int = 0)
+
+/** Массовая выгрузка из Яндекса. [state]: idle / collecting / running / paused / finished. */
+@Serializable
+data class ExportStatus(
+    val state: String = "idle",
+    val message: String? = null,
+    val likes: Boolean = true,
+    val playlists: Boolean = true,
+    val counts: ExportCounts = ExportCounts(),
+    val artistsSelected: Int = 0,
+    val artistsTotal: Int = 0,
+    val current: String? = null,
+    val updatedAt: Long? = null,
+) {
+    val isActive: Boolean get() = state == "collecting" || state == "running"
+}
+
+/** Артист из «Мне нравится» в Яндексе: [selected] — брать дискографию целиком. */
+@Serializable
+data class ExportArtist(val id: String, val name: String, val liked: Int = 0, val selected: Boolean = false)
 
 /** Популярные треки исполнителя по каталогу; у тех, что есть в библиотеке, заполнен [DiscoverTrack.librarySongId]. */
 @Serializable
@@ -227,6 +298,19 @@ data class BlocklistPage(val total: Int = 0, val items: List<BlockEntry> = empty
 internal data class DeleteSongsBody(val ids: List<String>)
 
 @Serializable
+internal data class SourcesUpdateBody(
+    val order: List<String>? = null,
+    val enabled: Map<String, Boolean>? = null,
+    val yandexMetadata: Boolean? = null,
+)
+
+@Serializable
+internal data class ExportStartBody(val likes: Boolean, val playlists: Boolean, val artists: Boolean)
+
+@Serializable
+internal data class ExportSelectBody(val selected: List<String>)
+
+@Serializable
 internal data class IdsBody(val ids: List<String>)
 
 @Serializable
@@ -243,6 +327,8 @@ internal data class CreateRequestBody(
 fun requestKey(artist: String, title: String): String = "${normalizeKey(artist)}|${normalizeKey(title)}"
 
 fun artistKey(artist: String): String = "artist|${normalizeKey(artist)}"
+
+fun albumKey(artist: String, album: String): String = "album|${normalizeKey(artist)}|${normalizeKey(album)}"
 
 private val nonWord = Regex("[^\\p{L}\\p{N}]+")
 

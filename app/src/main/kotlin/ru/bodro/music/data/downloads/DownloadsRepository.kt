@@ -34,10 +34,13 @@ import ru.bodro.music.core.downloads.DiscoverResult
 import ru.bodro.music.core.downloads.DiscoverTrack
 import ru.bodro.music.core.downloads.DislikedSong
 import ru.bodro.music.core.downloads.DownloadRequest
+import ru.bodro.music.core.downloads.DownloadSources
 import ru.bodro.music.core.downloads.DownloadsClient
 import ru.bodro.music.core.downloads.DownloadsConfig
 import ru.bodro.music.core.downloads.DownloadsError
 import ru.bodro.music.core.downloads.DownloadsException
+import ru.bodro.music.core.downloads.ExportArtist
+import ru.bodro.music.core.downloads.ExportStatus
 import ru.bodro.music.core.downloads.LibraryCheck
 import ru.bodro.music.core.downloads.MaintenanceActionsPage
 import ru.bodro.music.core.downloads.MaintenanceStatus
@@ -51,7 +54,7 @@ import ru.bodro.music.di.AppScope
 private val Context.downloadsStore: DataStore<Preferences> by preferencesDataStore(name = "downloads")
 
 /**
- * Сервис загрузок (bodrod): глобальный поиск, заявки на скачивание через slskd/Lidarr.
+ * Сервис загрузок (bodrod): глобальный поиск, заявки на скачивание по цепочке источников.
  * Адрес сервиса хранится отдельно для каждой учётки; авторизация — учёткой Navidrome.
  */
 @Singleton
@@ -152,6 +155,35 @@ class DownloadsRepository @Inject constructor(
     suspend fun runMaintenance() = client.runMaintenance()
 
     suspend fun restoreFromQuarantine(id: Long) = client.restoreFromQuarantine(id)
+
+    // endregion
+
+    // region Источники загрузки и выгрузка из Яндекса
+
+    suspend fun sources(): DownloadSources = client.sources()
+
+    suspend fun updateSources(
+        order: List<String>? = null,
+        enabled: Map<String, Boolean>? = null,
+        yandexMetadata: Boolean? = null,
+    ): DownloadSources = client.updateSources(order, enabled, yandexMetadata)
+
+    suspend fun checkYandex(): DownloadSources = client.checkYandex()
+
+    suspend fun updateYtDlp(): DownloadSources = client.updateYtDlp()
+
+    suspend fun exportStatus(): ExportStatus = client.exportStatus()
+
+    suspend fun startExport(likes: Boolean, playlists: Boolean, artists: Boolean): ExportStatus =
+        client.startExport(likes, playlists, artists)
+
+    suspend fun pauseExport(): ExportStatus = client.pauseExport()
+
+    suspend fun exportArtists(): List<ExportArtist> = client.exportArtists()
+
+    suspend fun refreshExportArtists(): List<ExportArtist> = client.refreshExportArtists()
+
+    suspend fun selectExportArtists(ids: List<String>): List<ExportArtist> = client.selectExportArtists(ids)
 
     // endregion
 

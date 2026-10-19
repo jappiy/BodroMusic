@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-19 (задание 007). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-19 (задание 008). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,16 +64,19 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.13.1** (`versionCode 14`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.6.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.13.1
-  (`BodroMusic-0.13.1.apk` — release с R8; `BodroMusic-0.13.1-debug.apk` — debug, ставится рядом).
+- Текущая версия приложения: **0.14.0** (`versionCode 15`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.7.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.14.0
+  (`BodroMusic-0.14.0.apk` — release с R8; `BodroMusic-0.14.0-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
-**CI полностью зелёный** на `a9eab7f` (0.13.1 — постоянный ключ подписи; 0.13.0 / bodrod 0.6.0 — Last.fm, образ `6425a2c`). Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.13.1 (у v0.13.0 на GitHub подпись случайного ключа — не ставить), подробности — [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md).
-Предыдущее состояние: CI зелёный на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006), релиз v0.12.0.
+**Задание 008** (0.14.0 / bodrod 0.7.0 — цепочка источников загрузки: Яндекс Музыка, slskd, YouTube Music, Lidarr;
+экран «Источники загрузки»; выгрузка из Яндекса): CI_STATUS_PENDING. Подробности —
+[`docs/history/008-download-sources-chain.md`](history/008-download-sources-chain.md).
+Предыдущее состояние: CI зелёный на `a9eab7f` (0.13.1 — постоянный ключ подписи; 0.13.0 / bodrod 0.6.0 — Last.fm,
+образ `6425a2c`), релиз v0.13.1.
 
 | Пункт ТЗ (раздел 1) | Статус |
 |---|---|
@@ -93,8 +96,9 @@
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **141** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 8, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
-- Сервер (`server/tests`, pytest): **90** (в т. ч. `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
+- Unit: **144** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 11, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Сервер (`server/tests`, pytest): **113** (в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
+  YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
 - Инструментальные: **9** — 8 проходят, 1 пропускается (`RealServerSmokeTest`, нет данных тестовой учётки).
   Тесты гоняют настоящее приложение против поддельного сервера `FakeNavidrome` (MockWebServer,
@@ -136,6 +140,10 @@
 - Повторное нажатие на выбранную вкладку — возврат к корню раздела (`BodroRoot.onTabClick`).
 - «Популярные треки» на экране исполнителя — из Яндекс Музыки через bodrod (`/api/v1/artists/popular`): скачанные
   и нескачанные (с загрузкой). Без bodrod — своя история + `getTopSongs`.
+- **Цепочка источников загрузки** (bodrod 0.7.0, `server/bodrod/sources/`): Яндекс Музыка → slskd → YouTube Music →
+  Lidarr; порядок, переключатели и «Яндекс: метаданные» — в БД bodrod, меняются на экране «Источники загрузки»
+  (`ui/screens/settings/SourcesScreen.kt`, только админы). У заявки — история попыток и итоговый источник
+  («Яндекс Музыка, FLAC»), видны в списке заявок. «Метки» Lidarr (wanted) и массовая выгрузка из Яндекса — тоже там.
 - Last.fm (bodrod 0.6.0, `metadata/lastfm.py`) — дополнительный канал, последний в цепочках тегов, обложек и поиска
   (`TAG_PROVIDERS`, `COVER_PROVIDERS`, `DISCOVER_PROVIDERS`); нужен `LASTFM_API_KEY`. После 3 сбоев подряд 5 минут
   не опрашивается. Скробблинг в Last.fm — средствами Navidrome (`ND_LASTFM_*`), см. задание 007.
@@ -197,12 +205,14 @@ Smoke-тест против реального Navidrome: скопировать
 - Сервис `server/` (bodrod, Python/FastAPI) работает на сервере рядом с Navidrome. Инструкция — `server/README.md`,
   CI — `.github/workflows/server.yml` (pytest + ruff, образ `ghcr.io/jappiy/bodromusic-server`).
 - Сценарий: поиск в библиотеке (`search3`). Если треков нет, вызывается `GET /api/v1/discover` (Яндекс Музыка → Deezer).
-  По нажатию создаётся заявка: трек скачивается через slskd, исполнитель — через Lidarr. Сервис запускает `startScan`
-  в Navidrome и ждёт появления трека. `DownloadWatchWorker` в приложении опрашивает заявки и показывает уведомление.
+  По нажатию создаётся заявка; с 0.7.0 она идёт по цепочке источников (трек: Яндекс → slskd → YouTube; исполнитель
+  и альбом: Яндекс → YouTube → Lidarr). Сервис запускает `startScan` в Navidrome и ждёт появления трека.
+  `DownloadWatchWorker` в приложении опрашивает заявки и показывает уведомление.
 - Клиент: модуль `core:downloads` (`DownloadsClient`, `DownloadWatch`), `data/downloads/` (репозиторий, воркер,
   уведомления), `ui/screens/search/Discover.kt`, `ui/screens/downloads/DownloadsScreen.kt`.
   Адрес сервиса хранится отдельно для каждой учётки в DataStore `downloads`.
-- С настоящими slskd, Lidarr, Яндексом и Deezer интеграция **не проверялась**: из облачной среды эти API недоступны.
+- С настоящими slskd, Lidarr и Deezer интеграция **не проверялась** (из облачной среды эти API недоступны);
+  поиск Яндекса и YouTube Music и загрузка yt-dlp проверены с компьютера владельца, скачивание из Яндекса — нет.
   Клиенты написаны по документации API и покрыты тестами на поддельных серверах. При первой проверке на сервере
   смотрите логи контейнера (`docker logs bodrod`).
 
@@ -211,9 +221,11 @@ Smoke-тест против реального Navidrome: скопировать
 0. Обновить проект `bodrod` на сервере до 0.5.0: пароль Navidrome — в `/secrets/navidrome_password`, убрать его из YAML,
    два пробных прогона регламента подряд (счётчики должны совпасть) — раздел «Что нужно сделать на сервере» в
    [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md). `MAINTENANCE_DRY_RUN=false` владелец включает сам.
-1. На сервере: образ bodrod 0.6.0 (`6425a2c`) и ключ
-   `/secrets/lastfm_api_key` (раздел «Что нужно сделать на сервере» в [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md)).
-   Следующая порция замечаний владельца — новое задание `docs/history/008-…`.
+1. На сервере: образ bodrod 0.7.0, токен `/secrets/yandex_music_token` (аккаунт с Плюсом; подписка до 20 ноября —
+   **выгрузку из Яндекса запустить до этой даты**), по желанию `YOUTUBE_PROXY` — раздел «Что нужно сделать на
+   сервере» в [`docs/history/008-download-sources-chain.md`](history/008-download-sources-chain.md). Там же — что
+   проверить (скачивание FLAC, `.opus` с ffmpeg, «метки» Lidarr). Ключ Last.fm — по заданию 007.
+   Следующая порция замечаний владельца — новое задание `docs/history/009-…`.
    Проверить на телефоне: из 004 — офлайн-лайки, счётчики «Коллекции»; из 005 — старт и переключение треков,
    экран исполнителя, теги «Моей волны».
 2. Сверка UI с референсами — нужны скриншоты в `docs/references/` (см. раздел 6.1 ТЗ).
@@ -256,6 +268,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 005 | 2026-10-16 | Регламент обслуживания библиотеки, популярное исполнителя из Яндекса, быстрый старт воспроизведения, мелкие правки | app 0.11.0, bodrod 0.4.0 | [005-maintenance-artist-playback.md](history/005-maintenance-artist-playback.md) |
 | 006 | 2026-10-17 | Исправления обслуживания библиотеки и заявок по разбору `bodrod.sqlite3`: пробный режим, дубли, короткие, альбомы, чужие релизы, источники обложек, очередь Soulseek, секреты | app 0.12.0, bodrod 0.5.0 | [006-maintenance-fixes.md](history/006-maintenance-fixes.md) |
 | 007 | 2026-10-19 | Last.fm — дополнительный канал тегов, обложек, глобального поиска и популярного исполнителя; ответ про скробблинг | app 0.13.0, bodrod 0.6.0 | [007-lastfm-channel.md](history/007-lastfm-channel.md) |
+| 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)
 

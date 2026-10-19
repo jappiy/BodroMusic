@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
@@ -76,6 +77,7 @@ fun SettingsScreen(
     onOpenCleanup: () -> Unit,
     onOpenBlocklist: () -> Unit,
     onOpenMaintenance: () -> Unit,
+    onOpenSources: () -> Unit,
     onOpenVersions: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -146,6 +148,15 @@ fun SettingsScreen(
                 R.string.settings_maintenance_summary,
                 onOpenMaintenance,
                 "settings-maintenance",
+            )
+        }
+        item {
+            SettingsEntry(
+                Icons.Rounded.CloudDownload,
+                R.string.sources_title,
+                R.string.settings_sources_summary,
+                onOpenSources,
+                "settings-sources",
             )
         }
         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }

@@ -215,4 +215,51 @@ class DownloadsClientTest {
             assertEquals(error, e.error)
         }
     }
+
+    @Test
+    fun `request with source chain and album kind is parsed`() = runTest {
+        server.enqueue(
+            json(
+                """[{"id":"r1","kind":"album","artist":"Кино","album":"Группа крови","status":"completed",
+                "source":"Яндекс Музыка, FLAC","attempts":[
+                  {"source":"slskd","title":"Soulseek","result":"skip","reason":"Выключен","at":1},
+                  {"source":"yandex","title":"Яндекс Музыка","result":"ok","reason":"Яндекс Музыка, FLAC","at":2}]}]""",
+            ),
+        )
+        val request = client().requests().single()
+        assertEquals(RequestKind.Album, request.kind)
+        assertEquals("Яндекс Музыка, FLAC", request.source)
+        assertEquals(listOf("skip", "ok"), request.attempts.map { it.result })
+        assertEquals(albumKey("Кино", "Группа крови"), request.key)
+    }
+
+    @Test
+    fun `update sources sends only changed fields with PUT`() = runTest {
+        server.enqueue(
+            json(
+                """{"sources":[{"name":"yandex","title":"Яндекс Музыка","enabled":false,"state":"disabled",
+                "kinds":["track","album","artist"]},{"name":"slskd","title":"Soulseek","enabled":true,"state":"unavailable",
+                "reason":"Не заданы SLSKD_URL и SLSKD_API_KEY"}],"yandexMetadata":true}""",
+            ),
+        )
+        val sources = client().updateSources(enabled = mapOf("yandex" to false))
+        val request = server.takeRequest()
+        assertEquals("PUT", request.method)
+        assertEquals("/bodrod/api/v1/sources", request.url.encodedPath)
+        assertEquals("""{"enabled":{"yandex":false}}""", request.body!!.utf8())
+        assertEquals("disabled", sources.sources[0].state)
+        assertEquals("Не заданы SLSKD_URL и SLSKD_API_KEY", sources.sources[1].reason)
+    }
+
+    @Test
+    fun `export pause posts empty body and parses status`() = runTest {
+        server.enqueue(json("""{"state":"paused","counts":{"total":10,"done":3,"skipped":1,"failed":0,"pending":6}}"""))
+        val status = client().pauseExport()
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/bodrod/api/v1/yandex/export/pause", request.url.encodedPath)
+        assertEquals("paused", status.state)
+        assertEquals(6, status.counts.pending)
+        assertTrue(!status.isActive)
+    }
 }
