@@ -36,8 +36,12 @@ services:
       # LIDARR_ROOT_FOLDER: /music
       # LIDARR_QUALITY_PROFILE_ID: "1"
       # LIDARR_METADATA_PROFILE_ID: "1"
-      # Необязательно: OAuth-токен Яндекс Музыки (без него поиск тоже работает, но каталог может быть урезан).
-      # YANDEX_MUSIC_TOKEN: ${YANDEX_MUSIC_TOKEN}
+      # Яндекс Музыка — первый источник цепочки (скачивание нужна подписка Плюс). Токен — файлом
+      # /secrets/yandex_music_token (читается сам). Без токена Яндекс только ищет и даёт метаданные.
+      # Цепочка источников по умолчанию; в приложении меняется перетаскиванием (Настройки → Источники загрузки).
+      # SOURCES_ORDER: yandex,slskd,youtube,lidarr
+      # YouTube Music через VPN: прокси для yt-dlp и ytmusicapi (или файлом /secrets/youtube_proxy).
+      # YOUTUBE_PROXY: socks5://vpn:1080
       # Обслуживание библиотеки: источники обложек и тегов по порядку (по умолчанию так).
       # COVER_PROVIDERS: yandex,deezer,itunes,musicbrainz,lastfm
       # TAG_PROVIDERS: musicbrainz,yandex,deezer,lastfm

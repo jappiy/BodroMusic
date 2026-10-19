@@ -45,6 +45,8 @@ class DiscoverResponse(ApiModel):
 
 class RequestKind(StrEnum):
     TRACK = "track"
+    """Альбом целиком (bodrod 0.7.0+): `artist` + `album`."""
+    ALBUM = "album"
     ARTIST = "artist"
 
 
@@ -84,6 +86,16 @@ class CreateRequest(ApiModel):
     cover_url: str | None = Field(default=None, max_length=1000)
 
 
+class AttemptOut(ApiModel):
+    """Попытка источника цепочки: `ok` — скачано, `fail` — не нашёл или не отдал, `skip` — выключен или недоступен."""
+
+    source: str
+    title: str
+    result: Literal["ok", "fail", "skip"]
+    reason: str | None = None
+    at: int
+
+
 class DownloadRequestOut(ApiModel):
     id: str
     kind: RequestKind
@@ -99,6 +111,9 @@ class DownloadRequestOut(ApiModel):
     song_id: str | None = None
     created_at: int
     updated_at: int
+    """Итоговый источник: «Яндекс Музыка, FLAC», «Soulseek, MP3 320» (bodrod 0.7.0+)."""
+    source: str | None = None
+    attempts: list[AttemptOut] = Field(default_factory=list)
 
 
 class ServiceInfo(ApiModel):
@@ -112,6 +127,10 @@ class ServiceInfo(ApiModel):
     admin: bool = False
     """Включено «Обслуживание библиотеки» (bodrod 0.4.0+)."""
     maintenance: bool = False
+    """Скачивание альбомов целиком (bodrod 0.7.0+)."""
+    album_downloads: bool = False
+    """Есть экран «Источники загрузки» (bodrod 0.7.0+)."""
+    sources: bool = False
 
 
 class CleanupUser(ApiModel):
@@ -224,3 +243,76 @@ class MaintenanceActionOut(ApiModel):
 class MaintenanceActionsPage(ApiModel):
     total: int
     items: list[MaintenanceActionOut]
+
+
+class SourceOut(ApiModel):
+    """Источник загрузки. `state`: `ok` — работает, `disabled` — выключен вручную, `unavailable` — не может работать."""
+
+    name: str
+    title: str
+    enabled: bool
+    state: Literal["ok", "disabled", "unavailable"]
+    reason: str | None = None
+    """Что умеет: track / album / artist."""
+    kinds: list[str] = Field(default_factory=list)
+    """Дополнительно: версия yt-dlp, статус подписки и т. п."""
+    details: str | None = None
+
+
+class SourcesOut(ApiModel):
+    sources: list[SourceOut]
+    """«Яндекс: метаданные» — поиск, теги, обложки и тексты из Яндекса для файлов из любых источников."""
+    yandex_metadata: bool
+    yandex_metadata_reason: str | None = None
+
+
+class SourcesUpdate(ApiModel):
+    """Новый порядок (все имена источников) и/или переключатели. Не заданное поле не меняется."""
+
+    order: list[str] | None = Field(default=None, max_length=20)
+    enabled: dict[str, bool] | None = None
+    yandex_metadata: bool | None = None
+
+
+class ExportCounts(ApiModel):
+    total: int = 0
+    done: int = 0
+    skipped: int = 0
+    failed: int = 0
+    pending: int = 0
+
+
+class ExportStatus(ApiModel):
+    """Массовая выгрузка из Яндекса. `state`: idle / collecting / running / paused / finished / unavailable."""
+
+    state: str
+    message: str | None = None
+    likes: bool = True
+    playlists: bool = True
+    counts: ExportCounts = Field(default_factory=ExportCounts)
+    """Сколько артистов из лайков отмечено «брать целиком» / всего."""
+    artists_selected: int = 0
+    artists_total: int = 0
+    current: str | None = None
+    updated_at: int | None = None
+
+
+class ExportStart(ApiModel):
+    likes: bool = True
+    playlists: bool = True
+    """Дискографии отмеченных артистов."""
+    artists: bool = True
+
+
+class ExportArtistOut(ApiModel):
+    id: str
+    name: str
+    """Сколько треков артиста в «Мне нравится»."""
+    liked: int
+    selected: bool
+
+
+class ExportArtistsUpdate(ApiModel):
+    """id артистов, которых брать целиком (остальные — снять отметку)."""
+
+    selected: list[str] = Field(max_length=5000)

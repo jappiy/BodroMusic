@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import ACTIVE_STATUSES, DownloadRequestOut, RequestKind, RequestStatus
+from .models import ACTIVE_STATUSES, AttemptOut, DownloadRequestOut, RequestKind, RequestStatus
 from .text import normalize
 
 _SCHEMA = """
@@ -93,12 +93,53 @@ CREATE TABLE IF NOT EXISTS maintenance_checked (
     signature TEXT NOT NULL,
     checked_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS library_files (
+    path TEXT PRIMARY KEY,
+    request_id TEXT,
+    source TEXT NOT NULL,
+    codec TEXT,
+    lossy INTEGER NOT NULL DEFAULT 0,
+    source_id TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_library_files_source ON library_files(source, source_id);
+CREATE TABLE IF NOT EXISTS wanted_seen (
+    album_id INTEGER PRIMARY KEY,
+    request_id TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS export_items (
+    id INTEGER PRIMARY KEY,
+    track_id TEXT NOT NULL UNIQUE,
+    artist TEXT NOT NULL,
+    title TEXT NOT NULL,
+    album TEXT,
+    origin TEXT NOT NULL,
+    meta TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    message TEXT,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_export_status ON export_items(status, id);
+CREATE TABLE IF NOT EXISTS export_artists (
+    artist_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    liked INTEGER NOT NULL DEFAULT 0,
+    selected INTEGER NOT NULL DEFAULT 0,
+    collected INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """Версия данных (`PRAGMA user_version`). 1 — очищен кэш проверок обслуживания, записанный пробными запусками 0.4.0,
-у действий появился признак `planned` (исправление запланировано пробным запуском)."""
+у действий появился признак `planned` (исправление запланировано пробным запуском).
+2 — у заявок цепочка источников, история попыток и итоговый источник (bodrod 0.7.0)."""
 DRY_RUN_SUFFIX = " (пробный запуск — ничего не изменено)"
 """Так bodrod 0.4.0 помечал запланированные исправления пробного запуска."""
 
@@ -195,6 +236,18 @@ class DownloadRequest:
     next_check_at: float = 0.0
     created_at: int = 0
     updated_at: int = 0
+    """Источники цепочки (снимок порядка на момент старта) и номер текущего; -1 — цепочка не начата."""
+    chain: list[str] = field(default_factory=list)
+    chain_index: int = -1
+    """История попыток: `{"source", "title", "result": ok/fail/skip, "reason", "at"}`."""
+    attempts: list[dict[str, Any]] = field(default_factory=list)
+    """Итоговый источник для приложения: «Яндекс Музыка, FLAC»."""
+    source_label: str | None = None
+
+    @property
+    def source(self) -> str | None:
+        """Текущий источник цепочки."""
+        return self.chain[self.chain_index] if 0 <= self.chain_index < len(self.chain) else None
 
     def to_api(self) -> DownloadRequestOut:
         return DownloadRequestOut(
@@ -211,6 +264,8 @@ class DownloadRequest:
             song_id=self.song_id,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            source=self.source_label,
+            attempts=[AttemptOut(**a) for a in self.attempts],
         )
 
 
@@ -232,6 +287,23 @@ class Store:
             self._conn.execute(
                 "UPDATE maintenance_actions SET planned = 1 WHERE details LIKE ?", (f"%{DRY_RUN_SUFFIX}",)
             )
+        request_columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(requests)")}
+        for column, ddl in (
+            ("chain", "TEXT NOT NULL DEFAULT '[]'"),
+            ("chain_index", "INTEGER NOT NULL DEFAULT -1"),
+            ("attempts", "TEXT NOT NULL DEFAULT '[]'"),
+            ("source_label", "TEXT"),
+        ):
+            if column not in request_columns:
+                self._conn.execute(f"ALTER TABLE requests ADD COLUMN {column} {ddl}")
+        if version < 2:
+            # Заявки, начатые до цепочки источников, продолжают со своим источником (slskd или Lidarr).
+            for kind, source in (("track", "slskd"), ("artist", "lidarr")):
+                self._conn.execute(
+                    "UPDATE requests SET chain = ?, chain_index = 0 WHERE kind = ? AND status NOT IN "
+                    "('queued', 'completed', 'failed', 'cancelled')",
+                    (json.dumps([source]), kind),
+                )
         if version < 1:
             # bodrod 0.4.0 писал отметки «проверено» и в пробном режиме — по ним настоящий запуск пропустил бы файлы.
             self._conn.execute("DELETE FROM maintenance_checked")
@@ -254,7 +326,7 @@ class Store:
         cover_url: str | None,
     ) -> tuple[DownloadRequest, bool]:
         """Новая заявка или уже существующая (та же песня/исполнитель в работе или скачана) — `(заявка, создана)`."""
-        key = dedup_key(kind, artist, title)
+        key = dedup_key(kind, artist, album if kind == RequestKind.ALBUM else title)
         with self._lock:
             revived = self._revive_failed(username, key)
             if revived is not None:
@@ -378,7 +450,8 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "UPDATE requests SET status = ?, message = ?, progress = ?, song_id = ?, state = ?, errors = ?, "
-                "next_check_at = ?, updated_at = ? WHERE id = ?",
+                "next_check_at = ?, updated_at = ?, chain = ?, chain_index = ?, attempts = ?, source_label = ? "
+                "WHERE id = ?",
                 (
                     request.status.value,
                     request.message,
@@ -388,6 +461,10 @@ class Store:
                     request.errors,
                     request.next_check_at,
                     request.updated_at,
+                    json.dumps(request.chain),
+                    request.chain_index,
+                    json.dumps(request.attempts, ensure_ascii=False),
+                    request.source_label,
                     request.id,
                 ),
             )
@@ -621,6 +698,159 @@ class Store:
         with self._lock:
             return self._conn.execute("DELETE FROM maintenance_checked").rowcount
 
+    # endregion
+
+    # region Настройки (ключ → JSON)
+
+    def get_value(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return json.loads(row["value"]) if row else default
+
+    def set_value(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (key, json.dumps(value, ensure_ascii=False), now_ms()),
+            )
+
+    # endregion
+
+    # region Файлы, положенные bodrod (источник, кодек, lossy)
+
+    def add_library_file(
+        self,
+        path: str,
+        request_id: str | None,
+        source: str,
+        codec: str | None,
+        lossy: bool,
+        source_id: str | None = None,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO library_files (path, request_id, source, codec, lossy, source_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET request_id = excluded.request_id, "
+                "source = excluded.source, codec = excluded.codec, lossy = excluded.lossy, "
+                "source_id = excluded.source_id",
+                (path, request_id, source, codec, int(lossy), source_id, now_ms()),
+            )
+
+    def source_file_paths(self, source: str, source_id: str) -> list[str]:
+        """Куда bodrod положил трек с этим id источника (повторная загрузка, выгрузка после перезапуска)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT path FROM library_files WHERE source = ? AND source_id = ?", (source, source_id)
+            ).fetchall()
+        return [r["path"] for r in rows]
+
+    def library_file(self, path: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM library_files WHERE path = ?", (path,)).fetchone()
+        return dict(row) if row else None
+
+    # endregion
+
+    # region «Метки» Lidarr: недостающие альбомы, уже переданные в цепочку
+
+    def wanted_seen(self, album_ids: list[int]) -> set[int]:
+        if not album_ids:
+            return set()
+        placeholders = ",".join("?" for _ in album_ids)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT album_id FROM wanted_seen WHERE album_id IN ({placeholders})", album_ids
+            ).fetchall()
+        return {r[0] for r in rows}
+
+    def mark_wanted(self, album_id: int, request_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO wanted_seen (album_id, request_id, created_at) VALUES (?, ?, ?)",
+                (album_id, request_id, now_ms()),
+            )
+
+    def forget_failed_wanted(self, before_ms: int) -> int:
+        """Альбомы, которые цепочка не нашла давно, — попробовать снова (в каталоге мог появиться релиз)."""
+        with self._lock:
+            return self._conn.execute(
+                "DELETE FROM wanted_seen WHERE created_at < ? AND (request_id IS NULL OR request_id IN "
+                "(SELECT id FROM requests WHERE status IN ('failed', 'cancelled')))",
+                (before_ms,),
+            ).rowcount
+
+    # endregion
+
+    # region Массовая выгрузка из Яндекса
+
+    def export_add(
+        self, track_id: str, artist: str, title: str, album: str | None, origin: str, meta: dict[str, Any]
+    ) -> bool:
+        """В очередь выгрузки (один раз на трек: тот же трек из лайков и плейлиста не качается дважды)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO export_items (track_id, artist, title, album, origin, meta, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (track_id, artist, title, album, origin, json.dumps(meta, ensure_ascii=False), now_ms()),
+            )
+            return cur.rowcount > 0
+
+    def export_next(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM export_items WHERE status = 'pending' ORDER BY id LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["meta"] = json.loads(item["meta"] or "{}")
+        return item
+
+    def export_set(self, item_id: int, status: str, message: str | None = None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE export_items SET status = ?, message = ?, updated_at = ? WHERE id = ?",
+                (status, message, now_ms(), item_id),
+            )
+
+    def export_retry_failed(self) -> int:
+        with self._lock:
+            return self._conn.execute("UPDATE export_items SET status = 'pending' WHERE status = 'failed'").rowcount
+
+    def export_counts(self) -> dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute("SELECT status, COUNT(*) AS n FROM export_items GROUP BY status").fetchall()
+        return {r["status"]: r["n"] for r in rows}
+
+    def export_upsert_artist(self, artist_id: str, name: str, liked: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO export_artists (artist_id, name, liked) VALUES (?, ?, ?) "
+                "ON CONFLICT(artist_id) DO UPDATE SET name = excluded.name, liked = excluded.liked",
+                (artist_id, name, liked),
+            )
+
+    def export_artists(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM export_artists ORDER BY liked DESC, name").fetchall()
+        return [dict(r) for r in rows]
+
+    def export_select_artists(self, selected: list[str]) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE export_artists SET selected = 0")
+            self._conn.executemany(
+                "UPDATE export_artists SET selected = 1 WHERE artist_id = ?", [(a,) for a in selected]
+            )
+
+    def export_mark_collected(self, artist_id: str) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE export_artists SET collected = 1 WHERE artist_id = ?", (artist_id,))
+
+    # endregion
+
+    # region Обслуживание: длительности скачанных треков
+
     def track_durations(self) -> dict[str, int]:
         """id трека в Navidrome → длительность по каталогу (мс) для треков, скачанных через bodrod."""
         with self._lock:
@@ -697,4 +927,8 @@ def _from_row(row: sqlite3.Row) -> DownloadRequest:
         next_check_at=row["next_check_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        chain=json.loads(row["chain"] or "[]"),
+        chain_index=row["chain_index"],
+        attempts=json.loads(row["attempts"] or "[]"),
+        source_label=row["source_label"],
     )

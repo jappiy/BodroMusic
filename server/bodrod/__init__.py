@@ -1,3 +1,6 @@
-"""bodrod — сервис загрузок для BodroMusic: поиск в каталогах, скачивание через slskd/Lidarr, импорт в Navidrome."""
+"""bodrod — сервис загрузок для BodroMusic.
 
-__version__ = "0.6.0"
+Поиск в каталогах, скачивание по цепочке источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), импорт в Navidrome.
+"""
+
+__version__ = "0.7.0"

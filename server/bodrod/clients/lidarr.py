@@ -84,20 +84,18 @@ class LidarrClient:
             metadata = int(profiles[0]["id"])
         return root, quality, metadata
 
-    async def add_or_search(self, name: str) -> tuple[int, str]:
-        """Добавить исполнителя (или запустить поиск у уже добавленного). Возвращает `(id в Lidarr, имя)`."""
+    async def _ensure_artist(self, name: str, monitor: str, search: bool) -> tuple[dict[str, Any], bool]:
+        """Исполнитель в Lidarr (найденный или добавленный с `addOptions.monitor`). `(исполнитель, был_раньше)`."""
         found = await self.lookup(name)
         if found is None:
             raise LidarrError(f"Lidarr не знает исполнителя «{name}»")
         existing = await self.find_existing(found["foreignArtistId"])
         if existing is not None:
-            artist_id = int(existing["id"])
             if not existing.get("monitored"):
                 existing["monitored"] = True
                 existing["monitorNewItems"] = "all"
-                await self._request("PUT", f"/artist/{artist_id}", json=existing)
-            await self._request("POST", "/command", json={"name": "ArtistSearch", "artistId": artist_id})
-            return artist_id, existing.get("artistName") or name
+                await self._request("PUT", f"/artist/{existing['id']}", json=existing)
+            return existing, True
         root, quality, metadata = await self._defaults()
         body = {
             **found,
@@ -106,10 +104,80 @@ class LidarrClient:
             "rootFolderPath": root,
             "monitored": True,
             "monitorNewItems": "all",
-            "addOptions": {"monitor": "all", "searchForMissingAlbums": True},
+            "addOptions": {"monitor": monitor, "searchForMissingAlbums": search},
         }
-        created = await self._request("POST", "/artist", json=body)
-        return int(created["id"]), created.get("artistName") or name
+        return await self._request("POST", "/artist", json=body), False
+
+    async def add_or_search(self, name: str) -> tuple[int, str]:
+        """Добавить исполнителя (или запустить поиск у уже добавленного). Возвращает `(id в Lidarr, имя)`."""
+        artist, existed = await self._ensure_artist(name, "all", True)
+        artist_id = int(artist["id"])
+        if existed:
+            await self._request("POST", "/command", json={"name": "ArtistSearch", "artistId": artist_id})
+        return artist_id, artist.get("artistName") or name
+
+    async def follow_artist(self, name: str) -> int:
+        """Отслеживать только новые релизы (дискографию уже скачал другой источник). Возвращает id в Lidarr."""
+        artist, _ = await self._ensure_artist(name, "future", False)
+        return int(artist["id"])
+
+    async def refresh_artist(self, artist_id: int) -> None:
+        """Пересканировать папку исполнителя: Lidarr увидит файлы, положенные bodrod, и снимет «метки»."""
+        await self._request("POST", "/command", json={"name": "RefreshArtist", "artistId": artist_id})
+
+    # region Альбом
+
+    async def find_album(self, artist_id: int, title: str) -> tuple[int | None, int, str]:
+        albums = await self._request("GET", "/album", params={"artistId": artist_id}) or []
+        wanted = normalize(title)
+        for album in albums:
+            if normalize(album.get("title")) == wanted:
+                return int(album["id"]), artist_id, album.get("title") or title
+        return None, artist_id, title
+
+    async def monitor_album(self, album_id: int) -> None:
+        await self._request("PUT", "/album/monitor", json={"albumIds": [album_id], "monitored": True})
+        await self._request("POST", "/command", json={"name": "AlbumSearch", "albumIds": [album_id]})
+
+    async def add_album(self, artist: str, title: str) -> tuple[int | None, int, str]:
+        """Один альбом: исполнитель без мониторинга остальных, альбом — с мониторингом и поиском.
+
+        `(id альбома или None, если Lidarr ещё не подтянул список альбомов, id исполнителя, название)`.
+        """
+        found, _ = await self._ensure_artist(artist, "none", False)
+        album_id, artist_id, name = await self.find_album(int(found["id"]), title)
+        if album_id is not None:
+            await self.monitor_album(album_id)
+        return album_id, artist_id, name
+
+    async def album_stats(self, album_id: int) -> LidarrStats:
+        album = await self._request("GET", f"/album/{album_id}") or {}
+        stats = album.get("statistics") or {}
+        return LidarrStats(
+            track_file_count=int(stats.get("trackFileCount") or 0),
+            total_track_count=int(stats.get("totalTrackCount") or stats.get("trackCount") or 0),
+        )
+
+    async def wanted_missing(self, limit: int) -> list[dict[str, Any]]:
+        """«Метки»: недостающие альбомы отслеживаемых исполнителей, новые сверху."""
+        page = (
+            await self._request(
+                "GET",
+                "/wanted/missing",
+                params={
+                    "page": 1,
+                    "pageSize": limit,
+                    "monitored": "true",
+                    "sortKey": "releaseDate",
+                    "sortDirection": "descending",
+                    "includeArtist": "true",
+                },
+            )
+            or {}
+        )
+        return page.get("records") or []
+
+    # endregion
 
     async def stats(self, artist_id: int) -> LidarrStats:
         artist = await self._request("GET", f"/artist/{artist_id}") or {}

@@ -94,6 +94,19 @@ class Tags:
     artist: str
     title: str
     album: str | None
+    """Остальное — из каталога (Яндекс): пустое не пишется, существующие теги файла не стираются."""
+    album_artist: str | None = None
+    track_no: int | None = None
+    disc_no: int | None = None
+    year: int | None = None
+    genre: str | None = None
+    lyrics: str | None = None
+
+    @property
+    def extra_names(self) -> list[str]:
+        names = [("tracknumber", self.track_no), ("discnumber", self.disc_no), ("date", self.year)]
+        names += [("genre", self.genre), ("lyrics", self.lyrics)]
+        return [n for n, v in names if v]
 
 
 def read_artist_title(path: Path) -> tuple[str, str] | None:
@@ -188,7 +201,7 @@ def _write_tags(path: Path, tags: Tags, cover: tuple[bytes, str] | None) -> list
     if audio is None:
         log.warning("Не удалось определить формат %s — теги не записаны", path.name)
         return []
-    written = ["artist", "albumartist", "title"] + (["album"] if tags.album else [])
+    written = ["artist", "albumartist", "title"] + (["album"] if tags.album else []) + tags.extra_names
     if isinstance(audio, MP3):
         added_cover = _tag_mp3(audio, tags, cover)
     elif isinstance(audio, MP4):
@@ -215,9 +228,19 @@ def _write_tags(path: Path, tags: Tags, cover: tuple[bytes, str] | None) -> list
 
 
 def _vorbis_values(tags: Tags) -> dict[str, str]:
-    values = {"artist": tags.artist, "albumartist": tags.artist, "title": tags.title}
+    values = {"artist": tags.artist, "albumartist": tags.album_artist or tags.artist, "title": tags.title}
     if tags.album:
         values["album"] = tags.album
+    if tags.track_no:
+        values["tracknumber"] = str(tags.track_no)
+    if tags.disc_no:
+        values["discnumber"] = str(tags.disc_no)
+    if tags.year:
+        values["date"] = str(tags.year)
+    if tags.genre:
+        values["genre"] = tags.genre
+    if tags.lyrics:
+        values["lyrics"] = tags.lyrics
     return values
 
 
@@ -323,16 +346,26 @@ def read_embedded_cover(path: Path) -> tuple[bytes, str] | None:
 
 
 def _tag_mp3(audio, tags: Tags, cover: tuple[bytes, str] | None) -> bool:  # noqa: ANN001
-    from mutagen.id3 import APIC, TALB, TIT2, TPE1, TPE2
+    from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, USLT
 
     if audio.tags is None:
         audio.add_tags()
     id3 = audio.tags
     id3.setall("TPE1", [TPE1(encoding=3, text=tags.artist)])
-    id3.setall("TPE2", [TPE2(encoding=3, text=tags.artist)])
+    id3.setall("TPE2", [TPE2(encoding=3, text=tags.album_artist or tags.artist)])
     id3.setall("TIT2", [TIT2(encoding=3, text=tags.title)])
     if tags.album:
         id3.setall("TALB", [TALB(encoding=3, text=tags.album)])
+    if tags.track_no:
+        id3.setall("TRCK", [TRCK(encoding=3, text=str(tags.track_no))])
+    if tags.disc_no:
+        id3.setall("TPOS", [TPOS(encoding=3, text=str(tags.disc_no))])
+    if tags.year:
+        id3.setall("TDRC", [TDRC(encoding=3, text=str(tags.year))])
+    if tags.genre:
+        id3.setall("TCON", [TCON(encoding=3, text=tags.genre)])
+    if tags.lyrics:
+        id3.setall("USLT", [USLT(encoding=3, lang="rus", desc="", text=tags.lyrics)])
     if cover is None or id3.getall("APIC"):
         return False
     data, mime = cover

@@ -60,6 +60,10 @@ class FakeWorld:
     lidarr_commands: list[dict[str, Any]] = field(default_factory=list)
     lidarr_removed_from_queue: list[int] = field(default_factory=list)
     lidarr_updates: list[dict[str, Any]] = field(default_factory=list)
+    """Альбомы Lidarr: `{"id", "artistId", "title", "statistics"}`; «метки» — записи `/wanted/missing`."""
+    lidarr_albums: list[dict[str, Any]] = field(default_factory=list)
+    lidarr_wanted: list[dict[str, Any]] = field(default_factory=list)
+    lidarr_monitored_albums: list[int] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
 
     def client(self) -> httpx.AsyncClient:
@@ -186,6 +190,18 @@ class FakeWorld:
         if path.startswith("/artist/") and request.method == "PUT":
             self.lidarr_updates.append(json.loads(request.content))
             return httpx.Response(202, json=json.loads(request.content))
+        if path == "/album" and request.method == "GET":
+            artist_id = int(request.url.params["artistId"])
+            return httpx.Response(200, json=[a for a in self.lidarr_albums if a["artistId"] == artist_id])
+        if path == "/album/monitor" and request.method == "PUT":
+            self.lidarr_monitored_albums.extend(json.loads(request.content)["albumIds"])
+            return httpx.Response(202, json=[])
+        if path.startswith("/album/") and request.method == "GET":
+            album_id = int(path.rsplit("/", 1)[-1])
+            album = next((a for a in self.lidarr_albums if a["id"] == album_id), None)
+            return httpx.Response(200, json=album) if album else httpx.Response(404, json={"message": "NotFound"})
+        if path == "/wanted/missing":
+            return httpx.Response(200, json={"page": 1, "records": self.lidarr_wanted})
         if path == "/rootfolder":
             return httpx.Response(200, json=[{"id": 1, "path": "/music"}])
         if path in ("/qualityprofile", "/metadataprofile"):

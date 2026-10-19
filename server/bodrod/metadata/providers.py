@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -31,13 +32,17 @@ class MetadataProvider(Protocol):
 
 
 class YandexMusicProvider:
-    """Неофициальный API Яндекс Музыки. Токен необязателен, но без него часть каталога может быть недоступна."""
+    """Неофициальный API Яндекс Музыки. Токен необязателен, но без него часть каталога может быть недоступна.
+
+    `enabled` — переключатель «Яндекс: метаданные»: выключен — каталог отвечает пустым, цепочки идут дальше.
+    """
 
     name = "yandex"
     BASE = "https://api.music.yandex.net"
 
-    def __init__(self, http: httpx.AsyncClient, token: str | None) -> None:
+    def __init__(self, http: httpx.AsyncClient, token: str | None, enabled: Callable[[], bool] = lambda: True) -> None:
         self._http = http
+        self._enabled = enabled
         self._headers = {"Accept-Language": "ru", "X-Yandex-Music-Client": "YandexMusicAndroid/24023621"}
         if token:
             self._headers["Authorization"] = f"OAuth {token}"
@@ -48,6 +53,8 @@ class YandexMusicProvider:
         return response.json().get("result")
 
     async def search(self, query: str) -> SearchHits:
+        if not self._enabled():
+            return SearchHits()
         result = await self._get("/search", text=query, type="all", page=0, nocorrect="false") or {}
         tracks = [t for t in (_track_yandex(raw) for raw in (result.get("tracks") or {}).get("results") or []) if t]
         artists = [a for a in (_artist_yandex(raw) for raw in (result.get("artists") or {}).get("results") or []) if a]
@@ -55,6 +62,8 @@ class YandexMusicProvider:
         return SearchHits(tracks=tracks[:20], artists=artists[:10], best_is_artist=best.get("type") == "artist")
 
     async def top_tracks(self, artist_id: str, limit: int) -> list[TrackCandidate]:
+        if not self._enabled():
+            return []
         result = await self._get(f"/artists/{artist_id}/tracks", page=0, **{"page-size": limit}) or {}
         tracks = [t for t in (_track_yandex(raw) for raw in result.get("tracks") or []) if t]
         if not tracks:

@@ -13,6 +13,8 @@ DEFAULT_FORMATS = ("flac", "mp3", "m4a", "ogg", "opus", "aac", "wav", "alac")
 DEFAULT_COVER_PROVIDERS = ("yandex", "deezer", "itunes", "musicbrainz", "lastfm")
 DEFAULT_TAG_PROVIDERS = ("musicbrainz", "yandex", "deezer", "lastfm")
 DEFAULT_DISCOVER_PROVIDERS = ("yandex", "deezer", "lastfm")
+"""Цепочка источников загрузки: Яндекс Музыка → Soulseek → YouTube Music → Lidarr (последний вариант)."""
+DEFAULT_SOURCES_ORDER = ("yandex", "slskd", "youtube", "lidarr")
 SECRETS_DIR = "/secrets"
 _COMMENT = re.compile(r"\s+#.*$")
 
@@ -57,6 +59,15 @@ def _list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 def _int(name: str, default: int) -> int:
     value = _opt(name)
     return int(value) if value else default
+
+
+def _range(name: str, default: tuple[float, float]) -> tuple[float, float]:
+    """`2-3` → (2.0, 3.0); `2.5` → (2.5, 2.5)."""
+    value = _opt(name)
+    if not value:
+        return default
+    low, _, high = value.partition("-")
+    return float(low), float(high or low)
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -146,6 +157,41 @@ class Settings:
     """Короче этого (секунды) — подозрительно короткий файл."""
     maintenance_min_track_s: int = 10
 
+    """Цепочка источников загрузки по умолчанию (порядок и выключенные можно поменять в приложении)."""
+    sources_order: tuple[str, ...] = DEFAULT_SOURCES_ORDER
+    sources_disabled: tuple[str, ...] = ()
+    """Пауза между запросами к Яндекс Музыке (секунды, случайно в диапазоне)."""
+    yandex_delay_min_s: float = 2.0
+    yandex_delay_max_s: float = 3.0
+    """«Яндекс: метаданные» по умолчанию (переключается в приложении)."""
+    yandex_metadata: bool = True
+    """Как часто проверять подписку Плюс."""
+    yandex_check_interval_s: int = 24 * 3600
+    """Прокси для YouTube (yt-dlp и ytmusicapi), например `socks5://vpn:1080`."""
+    youtube_proxy: str | None = None
+    """Обновлять yt-dlp автоматически (в `<DATA_DIR>/ytdlp`): при старте и раз в `ytdlp_update_interval_s`."""
+    ytdlp_auto_update: bool = True
+    ytdlp_update_interval_s: int = 24 * 3600
+    """Файл короче этой доли длительности по каталогу — превью: удаляем, источник считается неудачным."""
+    preview_ratio: float = 0.9
+    """«Метки» Lidarr: недостающие альбомы отслеживаемых артистов сначала пробует цепочка bodrod."""
+    lidarr_wanted_sync: bool = True
+    lidarr_wanted_interval_s: int = 3600
+    """Не найденный цепочкой альбом пробовать снова через столько дней."""
+    lidarr_wanted_retry_days: int = 7
+    lidarr_wanted_batch: int = 20
+    """Массовая выгрузка из Яндекса: пауза между треками (секунды) — низкий приоритет."""
+    export_delay_s: float = 5.0
+
+    @property
+    def ytdlp_dir(self) -> str:
+        return os.path.join(self.data_dir, "ytdlp")
+
+    @property
+    def staging_dir(self) -> str:
+        """Временная папка для файлов Яндекса и YouTube до раскладки в библиотеку."""
+        return os.path.join(self.data_dir, "staging")
+
     @property
     def slskd_enabled(self) -> bool:
         return bool(self.slskd_url and self.slskd_api_key)
@@ -183,6 +229,7 @@ class Settings:
         if not (navidrome and user and password):
             raise RuntimeError("Нужно задать NAVIDROME_URL, NAVIDROME_ADMIN_USER и NAVIDROME_ADMIN_PASSWORD")
         formats = _opt("ALLOWED_FORMATS")
+        delay_min, delay_max = _range("YANDEX_DELAY_S", (2.0, 3.0))
         quality = _opt("LIDARR_QUALITY_PROFILE_ID")
         metadata = _opt("LIDARR_METADATA_PROFILE_ID")
         return cls(
@@ -196,7 +243,7 @@ class Settings:
             lidarr_root_folder=_opt("LIDARR_ROOT_FOLDER"),
             lidarr_quality_profile_id=int(quality) if quality else None,
             lidarr_metadata_profile_id=int(metadata) if metadata else None,
-            yandex_token=_secret("YANDEX_MUSIC_TOKEN"),
+            yandex_token=_secret("YANDEX_MUSIC_TOKEN", os.path.join(SECRETS_DIR, "yandex_music_token")),
             deezer_enabled=(_opt("DEEZER_ENABLED") or "true").lower() != "false",
             discover_providers=_list("DISCOVER_PROVIDERS", DEFAULT_DISCOVER_PROVIDERS),
             cover_providers=_list("COVER_PROVIDERS", DEFAULT_COVER_PROVIDERS),
@@ -232,4 +279,19 @@ class Settings:
             quarantine_days=_int("QUARANTINE_DAYS", 30),
             maintenance_catalog_limit=_int("MAINTENANCE_CATALOG_LIMIT", 200),
             maintenance_min_track_s=_int("MAINTENANCE_MIN_TRACK_S", 10),
+            sources_order=_list("SOURCES_ORDER", DEFAULT_SOURCES_ORDER),
+            sources_disabled=_list("SOURCES_DISABLED", ()),
+            yandex_delay_min_s=delay_min,
+            yandex_delay_max_s=delay_max,
+            yandex_metadata=_bool("YANDEX_METADATA", True),
+            yandex_check_interval_s=_int("YANDEX_CHECK_INTERVAL_S", 24 * 3600),
+            youtube_proxy=_opt("YOUTUBE_PROXY", os.path.join(SECRETS_DIR, "youtube_proxy")),
+            ytdlp_auto_update=_bool("YTDLP_AUTO_UPDATE", True),
+            ytdlp_update_interval_s=_int("YTDLP_UPDATE_INTERVAL_S", 24 * 3600),
+            preview_ratio=float(_opt("PREVIEW_RATIO") or 0.9),
+            lidarr_wanted_sync=_bool("LIDARR_WANTED_SYNC", True),
+            lidarr_wanted_interval_s=_int("LIDARR_WANTED_INTERVAL_S", 3600),
+            lidarr_wanted_retry_days=_int("LIDARR_WANTED_RETRY_DAYS", 7),
+            lidarr_wanted_batch=_int("LIDARR_WANTED_BATCH", 20),
+            export_delay_s=float(_opt("EXPORT_DELAY_S") or 5.0),
         )

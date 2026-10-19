@@ -8,6 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8790
 
 WORKDIR /app
+# ffmpeg — yt-dlp перекладывает поток YouTube (opus/aac) в .opus/.m4a без перекодирования, чтобы записать теги.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY bodrod ./bodrod

@@ -119,8 +119,10 @@ def test_track_fails_over_to_next_peer(tmp_path):
     assert current["username"] == "errors"
 
     world.set_transfer("errors", filename_b, "Completed, Errored")
-    failed = run_until(worker, clock, store, request.id, RequestStatus.FAILED)
-    assert failed.message == "Ни один источник не отдал файл"
+    # Пиры кончились — Soulseek считается неудачным, цепочка (других источников нет) уходит на повтор.
+    queued = run_until(worker, clock, store, request.id, RequestStatus.QUEUED)
+    assert "Soulseek: ни один пир не отдал файл" in queued.message
+    assert [a["result"] for a in queued.attempts if a["source"] == "slskd"] == ["fail"]
 
 
 def test_track_not_found_retries_then_fails(tmp_path):
@@ -145,8 +147,10 @@ def test_track_not_found_retries_then_fails(tmp_path):
             current = store.get(request.id)
     failed = store.get(request.id)
     assert failed.status == RequestStatus.FAILED
-    assert failed.message.startswith("Не нашли подходящий файл в Soulseek. Запросы: «трофим город сочи»")
+    assert failed.message.startswith("Не нашли ни в одном источнике.")
+    assert "Soulseek: не нашли подходящий файл; запросы: «трофим город сочи»" in failed.message
     assert len(world.slskd_searches) == 8
+    assert sum(1 for a in failed.attempts if a["source"] == "slskd") == 4
 
 
 def test_artist_goes_to_lidarr(tmp_path):
