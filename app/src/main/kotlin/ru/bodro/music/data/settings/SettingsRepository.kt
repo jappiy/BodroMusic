@@ -23,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
 import ru.bodro.music.core.domain.wave.WaveCharacter
+import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.core.subsonic.NetworkLogLevel
 import ru.bodro.music.di.AppScope
 
@@ -43,6 +44,8 @@ data class AppSettings(
     val waveDiscoveryShare: Float = DEFAULT_DISCOVERY,
     /** Характер волны: доля треков из пула «На пробу» (Любимое 0 %, Микс 25 %, Незнакомое 50 %). */
     val waveCharacter: WaveCharacter = WaveCharacter.Mix,
+    /** Настроение волны по признакам звучания (нужен анализ на сервере). */
+    val waveMood: WaveMood = WaveMood.Any,
     /** Чарты на главной: порядок (id; новые — в конце) и скрытые. */
     val chartsOrder: List<String> = emptyList(),
     val chartsHidden: Set<String> = emptySet(),
@@ -91,6 +94,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.logLevel] = updated.logLevel.name
             prefs[Keys.discovery] = updated.waveDiscoveryShare
             prefs[Keys.character] = updated.waveCharacter.name
+            prefs[Keys.mood] = updated.waveMood.name
             prefs[Keys.chartsOrder] = updated.chartsOrder.joinToString(",")
             prefs[Keys.chartsHidden] = updated.chartsHidden.joinToString(",")
             prefs[Keys.skipReset] = updated.skipStatsResetAt
@@ -111,6 +115,7 @@ class SettingsRepository @Inject constructor(
         logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
         waveDiscoveryShare = this[Keys.discovery] ?: AppSettings.DEFAULT_DISCOVERY,
         waveCharacter = enumOr(this[Keys.character], WaveCharacter.Mix),
+        waveMood = enumOr(this[Keys.mood], WaveMood.Any),
         chartsOrder = this[Keys.chartsOrder]?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
         chartsHidden = this[Keys.chartsHidden]?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty(),
         skipStatsResetAt = this[Keys.skipReset] ?: 0,
@@ -132,6 +137,7 @@ class SettingsRepository @Inject constructor(
         val logLevel = stringPreferencesKey("log_level")
         val discovery = floatPreferencesKey("wave_discovery")
         val character = stringPreferencesKey("wave_character")
+        val mood = stringPreferencesKey("wave_mood")
         val chartsOrder = stringPreferencesKey("charts_order")
         val chartsHidden = stringPreferencesKey("charts_hidden")
         val skipReset = longPreferencesKey("skip_stats_reset_at")

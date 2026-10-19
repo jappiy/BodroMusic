@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -133,6 +133,8 @@ class ServiceInfo(ApiModel):
     sources: bool = False
     """Discovery-пул «на пробу» и события обратной связи (bodrod 0.9.0+)."""
     pool: bool = False
+    """Анализ звучания: признаки треков и «Похожие по звучанию» (bodrod 0.12.0+)."""
+    analysis: bool = False
 
 
 class CleanupUser(ApiModel):
@@ -383,6 +385,10 @@ class PoolItemOut(ApiModel):
     full_plays: int = 0
     early_skips: int = 0
     shown: int = 0
+    """Звуковая близость к вкусу пользователя (0..1; нет — не проанализирован)."""
+    sound_match: float | None = None
+    """Можно ставить в волну: близость не ниже порога (или ещё неизвестна)."""
+    in_wave: bool = True
 
 
 class PoolOut(ApiModel):
@@ -468,3 +474,29 @@ class EnginePreviewItem(ApiModel):
     score: float
     sources: list[str]
     new_artist: bool
+
+
+class AnalysisJobs(ApiModel):
+    """Пути относительно папки музыки."""
+
+    jobs: list[str] = []
+
+
+class AnalysisResult(ApiModel):
+    path: str
+    """bpm, key, scale, loudness, danceability, voice, moods {happy, sad, aggressive, relaxed}, genres [[метка, p]]."""
+    features: dict[str, Any] | None = None
+    embedding: list[float] | None = Field(default=None, max_length=4096)
+    error: str | None = None
+
+
+class AnalysisStatus(ApiModel):
+    enabled: bool
+    analyzed: int = 0
+    errors: int = 0
+    library: int = 0
+    last_result_at: int | None = None
+
+
+class SimilarSongs(ApiModel):
+    ids: list[str] = []

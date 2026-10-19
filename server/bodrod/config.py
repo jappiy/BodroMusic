@@ -228,6 +228,10 @@ class Settings:
     """Чарты (задача 4): какие обновлять (пусто — все) и сколько верхних недостающих качать в пул."""
     charts: tuple[str, ...] = ()
     charts_download_top: int = 30
+    """Анализ звучания (задача 5): токен воркера `analyzer/` и пороги звуковой близости трека пула к вкусу."""
+    analyzer_token: str | None = None
+    sound_min_match: float = 0.5
+    sound_reject_match: float = 0.3
 
     @property
     def archive_path(self) -> str:
@@ -381,6 +385,9 @@ class Settings:
             listenbrainz_users=_pairs("LISTENBRAINZ_USERS"),
             charts=_list("CHARTS", ()),
             charts_download_top=_int("CHARTS_DOWNLOAD_TOP", 30),
+            analyzer_token=_secret("ANALYZER_TOKEN", os.path.join(SECRETS_DIR, "analyzer_token")),
+            sound_min_match=float(_opt("SOUND_MIN_MATCH") or 0.5),
+            sound_reject_match=float(_opt("SOUND_REJECT_MATCH") or 0.3),
         )
 
 

@@ -146,6 +146,8 @@ data class ServiceInfo(
     val sources: Boolean = false,
     /** Discovery-пул «На пробу» и события обратной связи (bodrod 0.9.0+). */
     val pool: Boolean = false,
+    /** Анализ звучания: настроение волны, «Похожие по звучанию» (bodrod 0.12.0+). */
+    val analysis: Boolean = false,
 )
 
 /** Источник загрузки. [state]: `ok` — работает, `disabled` — выключен, `unavailable` — не может работать ([reason]). */
@@ -329,6 +331,10 @@ data class PoolItem(
     val fullPlays: Int = 0,
     val earlySkips: Int = 0,
     val shown: Int = 0,
+    /** Звуковая близость к вкусу (0..1; `null` — не проанализирован). */
+    val soundMatch: Float? = null,
+    /** Можно ставить в волну (близость не ниже порога сервера). */
+    val inWave: Boolean = true,
 )
 
 @Serializable
@@ -386,6 +392,30 @@ data class EngineSource(
     val suggested: Int = 0,
     val promoted: Int = 0,
     val rejected: Int = 0,
+)
+
+/** Признаки звучания трека (анализ на сервере). */
+@Serializable
+data class TrackFeatures(
+    val bpm: Double? = null,
+    val energy: Double? = null,
+    val danceability: Double? = null,
+    val voice: Double? = null,
+    val key: String? = null,
+    val scale: String? = null,
+    val moods: Map<String, Double> = emptyMap(),
+)
+
+@Serializable
+data class SimilarSongs(val ids: List<String> = emptyList())
+
+@Serializable
+data class AnalysisStatus(
+    val enabled: Boolean = false,
+    val analyzed: Int = 0,
+    val errors: Int = 0,
+    val library: Int = 0,
+    val lastResultAt: Long? = null,
 )
 
 @Serializable

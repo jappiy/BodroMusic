@@ -1,0 +1,11 @@
+[project]
+name = "bodro-analyzer"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -28,6 +28,9 @@ interface AppActions {
     fun addToPlaylist(songs: List<Song>)
 
     fun showMessage(message: String)
+
+    /** «Похожие по звучанию»: очередь из ближайших по звуку треков библиотеки. */
+    fun playSimilar(song: Song) {}
 }
 
 /** Навигация, доступная любому экрану. */

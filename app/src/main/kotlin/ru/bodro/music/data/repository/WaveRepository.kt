@@ -11,6 +11,7 @@ import ru.bodro.music.core.domain.wave.LocalWaveSource
 import ru.bodro.music.core.domain.wave.PoolMixer
 import ru.bodro.music.core.domain.wave.WaveEngine
 import ru.bodro.music.core.domain.wave.WaveLibrary
+import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.core.domain.wave.WaveProfile
 import ru.bodro.music.core.domain.wave.WaveProfileBuilder
 import ru.bodro.music.core.domain.wave.WaveRequest
@@ -25,6 +26,7 @@ import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.log.LogRepository
 import ru.bodro.music.data.log.PlayerEvent
 import ru.bodro.music.data.reco.PoolRepository
+import ru.bodro.music.data.reco.SoundRepository
 import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.di.Clock
 
@@ -80,6 +82,7 @@ class WaveRepository @Inject constructor(
     private val connection: ConnectionManager,
     private val log: LogRepository,
     private val pool: PoolRepository,
+    private val sound: SoundRepository,
     private val clock: Clock,
 ) {
     private val random = Random(clock.now())
@@ -109,16 +112,20 @@ class WaveRepository @Inject constructor(
         // Дизлайкнутые прямо сейчас (ещё не в Room) тоже исключаем.
         val state = reactions.state.value
         val fullProfile = profile.copy(dislikedSongIds = profile.dislikedSongIds + state.dislikedIds)
+        // Настроение волны: кандидатов втрое больше, потом отбор по признакам звучания.
+        val mood = this.settings.current.waveMood
+        val wanted = if (mood != WaveMood.Any && sound.isSupported()) batchSize * MOOD_OVERSAMPLE else batchSize
         val request = WaveRequest(
             settings = resolved,
             profile = fullProfile,
             currentSong = currentSong,
             recentSongs = queue,
-            batchSize = batchSize,
+            batchSize = wanted,
             nowMs = clock.now(),
             random = Random(random.nextLong()),
         )
-        val familiar = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
+        val raw = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
+        val familiar = sound.arrange(raw, mood, batchSize, currentSong)
         val batch = withPool(familiar, resolved, fullProfile, queue)
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
         batch
@@ -136,7 +143,7 @@ class WaveRepository @Inject constructor(
         } else {
             emptyList()
         }
-        val mixed = PoolMixer.mix(batch, candidates, share, Random(random.nextLong()), queue, poolIds)
+        val mixed = PoolMixer.mix(batch, candidates.filter { pool.inWave(it.id) }, share, Random(random.nextLong()), queue, poolIds)
         mixed.filter { it.id in poolIds }.forEach { pool.track(it, "shown", "wave") }
         return mixed
     }
@@ -168,6 +175,7 @@ class WaveRepository @Inject constructor(
     val activeAccountId: Long? get() = connection.activeAccountId
 
     private companion object {
+        const val MOOD_OVERSAMPLE = 3
         const val HISTORY_WINDOW_MS = 120L * 24 * 60 * 60 * 1000
     }
 }

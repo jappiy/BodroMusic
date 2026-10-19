@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.bodro.music.R
+import ru.bodro.music.core.downloads.AnalysisStatus
 import ru.bodro.music.core.downloads.EngineSource
 import ru.bodro.music.core.downloads.EngineStatus
 import ru.bodro.music.core.downloads.HarvestAccount
@@ -56,6 +57,7 @@ data class RecoUi(
     val loading: Boolean = true,
     val engine: EngineStatus? = null,
     val harvest: HarvestStatus? = null,
+    val analysis: AnalysisStatus? = null,
     val error: UiError? = null,
 )
 
@@ -76,6 +78,7 @@ class RecoViewModel @Inject constructor(private val downloads: DownloadsReposito
                 .onSuccess { engine -> _state.update { it.copy(engine = engine) } }
                 .onFailure { e -> _state.update { it.copy(error = e.toUiError()) } }
             runCatching { downloads.harvest() }.onSuccess { harvest -> _state.update { it.copy(harvest = harvest) } }
+            runCatching { downloads.analysisStatus() }.onSuccess { analysis -> _state.update { it.copy(analysis = analysis) } }
             _state.update { it.copy(loading = false) }
         }
     }
@@ -145,6 +148,23 @@ fun RecoScreen(onBack: () -> Unit, viewModel: RecoViewModel = hiltViewModel()) {
                             viewModel.refill()
                             actions.showMessage(refillDone)
                         }) { Text(stringResource(R.string.reco_refill)) }
+                    }
+                }
+                state.analysis?.let { analysis ->
+                    item {
+                        HorizontalDivider()
+                        Column(Modifier.padding(16.dp).testTag("reco-analysis")) {
+                            Text(stringResource(R.string.reco_analysis_title), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (analysis.enabled) {
+                                    stringResource(R.string.reco_analysis_summary, analysis.analyzed, analysis.library, analysis.errors)
+                                } else {
+                                    stringResource(R.string.reco_analysis_off)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 state.harvest?.takeIf { it.enabled }?.let { harvest ->

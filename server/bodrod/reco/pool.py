@@ -51,6 +51,13 @@ CREATE TABLE IF NOT EXISTS feedback_events (
     pool INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_events(username, at);
+CREATE TABLE IF NOT EXISTS pool_sound (
+    track_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    match REAL NOT NULL,
+    checked_at INTEGER NOT NULL,
+    PRIMARY KEY (track_id, username)
+);
 """
 
 ACTIVE = ("candidate", "queued", "downloading", "in_pool")
@@ -89,6 +96,8 @@ class PoolService:
         self.engine_refill: Callable[[str, int], Any] | None = None
         """Разбудить воркер заявок после постановки в очередь."""
         self.wake_worker: Callable[[], None] = lambda: None
+        """Анализ звучания (задача 5): фильтр пула по близости к вкусу пользователя."""
+        self.analysis: Any = None
         store.executescript(SCHEMA)
 
     @property
@@ -104,7 +113,9 @@ class PoolService:
         marks = ",".join("?" for _ in statuses)
         return self._store.query(
             f"SELECT t.*, o.status, o.source, o.score, o.shown, o.starts, o.full_plays, o.early_skips, "
-            f"o.last_played_at, o.added_at, o.status_at FROM pool_owners o JOIN pool_tracks t ON t.id = o.track_id "
+            f"o.last_played_at, o.added_at, o.status_at, s.match AS sound_match FROM pool_owners o "
+            f"JOIN pool_tracks t ON t.id = o.track_id "
+            f"LEFT JOIN pool_sound s ON s.track_id = o.track_id AND s.username = o.username "
             f"WHERE o.username = ? AND o.status IN ({marks}) ORDER BY o.added_at DESC",
             (username, *statuses),
         )
@@ -443,7 +454,27 @@ class PoolService:
             await self._apply_annotations()
             await self._expire()
         for user in self.users():
+            await self._sound_filter(user)
             await self.refill(user, force_refill)
+
+    async def _sound_filter(self, username: str) -> None:
+        """Близость треков пула к вкусу (кластеры лайков): ниже `SOUND_REJECT_MATCH` — убрать и засчитать источнику."""
+        if self.analysis is None:
+            return
+        tracks = self.items(username)
+        matches = await self.analysis.sound_matches(username, tracks)
+        for track_id, match in matches.items():
+            self._store.execute(
+                "INSERT INTO pool_sound (track_id, username, match, checked_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(track_id, username) DO UPDATE SET match = excluded.match, "
+                "checked_at = excluded.checked_at",
+                (track_id, username, match, self._clock()),
+            )
+            if match < self._settings.sound_reject_match:
+                async with self._lock:
+                    self._set_status(track_id, username, "rejected")
+                    await self._settle(track_id)
+                log.info("Пул (%s): трек %s далёк по звучанию (%.2f) — убран", username, track_id, match)
 
     def users(self) -> list[str]:
         rows = self._store.query("SELECT DISTINCT username FROM pool_owners WHERE username != ?", (CHARTS_OWNER,))

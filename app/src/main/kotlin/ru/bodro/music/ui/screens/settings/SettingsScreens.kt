@@ -3,6 +3,7 @@ package ru.bodro.music.ui.screens.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,6 +68,7 @@ import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
 import ru.bodro.music.core.domain.wave.WaveCharacter
+import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.components.BodroTopBar
@@ -356,6 +358,14 @@ private fun CacheSizeField(currentMb: Int, onSave: (Int) -> Unit) {
 
 private const val OFFLINE_REFRESH_MS = 5_000L
 
+private fun waveMoodLabel(mood: WaveMood): Int = when (mood) {
+    WaveMood.Any -> R.string.wave_mood_any
+    WaveMood.Energetic -> R.string.wave_mood_energetic
+    WaveMood.Calm -> R.string.wave_mood_calm
+    WaveMood.Happy -> R.string.wave_mood_happy
+    WaveMood.Sad -> R.string.wave_mood_sad
+}
+
 private fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
     WaveCharacter.Favorites -> R.string.wave_character_favorites
     WaveCharacter.Mix -> R.string.wave_character_mix
@@ -380,6 +390,23 @@ fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVi
             }
             Text(
                 stringResource(R.string.settings_wave_character_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
+            Text(stringResource(R.string.settings_wave_mood), style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                WaveMood.entries.forEach { mood ->
+                    FilterChip(
+                        selected = settings.waveMood == mood,
+                        onClick = { viewModel.update { it.copy(waveMood = mood) } },
+                        label = { Text(stringResource(waveMoodLabel(mood))) },
+                        modifier = Modifier.testTag("wave-mood-${mood.name}"),
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.settings_wave_mood_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 24.dp),

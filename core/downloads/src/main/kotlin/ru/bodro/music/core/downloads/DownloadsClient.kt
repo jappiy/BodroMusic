@@ -202,6 +202,18 @@ class DownloadsClient(
 
     // endregion
 
+    // region Анализ звучания (bodrod 0.12.0+)
+
+    suspend fun trackFeatures(ids: List<String>): Map<String, TrackFeatures> =
+        post(listOf("api", "v1", "analysis", "features"), IdsBody(ids))
+
+    suspend fun similarBySound(songId: String, limit: Int = 30): SimilarSongs =
+        get(listOf("api", "v1", "analysis", "similar"), listOf("songId" to songId, "limit" to limit.toString()))
+
+    suspend fun analysisStatus(): AnalysisStatus = get(listOf("api", "v1", "analysis"))
+
+    // endregion
+
     // region Чарты (bodrod 0.11.0+)
 
     suspend fun charts(): List<Chart> = get(listOf("api", "v1", "charts"))

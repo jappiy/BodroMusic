@@ -560,4 +560,18 @@
     <string name="charts_settings_empty">Чарты появятся, когда в настройках задан сервис загрузок bodrod 0.11.0 или новее</string>
     <string name="action_move_up">Выше</string>
     <string name="action_move_down">Ниже</string>
+    <string name="settings_wave_mood">Настроение волны</string>
+    <string name="settings_wave_mood_hint">Подбирается по звучанию треков (нужен анализ звучания на сервере). Соседние треки волны подбираются близкими по энергии и темпу.</string>
+    <string name="wave_mood_any">Любое</string>
+    <string name="wave_mood_energetic">Бодрое</string>
+    <string name="wave_mood_calm">Спокойное</string>
+    <string name="wave_mood_happy">Весёлое</string>
+    <string name="wave_mood_sad">Грустное</string>
+    <string name="menu_similar_sound">Похожие по звучанию</string>
+    <string name="similar_sound_title">Похоже на «%1$s»</string>
+    <string name="similar_sound_empty">Похожих по звучанию пока нет: трек ещё не проанализирован</string>
+    <string name="similar_sound_unsupported">Нужен анализ звучания на сервере (bodrod 0.12.0 и воркер анализа)</string>
+    <string name="reco_analysis_title">Анализ звучания</string>
+    <string name="reco_analysis_summary">Проанализировано %1$d из %2$d, ошибок %3$d</string>
+    <string name="reco_analysis_off">Не настроен: нужен ANALYZER_TOKEN и контейнер анализатора</string>
 </resources>

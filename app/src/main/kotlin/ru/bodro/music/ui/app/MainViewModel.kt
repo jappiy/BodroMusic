@@ -27,6 +27,7 @@ import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
+import ru.bodro.music.data.reco.SoundRepository
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.data.repository.PlaylistRepository
 import ru.bodro.music.data.repository.ReactionRepository
@@ -53,6 +54,7 @@ class MainViewModel @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val palette: CoverPaletteRepository,
     private val library: LibraryRepository,
+    private val sound: SoundRepository,
 ) : ViewModel(), AppActions {
     val session: StateFlow<SessionState> = connection.session
     val settings: StateFlow<AppSettings> = settingsRepository.settings
@@ -108,6 +110,22 @@ class MainViewModel @Inject constructor(
                 context.getString(error.toUiError().message)
             }
             showMessage(text)
+        }
+    }
+
+    override fun playSimilar(song: Song) {
+        viewModelScope.launch {
+            val similar = if (sound.isSupported()) runCatching { sound.similar(song) }.getOrDefault(emptyList()) else null
+            when {
+                similar == null -> showMessage(context.getString(R.string.similar_sound_unsupported))
+                similar.isEmpty() -> showMessage(context.getString(R.string.similar_sound_empty))
+                else -> player.play(
+                    listOf(song) + similar,
+                    0,
+                    QueueSource.CustomSource(context.getString(R.string.similar_sound_title, song.title)),
+                    false,
+                )
+            }
         }
     }
 

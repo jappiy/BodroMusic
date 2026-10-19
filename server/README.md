@@ -116,6 +116,8 @@ HTTP разрешён только для адресов локальной се
 | `LISTENBRAINZ_USERS` | нет | `пользователь Navidrome:имя в LB,…` — плейлисты Weekly Exploration / Weekly Jams |
 | `CHARTS` | нет | Какие чарты обновлять (по id через запятую): `yandex`, `deezer_world`, `deezer_russia`, `lastfm_world`, `lastfm_russia`, `apple_ru`, `listenbrainz`; пусто — все |
 | `CHARTS_DOWNLOAD_TOP` | нет | Недостающие из топ-30 каждого чарта качаются в общий пул (`0` — не качать) |
+| `ANALYZER_TOKEN` | нет | Токен воркера анализа звучания (`analyzer/`), или файл `/secrets/analyzer_token`. Без него анализ выключен |
+| `SOUND_MIN_MATCH`, `SOUND_REJECT_MATCH` | нет | Звуковая близость трека пула к вкусу: ниже 0.5 — не в волну, ниже 0.3 — убрать |
 | `DISCOVERY_DIR` | нет | Discovery-пул (виден Navidrome), по умолчанию `<MUSIC_DIR>/_discovery` |
 | `DATA_DIR`, `PORT`, `LOG_LEVEL` | нет | `/data`, `8790`, `INFO` |
 
@@ -228,6 +230,17 @@ ListenBrainz (топ записей за неделю). Хранится сни�
 Чарт, который не ответил, скрывается до следующего удачного обновления. Каждый трек сопоставляется с библиотекой и
 пулом; недостающие из топ-`CHARTS_DOWNLOAD_TOP` ставятся в пул с владельцем `charts` (заявки `pool:charts`). Лайк
 любого пользователя переводит такой трек в библиотеку; выпавший из всех чартов и не слушавшийся 30 дней — удаляется.
+
+## Анализ звучания (0.12.0)
+
+Признаки считает отдельный контейнер [`analyzer/`](../analyzer/README.md) (Essentia + discogs-effnet), bodrod
+раздаёт ему задания и хранит результат (`bodrod/reco/analysis.py`, таблица `audio_features`):
+- очередь — сначала пул и резерв, потом библиотека; путь относительно `MUSIC_DIR`, аренда задания 30 минут;
+- профиль вкуса — 5–10 кластеров k-means по эмбеддингам лайкнутых треков (нужно ≥ 10 проанализированных);
+- фильтр пула — максимальный косинус к центрам кластеров: ниже `SOUND_MIN_MATCH` трек не идёт в волну
+  (`inWave: false`), ниже `SOUND_REJECT_MATCH` — убирается (reject засчитывается источнику);
+- признаки для настроения и плавных переходов волны — `POST /api/v1/analysis/features`;
+- «Похожие по звучанию» — numpy-индекс в памяти (косинус), без треков пула.
 
 ## Размещение в библиотеке
 
@@ -410,6 +423,11 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | POST | `/api/v1/pool/status` | `{ids: [...]}` → `{id: статус}` только для треков пула |
 | GET | `/api/v1/pool/hidden` | Что приложение прячет: `songIds` пула, `albumIds` и `artistIds`, у которых все треки в пуле |
 | POST | `/api/v1/pool/refill` | Пополнить пул сейчас (202) |
+| GET | `/api/v1/analysis/next?limit=` | Задания для воркера анализа (заголовок `X-Analyzer-Token`) |
+| POST | `/api/v1/analysis/result` | `{path, features?, embedding?, error?}` от воркера (`X-Analyzer-Token`) |
+| GET | `/api/v1/analysis` | Сколько проанализировано, ошибок, треков в библиотеке |
+| POST | `/api/v1/analysis/features` | `{ids}` → признаки: `bpm`, `energy`, `danceability`, `voice`, `key`, `moods` |
+| GET | `/api/v1/analysis/similar?songId=&limit=` | Похожие по звучанию треки библиотеки: `{ids}` |
 | GET | `/api/v1/charts` | Доступные чарты: `id`, `title`, `updatedAt`, `covers` (4 обложки), `size` |
 | GET | `/api/v1/charts/{id}` | Позиции: `position`, `prevPosition`, `movement` (`up`/`down`/`same`/`new`), `state` (`library`/`pool`/`downloading`/`unavailable`), `songId` |
 | POST | `/api/v1/charts/refresh` | Обновить чарты сейчас (только админ) |

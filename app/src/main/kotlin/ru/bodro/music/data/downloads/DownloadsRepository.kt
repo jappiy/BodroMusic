@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import okhttp3.OkHttpClient
+import ru.bodro.music.core.downloads.AnalysisStatus
 import ru.bodro.music.core.downloads.ArtistPopular
 import ru.bodro.music.core.downloads.BlocklistPage
 import ru.bodro.music.core.downloads.Chart
@@ -54,6 +55,7 @@ import ru.bodro.music.core.downloads.PoolHidden
 import ru.bodro.music.core.downloads.PoolList
 import ru.bodro.music.core.downloads.RequestStatus
 import ru.bodro.music.core.downloads.ServiceInfo
+import ru.bodro.music.core.downloads.TrackFeatures
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.data.repository.AppJson
@@ -205,6 +207,12 @@ class DownloadsRepository @Inject constructor(
     suspend fun poolHidden(): PoolHidden = client.poolHidden()
 
     suspend fun refillPool() = client.refillPool()
+
+    suspend fun trackFeatures(ids: List<String>): Map<String, TrackFeatures> = client.trackFeatures(ids)
+
+    suspend fun similarBySound(songId: String): List<String> = client.similarBySound(songId).ids
+
+    suspend fun analysisStatus(): AnalysisStatus = client.analysisStatus()
 
     suspend fun charts(): List<Chart> = client.charts()
 

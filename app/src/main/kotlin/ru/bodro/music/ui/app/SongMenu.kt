@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlaylistPlay
@@ -107,6 +108,9 @@ fun SongMenuSheet(
             }
             MenuItem(Icons.Rounded.Waves, stringResource(R.string.menu_wave_by_track)) {
                 act { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) }
+            }
+            MenuItem(Icons.Rounded.GraphicEq, stringResource(R.string.menu_similar_sound), tag = "menu-similar-sound") {
+                act { actions.playSimilar(song) }
             }
             MenuItem(
                 if (reaction == Reaction.Liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,

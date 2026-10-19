@@ -1,0 +1,57 @@
+# bodro-analyzer — анализ звучания для bodrod
+
+Отдельный контейнер: берёт у bodrod задания (пути файлов), считает признаки на Essentia и отдаёт их обратно. bodrod
+использует их для фильтра пула «На пробу», настроения «Моей волны» и «Похожих по звучанию».
+
+Что считается: эмбеддинг discogs-effnet (1280 чисел), жанры discogs400 (топ-5), настроения happy / sad / aggressive /
+relaxed, danceability, голос/инструментал, BPM, тональность, громкость (EBU R128). Модели Essentia — под
+некоммерческой лицензией CC BY-NC-SA 4.0 (для домашнего сервера подходит), скачиваются при сборке образа.
+
+Очередь: сначала новые треки пула и резерва, потом вся библиотека в фоне. Один файл за раз, процесс с `nice 19`;
+трек длиной 4 минуты — порядка 10–30 секунд на процессоре NAS.
+
+## Запуск
+
+Образ: `ghcr.io/jappiy/bodromusic-analyzer:latest` (только amd64).
+
+| Переменная | Описание |
+|---|---|
+| `BODROD_URL` | Адрес bodrod, например `http://bodrod:8790` |
+| `ANALYZER_TOKEN` / `ANALYZER_TOKEN_FILE` | Тот же токен, что `ANALYZER_TOKEN` у bodrod (любая длинная случайная строка) |
+| `MUSIC_DIR` | Папка музыки в контейнере; пути заданий — относительно неё (как `MUSIC_DIR` у bodrod) |
+| `BATCH`, `IDLE_S` | Сколько заданий брать за раз (10) и пауза, когда заданий нет (300 с) |
+
+### На DSM рядом с bodrod (низкий приоритет)
+
+```yaml
+  analyzer:
+    image: ghcr.io/jappiy/bodromusic-analyzer:latest
+    container_name: bodro-analyzer
+    restart: unless-stopped
+    cpus: 1.5          # не больше полутора ядер
+    mem_limit: 3g
+    environment:
+      BODROD_URL: http://bodrod:8790
+      ANALYZER_TOKEN_FILE: /secrets/analyzer_token
+      MUSIC_DIR: /music
+    volumes:
+      - /volume2/music:/music:ro
+      - /volume1/docker/secrets:/secrets:ro
+```
+
+### На ПК через SMB
+
+Подключить общую папку музыки (например, `\\nas\music` → `M:`), затем:
+
+```bash
+docker run -d --name bodro-analyzer -e BODROD_URL=http://nas.local:8790 -e ANALYZER_TOKEN=<токен> -e MUSIC_DIR=/music -v M:/:/music:ro ghcr.io/jappiy/bodromusic-analyzer:latest
+```
+
+У bodrod при этом задаётся тот же `ANALYZER_TOKEN` (или файл `/secrets/analyzer_token`).
+
+## Разработка
+
+```bash
+pip install -r requirements-dev.txt   # essentia-tensorflow ставится только на Linux x86_64
+pytest -q                             # тесты цикла воркера — без Essentia
+```

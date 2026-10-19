@@ -3,12 +3,13 @@
 import asyncio
 import contextlib
 import hashlib
+import hmac
 import logging
 import os
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -27,6 +28,9 @@ from .metadata.lastfm import LastFmClient, LastFmProvider
 from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
 from .models import (
+    AnalysisJobs,
+    AnalysisResult,
+    AnalysisStatus,
     ArtistPopular,
     BlockEntryOut,
     BlocklistPage,
@@ -64,11 +68,13 @@ from .models import (
     PoolStatusRequest,
     RequestKind,
     ServiceInfo,
+    SimilarSongs,
     SourcesOut,
     SourcesUpdate,
     TrackCandidate,
 )
 from .navidrome_db import NavidromeDb, NdSong
+from .reco.analysis import AnalysisService
 from .reco.charts import ChartsService, ChartTrack, build_sources
 from .reco.engine import (
     CandidateEngine,
@@ -117,6 +123,7 @@ class Services:
     pool: PoolService | None = None
     engine: CandidateEngine | None = None
     charts: ChartsService | None = None
+    analysis: AnalysisService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -239,6 +246,8 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     async def yandex_chart() -> list[ChartTrack]:
         return [ChartTrack(t.artist, t.title, t.album, t.cover_url, t.duration_ms) for t in await yandex_api.chart()]
 
+    analysis = AnalysisService(store, settings, navidrome_db) if settings.analyzer_token else None
+    pool.analysis = analysis
     chart_sources = build_sources(http, lastfm, yandex_chart, settings.deezer_enabled)
     charts = ChartsService(store, settings, chart_sources, library_index, pool)
     harvester = None
@@ -267,6 +276,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         pool=pool,
         engine=engine,
         charts=charts,
+        analysis=analysis,
     )
 
 
@@ -376,6 +386,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             maintenance=svc.maintenance is not None,
             sources=svc.cleanup is not None,
             pool=svc.pool is not None,
+            analysis=svc.analysis is not None,
         )
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse, response_model_by_alias=True)
@@ -709,6 +720,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     @app.get("/api/v1/pool", response_model=PoolOut, response_model_by_alias=True)
     async def pool_items(user: User, svc: Svc) -> PoolOut:
         pool = require_pool(svc)
+        sound_min = svc.settings.sound_min_match
         items = [
             PoolItemOut(
                 song_id=r["song_id"],
@@ -723,6 +735,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 full_plays=r["full_plays"],
                 early_skips=r["early_skips"],
                 shown=r["shown"],
+                sound_match=r["sound_match"],
+                in_wave=r["sound_match"] is None or r["sound_match"] >= sound_min,
             )
             for r in pool.items(user.username)
         ]
@@ -742,6 +756,56 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         pool = require_pool(svc)
         asyncio.create_task(pool.refill(user.username, force=True))  # noqa: RUF006 — фоновое пополнение
         return Response(status_code=202)
+
+    # endregion
+
+    # region Анализ звучания
+
+    def analyzer(svc: Services, token: str | None) -> AnalysisService:
+        if svc.analysis is None:
+            raise HTTPException(409, "Анализ звучания не настроен: задайте ANALYZER_TOKEN")
+        if not token or not hmac.compare_digest(token, svc.analysis.token or ""):
+            raise HTTPException(401, "Неверный X-Analyzer-Token")
+        return svc.analysis
+
+    @app.get("/api/v1/analysis/next", response_model=AnalysisJobs, response_model_by_alias=True)
+    async def analysis_next(
+        svc: Svc,
+        x_analyzer_token: Annotated[str | None, Header()] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    ) -> AnalysisJobs:
+        return AnalysisJobs(jobs=await analyzer(svc, x_analyzer_token).next_jobs(limit))
+
+    @app.post("/api/v1/analysis/result", status_code=204, response_class=Response)
+    async def analysis_result(
+        svc: Svc, body: AnalysisResult, x_analyzer_token: Annotated[str | None, Header()] = None
+    ) -> Response:
+        analyzer(svc, x_analyzer_token).save(body.path, body.features, body.embedding, body.error)
+        return Response(status_code=204)
+
+    @app.get("/api/v1/analysis", response_model=AnalysisStatus, response_model_by_alias=True)
+    async def analysis_status(user: User, svc: Svc) -> AnalysisStatus:
+        if svc.analysis is None:
+            return AnalysisStatus(enabled=False)
+        return AnalysisStatus(**svc.analysis.status())
+
+    @app.post("/api/v1/analysis/features", response_model=dict[str, dict[str, Any]])
+    async def analysis_features(user: User, svc: Svc, body: PoolStatusRequest) -> dict[str, dict[str, Any]]:
+        if svc.analysis is None:
+            return {}
+        return await svc.analysis.features(list(dict.fromkeys(body.ids)))
+
+    @app.get("/api/v1/analysis/similar", response_model=SimilarSongs, response_model_by_alias=True)
+    async def analysis_similar(
+        user: User,
+        svc: Svc,
+        song_id: Annotated[str, Query(alias="songId")],
+        limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    ) -> SimilarSongs:
+        if svc.analysis is None:
+            raise HTTPException(409, "Анализ звучания не настроен")
+        hidden = set((await svc.pool.hidden())["songIds"]) if svc.pool else set()
+        return SimilarSongs(ids=await svc.analysis.similar(song_id, limit, hidden))
 
     # endregion
 

@@ -127,6 +127,9 @@ class PoolRepository @Inject constructor(
         }.mapNotNull { it.await() }
     }
 
+    /** Трек пула можно ставить в волну: сервер не счёл его далёким по звучанию от вкуса. */
+    fun inWave(songId: String): Boolean = _items.value.firstOrNull { it.songId == songId }?.inWave ?: true
+
     fun isPoolSong(songId: String): Boolean = songId in _visibility.value.songIds
 
     // region События
