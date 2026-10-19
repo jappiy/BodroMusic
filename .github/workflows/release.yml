@@ -31,6 +31,18 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      # Все сборки подписываются одним постоянным ключом (тот же, что на компьютере владельца), иначе Android
+      # не ставит обновление поверх: «Приложение не установлено». Без секрета релиз не публикуется.
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Нет секрета SIGNING_KEYSTORE_B64 — APK получится с чужой подписью и не встанет поверх"
+            exit 1
+          fi
+          mkdir -p ~/.android
+          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
       - name: Build APKs
         run: ./gradlew assembleRelease assembleDebug --stacktrace
       - name: Name APKs by version
@@ -52,6 +64,19 @@ jobs:
           `-debug.apk` ставится рядом с основной версией (`ru.bodro.music.debug`) — для проверки.
           NOTES
           ls -la dist
+      - name: Check APK signature
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          for apk in dist/*.apk; do
+            digest=$("$APKSIGNER" verify --print-certs "$apk" | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')
+            echo "$apk $digest"
+            if [ "$digest" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$apk подписан другим ключом ($digest) — обновление поверх не встанет"
+              exit 1
+            fi
+          done
+        env:
+          EXPECTED_CERT_SHA256: c5146426d418eb6d93624b0a3b25cb08a5c48f3fdf94bdaa7d0bdf588b94de62
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}

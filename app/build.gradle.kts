@@ -12,8 +12,8 @@ plugins {
 }
 
 // Версия приложения. Каждое изменение функциональности — запись в CHANGELOG.md и повышение версии.
-val appVersionCode = 13
-val appVersionName = "0.13.0"
+val appVersionCode = 14
+val appVersionName = "0.13.1"
 
 val gitHash: String = providers.exec {
     commandLine("git", "rev-parse", "--short=10", "HEAD")
@@ -65,7 +65,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Своего ключа пока нет — подписываем debug-ключом, чтобы APK можно было поставить.
+            // Постоянный ключ BodroMusic лежит на месте debug-ключа (~/.android/debug.keystore): на компьютере
+            // владельца — его собственный, в CI релиза — из секрета SIGNING_KEYSTORE_B64. Не менять: другая подпись —
+            // и Android не поставит обновление поверх (docs/HANDOFF.md, раздел 0.2).
             signingConfig = signingConfigs.getByName("debug")
         }
     }
