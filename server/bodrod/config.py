@@ -217,6 +217,14 @@ class Settings:
     expire_shown: int = 3
     """У артиста столько и больше reject — понижающий коэффициент."""
     artist_reject_threshold: int = 3
+    """Движок кандидатов (задача 3): доля новых для пользователя артистов, полураспад веса семени, число семян."""
+    engine_enabled: bool = True
+    engine_new_artist_share: float = 0.5
+    engine_seed_half_life_days: float = 90.0
+    engine_max_seeds: int = 60
+    """ListenBrainz: токен (LB Radio) и пользователи Navidrome → имя в LB (плейлисты Weekly Exploration / Jams)."""
+    listenbrainz_token: str | None = None
+    listenbrainz_users: dict[str, str] = field(default_factory=dict)
 
     @property
     def archive_path(self) -> str:
@@ -362,7 +370,23 @@ class Settings:
             expire_days=_int("POOL_EXPIRE_DAYS", 21),
             expire_shown=_int("POOL_EXPIRE_SHOWN", 3),
             artist_reject_threshold=_int("POOL_ARTIST_REJECT_THRESHOLD", 3),
+            engine_enabled=_bool("ENGINE_ENABLED", True),
+            engine_new_artist_share=float(_opt("ENGINE_NEW_ARTIST_SHARE") or 0.5),
+            engine_seed_half_life_days=float(_opt("ENGINE_SEED_HALF_LIFE_DAYS") or 90),
+            engine_max_seeds=_int("ENGINE_MAX_SEEDS", 60),
+            listenbrainz_token=_secret("LISTENBRAINZ_TOKEN", os.path.join(SECRETS_DIR, "listenbrainz_token")),
+            listenbrainz_users=_pairs("LISTENBRAINZ_USERS"),
         )
+
+
+def _pairs(name: str) -> dict[str, str]:
+    """`a:x,b:y` → {a: x, b: y}."""
+    result: dict[str, str] = {}
+    for part in (_opt(name) or "").split(","):
+        key, _, value = part.strip().partition(":")
+        if key and value:
+            result[key.strip()] = value.strip()
+    return result
 
 
 YANDEX_ACCOUNTS_DIR = os.path.join(SECRETS_DIR, "yandex_accounts")

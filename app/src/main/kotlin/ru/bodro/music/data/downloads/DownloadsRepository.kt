@@ -39,10 +39,12 @@ import ru.bodro.music.core.downloads.DownloadsClient
 import ru.bodro.music.core.downloads.DownloadsConfig
 import ru.bodro.music.core.downloads.DownloadsError
 import ru.bodro.music.core.downloads.DownloadsException
+import ru.bodro.music.core.downloads.EngineStatus
 import ru.bodro.music.core.downloads.ExportArtist
 import ru.bodro.music.core.downloads.ExportStatus
 import ru.bodro.music.core.downloads.FeedbackEvent
 import ru.bodro.music.core.downloads.FeedbackResult
+import ru.bodro.music.core.downloads.HarvestStatus
 import ru.bodro.music.core.downloads.LibraryCheck
 import ru.bodro.music.core.downloads.MaintenanceActionsPage
 import ru.bodro.music.core.downloads.MaintenanceStatus
@@ -201,6 +203,18 @@ class DownloadsRepository @Inject constructor(
     suspend fun poolHidden(): PoolHidden = client.poolHidden()
 
     suspend fun refillPool() = client.refillPool()
+
+    suspend fun engine(): EngineStatus = client.engine()
+
+    suspend fun updateEngine(
+        enabled: Map<String, Boolean>? = null,
+        weights: Map<String, Float>? = null,
+        newArtistShare: Float? = null,
+    ): EngineStatus = client.updateEngine(enabled, weights, newArtistShare)
+
+    suspend fun harvest(): HarvestStatus = client.harvest()
+
+    suspend fun runHarvest(): HarvestStatus = client.runHarvest()
 
     // endregion
 

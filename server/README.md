@@ -110,6 +110,10 @@ HTTP разрешён только для адресов локальной се
 | `POOL_EARLY_SKIP_S`, `POOL_REJECT_EARLY_SKIPS`, `POOL_REJECT_BLOCK_DAYS` | нет | Reject: на 2-й скип раньше 30 с; в чёрный список пользователя на 180 дней |
 | `POOL_EXPIRE_DAYS`, `POOL_EXPIRE_SHOWN` | нет | Expire: 21 день без прослушиваний или 3 показа в волне без запуска |
 | `POOL_ARTIST_REJECT_THRESHOLD` | нет | У артиста ≥ 3 reject — понижающий коэффициент в движке кандидатов |
+| `ENGINE_ENABLED`, `ENGINE_NEW_ARTIST_SHARE` | нет | Движок кандидатов включён; доля новых для пользователя артистов 0.5 (меняется в приложении) |
+| `ENGINE_SEED_HALF_LIFE_DAYS`, `ENGINE_MAX_SEEDS` | нет | Полураспад веса семени 90 дней, до 60 семян |
+| `LISTENBRAINZ_TOKEN` | нет | Токен ListenBrainz для LB Radio (или файл `/secrets/listenbrainz_token`) |
+| `LISTENBRAINZ_USERS` | нет | `пользователь Navidrome:имя в LB,…` — плейлисты Weekly Exploration / Weekly Jams |
 | `DISCOVERY_DIR` | нет | Discovery-пул (виден Navidrome), по умолчанию `<MUSIC_DIR>/_discovery` |
 | `DATA_DIR`, `PORT`, `LOG_LEVEL` | нет | `/data`, `8790`, `INFO` |
 
@@ -193,6 +197,26 @@ HTTP разрешён только для адресов локальной се
 - Файл удаляется, только когда трек не держит ни один владелец (другой пользователь или чарт).
 - Пополнение раз в сутки (при `< POOL_REFILL_BELOW`): сначала из резерва (`RESERVE_DIR`), затем — движок кандидатов.
 - Регламент обслуживания папки пула и резерва не трогает.
+
+## Движок кандидатов (0.10.0)
+
+Раз в сутки (при пополнении пула) `bodrod/reco/engine.py` собирает кандидатов по семенам пользователя:
+лайки и топ прослушиваний из БД Navidrome, свежие promote пула; вес семени затухает с полураспадом 90 дней.
+
+| Источник | Что берётся |
+|---|---|
+| Last.fm | `track.getSimilar`; `artist.getSimilar` → `artist.getTopTracks` (артисты не из библиотеки); теги → `tag.getTopTracks` |
+| Deezer | поиск артиста семени → `/artist/{id}/radio` и топ `/artist/{id}/related` |
+| ListenBrainz | LB Radio по артистам семян (`LISTENBRAINZ_TOKEN`); Weekly Exploration / Weekly Jams (`LISTENBRAINZ_USERS`) |
+| Архив Яндекса | рёбра `similar`, `wave`, `artist_similar` пользователя |
+
+Кандидат проходит, если его нет в библиотеке, пуле, резерве и чёрных списках и это не лайв/караоке/минус/кавер
+(если семя не такое). Счёт: Σ (вес источника × схожесть × вес семени), ×1.3 за каждый следующий источник; артисты с
+≥ 3 reject — ×0.3; не больше двух треков одного артиста; доля новых артистов — `newArtistShare`. Вес источника =
+ручной (приложение) × выученный по доле promote со сглаживанием Beta(2, 2). Отобранное ставится заявками
+`pool:<пользователь>` в обычную цепочку источников (Яндекс → slskd → YouTube) и кладётся в `DISCOVERY_DIR`;
+сначала пул пополняется из резерва. Скробблинг в ListenBrainz для пользователей включается в Navidrome
+(`ND_LISTENBRAINZ_ENABLED=true`, затем токен LB в профиле каждого пользователя).
 
 ## Размещение в библиотеке
 
@@ -375,6 +399,8 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | POST | `/api/v1/pool/status` | `{ids: [...]}` → `{id: статус}` только для треков пула |
 | GET | `/api/v1/pool/hidden` | Что приложение прячет: `songIds` пула, `albumIds` и `artistIds`, у которых все треки в пуле |
 | POST | `/api/v1/pool/refill` | Пополнить пул сейчас (202) |
+| GET / PUT | `/api/v1/reco/engine` | Источники движка: `enabled`, `weight`, `learnedWeight`, счётчики; PUT `{enabled?, weights?, newArtistShare?}` (только админ) |
+| GET | `/api/v1/reco/engine/preview?limit=` | Что движок предложил бы пользователю сейчас (без загрузки) |
 | GET | `/api/v1/reco/harvest` | Архив Яндекса: по аккаунтам — сборщики (когда работали, отключены ли), лайки, рёбра, резерв (только админ) |
 | POST | `/api/v1/reco/harvest/run` | Пройти по аккаунтам сейчас |
 

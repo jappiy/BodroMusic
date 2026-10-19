@@ -88,6 +88,8 @@ ARTIST_QUIET_S = 5 * 60
 ARTIST_IDLE_CHECKS = 3
 ARTIST_SCAN_THROTTLE_S = 120
 """Ключи состояния, которые переживают смену источника: номер повтора, данные «метки» Lidarr."""
+"""Заявки движка рекомендаций и чартов: `pool:<пользователь>` — файлы кладутся в discovery-пул, а не в библиотеку."""
+POOL_USER_PREFIX = "pool:"
 PERSIST_KEYS = ("retryRound", "roundStart", "wanted", "lidarrAlbumId", "lidarrArtistId", "excludeSources")
 
 
@@ -117,6 +119,12 @@ class Worker:
         self._last_search_at = 0.0
         self._jobs: dict[str, asyncio.Task[FetchResult]] = {}
         self._job_progress: dict[str, tuple[float | None, str]] = {}
+
+    def _root(self, r: DownloadRequest) -> str | None:
+        """Куда класть файлы заявки: discovery-пул для заявок рекомендаций, иначе библиотека."""
+        if r.username.startswith(POOL_USER_PREFIX):
+            return self._settings.discovery_path
+        return self._settings.library_dir
 
     @property
     def registry(self) -> SourceRegistry:
@@ -293,6 +301,7 @@ class Worker:
         source = self._registry.direct(name)
         assert source is not None
         request_id = r.id
+        root = self._root(r)
         workdir = Path(self._settings.staging_dir) / request_id
 
         async def exists(artist: str, title: str, source_id: str | None) -> bool:
@@ -301,7 +310,7 @@ class Worker:
             return await find_in_library(self._navidrome, artist, title) is not None
 
         async def place(file: Any) -> Path:
-            return await self._placer.place(file, name, request_id)
+            return await self._placer.place(file, name, request_id, root=root)
 
         def progress(value: float | None, message: str) -> None:
             self._job_progress[request_id] = (value, message)
@@ -357,9 +366,12 @@ class Worker:
         result = task.result()
         self._succeeded(r, result.label)
         r.state.update({"placed": result.placed, "skipped": result.skipped, "failedTracks": result.failed})
-        if result.paths and self._settings.library_dir:
+        if result.paths:
+            r.state["destPath"] = result.paths[0]
+        root = self._root(r)
+        if result.paths and root:
             try:
-                r.state["relPath"] = str(Path(result.paths[0]).relative_to(self._settings.library_dir))
+                r.state["relPath"] = str(Path(result.paths[0]).relative_to(root))
             except ValueError:
                 r.state["relPath"] = result.paths[0]
         r.progress = 1.0
@@ -570,7 +582,7 @@ class Worker:
     async def _track_place(self, r: DownloadRequest) -> None:
         """Найти скачанный файл, положить в библиотеку под понятным именем, прописать теги и обложку."""
         settings = self._settings
-        downloads, library = settings.slskd_downloads_dir, settings.library_dir
+        downloads, library = settings.slskd_downloads_dir, self._root(r)
         assert downloads is not None and library is not None
         c = r.state["candidates"][r.state["index"]]
         now = self._clock()
@@ -634,7 +646,7 @@ class Worker:
             log.info("Заявка %s: исходник удалён: %s", r.id, source)
         r.state["destPath"] = str(dest)
         try:
-            r.state["relPath"] = str(dest.relative_to(settings.library_dir))
+            r.state["relPath"] = str(dest.relative_to(self._root(r) or settings.library_dir))
         except ValueError:
             r.state["relPath"] = str(dest)
         codec = dest.suffix.lstrip(".").lower()

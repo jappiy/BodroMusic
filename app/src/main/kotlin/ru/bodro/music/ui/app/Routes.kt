@@ -65,3 +65,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object ExportArtistsRoute
 
 @Serializable data object PoolRoute
+
+@Serializable data object RecoRoute

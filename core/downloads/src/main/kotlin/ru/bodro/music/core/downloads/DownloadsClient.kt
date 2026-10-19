@@ -202,6 +202,22 @@ class DownloadsClient(
 
     // endregion
 
+    // region Рекомендации: движок кандидатов и архив Яндекса (только администраторы, bodrod 0.10.0+)
+
+    suspend fun engine(): EngineStatus = get(listOf("api", "v1", "reco", "engine"))
+
+    suspend fun updateEngine(
+        enabled: Map<String, Boolean>? = null,
+        weights: Map<String, Float>? = null,
+        newArtistShare: Float? = null,
+    ): EngineStatus = send("PUT", listOf("api", "v1", "reco", "engine"), EngineUpdateBody(enabled, weights, newArtistShare))
+
+    suspend fun harvest(): HarvestStatus = get(listOf("api", "v1", "reco", "harvest"))
+
+    suspend fun runHarvest(): HarvestStatus = postEmpty(listOf("api", "v1", "reco", "harvest", "run"))
+
+    // endregion
+
     private suspend inline fun <reified B, reified T> send(method: String, path: List<String>, body: B): T {
         val payload = downloadsJson.encodeToString(serializer<B>(), body).toRequestBody(JSON)
         return execute(Request.Builder().url(url(path)).method(method, payload), null) {

@@ -342,6 +342,66 @@ data class PoolHidden(
     val artistIds: List<String> = emptyList(),
 )
 
+/** Источник движка рекомендаций: [weight] — ручной (0..3), [learnedWeight] — выученный по доле promote. */
+@Serializable
+data class EngineSource(
+    val name: String,
+    val title: String,
+    val enabled: Boolean = true,
+    val weight: Float = 1f,
+    val learnedWeight: Float = 1f,
+    val available: Boolean = true,
+    val reason: String? = null,
+    val suggested: Int = 0,
+    val promoted: Int = 0,
+    val rejected: Int = 0,
+)
+
+@Serializable
+data class EngineRun(val at: Long = 0, val picked: Int = 0, val bySource: Map<String, Int> = emptyMap())
+
+@Serializable
+data class EngineStatus(
+    val enabled: Boolean = false,
+    val sources: List<EngineSource> = emptyList(),
+    val newArtistShare: Float = 0.5f,
+    val runs: Map<String, EngineRun?> = emptyMap(),
+)
+
+@Serializable
+data class HarvestCollector(
+    val name: String,
+    val title: String,
+    val lastAt: Long? = null,
+    val disabled: String? = null,
+    val count: Int? = null,
+)
+
+/** Архив Яндекса по аккаунту (пользователь Navidrome). */
+@Serializable
+data class HarvestAccount(
+    val username: String,
+    val plus: Boolean? = null,
+    val running: String? = null,
+    val collectors: List<HarvestCollector> = emptyList(),
+    val likes: Map<String, Int> = emptyMap(),
+    val edges: Map<String, Int> = emptyMap(),
+    val reserve: Int = 0,
+    val blocked: Int = 0,
+    val similarDone: Int = 0,
+    val error: String? = null,
+)
+
+@Serializable
+data class HarvestStatus(val enabled: Boolean = false, val accounts: List<HarvestAccount> = emptyList())
+
+@Serializable
+internal data class EngineUpdateBody(
+    val enabled: Map<String, Boolean>? = null,
+    val weights: Map<String, Float>? = null,
+    val newArtistShare: Float? = null,
+)
+
 @Serializable
 internal data class FeedbackBody(val events: List<FeedbackEvent>)
 

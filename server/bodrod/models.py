@@ -399,3 +399,47 @@ class PoolHidden(ApiModel):
     song_ids: list[str] = []
     album_ids: list[str] = []
     artist_ids: list[str] = []
+
+
+class EngineSourceOut(ApiModel):
+    name: str
+    title: str
+    enabled: bool
+    """Ручной вес (0..3) — из приложения."""
+    weight: float
+    """Выученный по доле promote (1.0 — нет данных)."""
+    learned_weight: float
+    available: bool
+    reason: str | None = None
+    suggested: int = 0
+    promoted: int = 0
+    rejected: int = 0
+
+
+class EngineRun(ApiModel):
+    at: int
+    picked: int
+    by_source: dict[str, int] = {}
+
+
+class EngineOut(ApiModel):
+    enabled: bool
+    sources: list[EngineSourceOut] = []
+    new_artist_share: float = 0.5
+    """Последнее пополнение по пользователям."""
+    runs: dict[str, EngineRun | None] = {}
+
+
+class EngineUpdate(ApiModel):
+    enabled: dict[str, bool] | None = None
+    weights: dict[str, float] | None = None
+    new_artist_share: float | None = None
+
+
+class EnginePreviewItem(ApiModel):
+    artist: str
+    title: str
+    album: str | None = None
+    score: float
+    sources: list[str]
+    new_artist: bool

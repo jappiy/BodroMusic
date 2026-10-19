@@ -533,4 +533,21 @@
     <string name="pool_unsupported">Пул «На пробу» появится, когда в настройках задан сервис загрузок bodrod 0.9.0 или новее</string>
     <string name="player_new_badge">Новое</string>
     <string name="action_refresh">Обновить</string>
+    <string name="reco_title">Рекомендации</string>
+    <string name="settings_reco_summary">Откуда сервер берёт новые треки для пула «На пробу», архив Яндекса</string>
+    <string name="reco_engine_hint">Раз в сутки сервер подбирает новые треки по вашим лайкам и прослушиваниям и кладёт их в пул «На пробу». Источник можно выключить или изменить его вес; выученный вес растёт, если треки из источника переходят в библиотеку.</string>
+    <string name="reco_source_stats">Предложено %1$d, в библиотеку %2$d, отклонено %3$d · выученный вес %4$.2f</string>
+    <string name="reco_weight">Вес %1$.1f</string>
+    <string name="reco_new_artists">Новые исполнители: %1$d %%</string>
+    <string name="reco_refill">Подобрать сейчас</string>
+    <string name="reco_refill_started">Сервер подбирает треки — пул обновится через несколько минут</string>
+    <string name="reco_harvest_title">Архив Яндекса</string>
+    <string name="reco_harvest_run">Собрать сейчас</string>
+    <string name="reco_harvest_summary">Лайков %1$d, похожие собраны для %2$d, связей %3$d, в резерве %4$d · %5$s</string>
+    <string name="reco_harvest_plus_yes">Плюс есть</string>
+    <string name="reco_harvest_plus_no">Плюса нет — предзакачка остановлена</string>
+    <string name="reco_harvest_plus_unknown">Плюс не проверялся</string>
+    <string name="reco_harvest_last">%1$s</string>
+    <string name="reco_harvest_never">ещё не запускался</string>
+    <string name="reco_harvest_running">идёт</string>
 </resources>

@@ -37,6 +37,11 @@ from .models import (
     DiscoverResponse,
     DislikedSong,
     DownloadRequestOut,
+    EngineOut,
+    EnginePreviewItem,
+    EngineRun,
+    EngineSourceOut,
+    EngineUpdate,
     ExportArtistOut,
     ExportArtistsUpdate,
     ExportStart,
@@ -62,6 +67,13 @@ from .models import (
     TrackCandidate,
 )
 from .navidrome_db import NavidromeDb, NdSong
+from .reco.engine import (
+    CandidateEngine,
+    DeezerAdapter,
+    LastFmAdapter,
+    ListenBrainzAdapter,
+    YandexArchiveAdapter,
+)
 from .reco.harvest import YandexHarvester
 from .reco.library import LibraryIndex
 from .reco.pool import PoolService
@@ -100,6 +112,7 @@ class Services:
     library_index: LibraryIndex | None = None
     harvester: YandexHarvester | None = None
     pool: PoolService | None = None
+    engine: CandidateEngine | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -197,6 +210,27 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     pool_prefix = _remap(settings.discovery_path, settings.music_dir, settings.navidrome_music_dir)
     library_index = LibraryIndex(navidrome_db, navidrome, pool_prefix)
     pool = PoolService(store, reco, settings, navidrome, navidrome_db, library_index)
+    pool.wake_worker = worker.wake
+    engine = None
+    if settings.engine_enabled:
+        adapters = [
+            LastFmAdapter(lastfm, library_index),
+            DeezerAdapter(http, settings.deezer_enabled),
+            ListenBrainzAdapter(http, settings.listenbrainz_token, settings.listenbrainz_users),
+            YandexArchiveAdapter(reco),
+        ]
+        engine = CandidateEngine(store, reco, settings, library_index, navidrome_db, adapters, pool.penalized_artists)
+
+        async def engine_refill(user: str, count: int) -> int:
+            async def enqueue(owner: str, item) -> None:  # noqa: ANN001
+                await pool.enqueue(
+                    owner, item.artist, item.title, album=item.album, duration_ms=item.duration_ms,
+                    cover_url=item.cover_url, source=",".join(item.sources), score=item.score,
+                )  # fmt: skip
+
+            return await engine.refill(user, count, enqueue)
+
+        pool.engine_refill = engine_refill
     harvester = None
     if settings.harvest_enabled and settings.yandex_accounts:
         delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
@@ -221,6 +255,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         library_index=library_index,
         harvester=harvester,
         pool=pool,
+        engine=engine,
     )
 
 
@@ -695,6 +730,54 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         pool = require_pool(svc)
         asyncio.create_task(pool.refill(user.username, force=True))  # noqa: RUF006 — фоновое пополнение
         return Response(status_code=202)
+
+    # endregion
+
+    # region Движок кандидатов
+
+    def engine_out(svc: Services) -> EngineOut:
+        if svc.engine is None:
+            return EngineOut(enabled=False)
+        info = svc.engine.describe()
+        users = svc.pool.users() if svc.pool else []
+        runs = {u: (EngineRun(**r) if r else None) for u, r in svc.engine.last_runs(users).items()}
+        return EngineOut(
+            enabled=True,
+            sources=[EngineSourceOut(**x) for x in info["sources"]],
+            new_artist_share=info["newArtistShare"],
+            runs=runs,
+        )
+
+    @app.get("/api/v1/reco/engine", response_model=EngineOut, response_model_by_alias=True)
+    async def engine_status(admin: Admin, svc: Svc) -> EngineOut:
+        return engine_out(svc)
+
+    @app.put("/api/v1/reco/engine", response_model=EngineOut, response_model_by_alias=True)
+    async def engine_update(admin: Admin, svc: Svc, body: EngineUpdate) -> EngineOut:
+        if svc.engine is None:
+            raise HTTPException(409, "Движок кандидатов выключен (ENGINE_ENABLED)")
+        try:
+            svc.engine.update_config(body.enabled, body.weights, body.new_artist_share)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        log.info("%s изменил источники рекомендаций", admin.username)
+        return engine_out(svc)
+
+    @app.get("/api/v1/reco/engine/preview", response_model=list[EnginePreviewItem], response_model_by_alias=True)
+    async def engine_preview(
+        user: User, svc: Svc, limit: Annotated[int, Query(ge=1, le=200)] = 30
+    ) -> list[EnginePreviewItem]:
+        """Что движок поставил бы в пул сейчас (без загрузки)."""
+        if svc.engine is None:
+            raise HTTPException(409, "Движок кандидатов выключен (ENGINE_ENABLED)")
+        items = await svc.engine.recommend(user.username, limit)
+        return [
+            EnginePreviewItem(
+                artist=i.artist, title=i.title, album=i.album, score=i.score, sources=i.sources,
+                new_artist=i.new_artist,
+            )
+            for i in items
+        ]  # fmt: skip
 
     # endregion
 

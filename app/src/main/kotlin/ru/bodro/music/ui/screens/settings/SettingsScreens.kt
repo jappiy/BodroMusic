@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -81,6 +82,7 @@ fun SettingsScreen(
     onOpenBlocklist: () -> Unit,
     onOpenMaintenance: () -> Unit,
     onOpenSources: () -> Unit,
+    onOpenReco: () -> Unit = {},
     onOpenVersions: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -160,6 +162,15 @@ fun SettingsScreen(
                 R.string.settings_sources_summary,
                 onOpenSources,
                 "settings-sources",
+            )
+        }
+        item {
+            SettingsEntry(
+                Icons.Rounded.AutoAwesome,
+                R.string.reco_title,
+                R.string.settings_reco_summary,
+                onOpenReco,
+                "settings-reco",
             )
         }
         item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }

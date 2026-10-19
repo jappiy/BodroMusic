@@ -87,6 +87,8 @@ class PoolService:
         self._wakeup = asyncio.Event()
         """Пополнение из движка кандидатов (задача 3): `async (user, сколько) -> поставлено`."""
         self.engine_refill: Callable[[str, int], Any] | None = None
+        """Разбудить воркер заявок после постановки в очередь."""
+        self.wake_worker: Callable[[], None] = lambda: None
         store.executescript(SCHEMA)
 
     @property
@@ -351,8 +353,86 @@ class PoolService:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wakeup.wait(), timeout=UPKEEP_S)
 
+    async def enqueue(
+        self, username: str, artist: str, title: str, *, album: str | None = None, duration_ms: int | None = None,
+        cover_url: str | None = None, source: str | None = None, score: float = 0.0,
+    ) -> bool:  # fmt: skip
+        """Поставить трек в пул пользователя через цепочку источников (заявка `pool:<пользователь>`)."""
+        from ..models import RequestKind
+        from ..worker import POOL_USER_PREFIX
+
+        if self._store.is_blocked(artist, title):
+            return False
+        track_id = self._reco.add_pool_track(
+            artist=artist, title=title, album=album, duration_ms=duration_ms, cover_url=cover_url, yandex_id=None,
+            location="queued",
+        )  # fmt: skip
+        track = self._reco.pool_track(track_id)
+        assert track is not None
+        if track["location"] in ("pool", "reserve", "library"):
+            # Уже скачан (другим пользователем или чартом) — просто ещё один владелец.
+            if track["location"] == "pool":
+                self._reco.set_owner(track_id, username, "in_pool", source, score)
+            return track["location"] == "pool"
+        request, _ = self._store.create(
+            username=f"{POOL_USER_PREFIX}{username}",
+            kind=RequestKind.TRACK,
+            artist=artist,
+            title=title,
+            album=album,
+            duration_ms=duration_ms,
+            cover_url=cover_url,
+        )
+        self._reco.update_pool_track(track_id, request_id=request.id, location="queued", message=None)
+        self._reco.set_owner(track_id, username, "queued", source, score)
+        self.wake_worker()
+        return True
+
+    async def _sync_requests(self) -> None:
+        """Заявки пула: скачано — трек в пуле; не нашли — failed."""
+        rows = self._store.query(
+            "SELECT * FROM pool_tracks WHERE location IN ('queued', 'downloading') AND request_id IS NOT NULL"
+        )
+        for track in rows:
+            request = self._store.get(track["request_id"])
+            track_id = int(track["id"])
+            if request is None or request.status.value in ("failed", "cancelled"):
+                reason = (request.message if request else None) or "Заявка пропала"
+                self._reco.update_pool_track(track_id, location="failed", message=reason)
+                self._store.execute(
+                    "UPDATE pool_owners SET status = 'failed', status_at = ? WHERE track_id = ? AND status IN "
+                    "('queued', 'downloading')",
+                    (self._clock(), track_id),
+                )
+                continue
+            if request.status.value != "completed":
+                if track["location"] == "queued" and request.status.value != "queued":
+                    self._reco.update_pool_track(track_id, location="downloading")
+                    self._store.execute(
+                        "UPDATE pool_owners SET status = 'downloading' WHERE track_id = ? AND status = 'queued'",
+                        (track_id,),
+                    )
+                continue
+            dest = request.state.get("destPath")
+            if dest and Path(dest).exists() and Path(dest).is_relative_to(self.root):
+                self._reco.update_pool_track(track_id, location="pool", path=dest, song_id=request.song_id)
+                self._store.execute(
+                    "UPDATE pool_owners SET status = 'in_pool', added_at = ?, status_at = ? WHERE track_id = ? "
+                    "AND status IN ('queued', 'downloading')",
+                    (self._clock(), self._clock(), track_id),
+                )
+            else:
+                # Трек оказался в библиотеке (нашёлся при проверке) — в пул не нужен.
+                self._reco.update_pool_track(track_id, location="library", message=request.message)
+                self._store.execute(
+                    "UPDATE pool_owners SET status = 'failed', status_at = ? WHERE track_id = ? AND status IN "
+                    "('queued', 'downloading')",
+                    (self._clock(), track_id),
+                )
+
     async def upkeep(self, force_refill: bool = False) -> None:
         async with self._lock:
+            await self._sync_requests()
             await self._resolve_ids()
             await self._apply_annotations()
             await self._expire()
