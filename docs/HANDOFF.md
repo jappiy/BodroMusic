@@ -66,13 +66,13 @@
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
 - Текущая версия приложения: **0.13.1** (`versionCode 14`), задаётся в `app/build.gradle.kts`.
   Версия сервиса загрузок bodrod: **0.6.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.13.0
-  (`BodroMusic-0.13.0.apk` — release с R8; `BodroMusic-0.13.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.13.1
+  (`BodroMusic-0.13.1.apk` — release с R8; `BodroMusic-0.13.1-debug.apk` — debug, ставится рядом).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
-**CI полностью зелёный** на `6425a2c` (0.13.0 / bodrod 0.6.0, задание 007, Last.fm): Android и `server.yml`, образ `6425a2c`. Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.13.0, подробности — [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md).
+**CI полностью зелёный** на `a9eab7f` (0.13.1 — постоянный ключ подписи; 0.13.0 / bodrod 0.6.0 — Last.fm, образ `6425a2c`). Релиз — https://github.com/jappiy/BodroMusic/releases/tag/v0.13.1 (у v0.13.0 на GitHub подпись случайного ключа — не ставить), подробности — [`docs/history/007-lastfm-channel.md`](history/007-lastfm-channel.md).
 Предыдущее состояние: CI зелёный на `0c5b78e` (0.12.0 / bodrod 0.5.0, задание 006), релиз v0.12.0.
 
 | Пункт ТЗ (раздел 1) | Статус |
