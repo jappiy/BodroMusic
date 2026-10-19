@@ -41,6 +41,8 @@ from .models import (
     ExportArtistsUpdate,
     ExportStart,
     ExportStatus,
+    FeedbackBatch,
+    FeedbackResult,
     HarvestAccount,
     HarvestStatus,
     LibraryCheck,
@@ -49,6 +51,10 @@ from .models import (
     MaintenanceActionsPage,
     MaintenanceRunOut,
     MaintenanceStatus,
+    PoolHidden,
+    PoolItemOut,
+    PoolOut,
+    PoolStatusRequest,
     RequestKind,
     ServiceInfo,
     SourcesOut,
@@ -58,6 +64,7 @@ from .models import (
 from .navidrome_db import NavidromeDb, NdSong
 from .reco.harvest import YandexHarvester
 from .reco.library import LibraryIndex
+from .reco.pool import PoolService
 from .reco.store import RecoStore
 from .reco.yandex_account import YandexAccountApi
 from .sources.base import KIND_NAMES, DirectSource
@@ -92,6 +99,7 @@ class Services:
     reco: RecoStore | None = None
     library_index: LibraryIndex | None = None
     harvester: YandexHarvester | None = None
+    pool: PoolService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -188,6 +196,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     reco = RecoStore(store)
     pool_prefix = _remap(settings.discovery_path, settings.music_dir, settings.navidrome_music_dir)
     library_index = LibraryIndex(navidrome_db, navidrome, pool_prefix)
+    pool = PoolService(store, reco, settings, navidrome, navidrome_db, library_index)
     harvester = None
     if settings.harvest_enabled and settings.yandex_accounts:
         delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
@@ -211,6 +220,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         reco=reco,
         library_index=library_index,
         harvester=harvester,
+        pool=pool,
     )
 
 
@@ -246,7 +256,12 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 tasks.append(asyncio.create_task(app.state.services.cleanup.run_forever()))
             if app.state.services.maintenance is not None:
                 tasks.append(asyncio.create_task(app.state.services.maintenance.run_forever()))
-            for extra in (app.state.services.wanted, app.state.services.export, app.state.services.harvester):
+            for extra in (
+                app.state.services.wanted,
+                app.state.services.export,
+                app.state.services.harvester,
+                app.state.services.pool,
+            ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
             tasks.append(asyncio.create_task(sources_upkeep(app.state.services)))
@@ -313,6 +328,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             admin=svc.cleanup is not None and await svc.cleanup.is_admin(user.username),
             maintenance=svc.maintenance is not None,
             sources=svc.cleanup is not None,
+            pool=svc.pool is not None,
         )
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse, response_model_by_alias=True)
@@ -626,6 +642,59 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def export_select(admin: Admin, svc: Svc, body: ExportArtistsUpdate) -> list[ExportArtistOut]:
         require_export(svc).select_artists(body.selected)
         return artists_out(svc)
+
+    # endregion
+
+    # region Discovery-пул и обратная связь
+
+    def require_pool(svc: Services) -> PoolService:
+        if svc.pool is None:
+            raise HTTPException(409, "Пул не настроен")
+        return svc.pool
+
+    @app.post("/api/v1/feedback", response_model=FeedbackResult, response_model_by_alias=True)
+    async def feedback(user: User, svc: Svc, body: FeedbackBatch) -> FeedbackResult:
+        pool = require_pool(svc)
+        events = [e.model_dump() for e in body.events]
+        changed = await pool.feedback(user.username, events)
+        return FeedbackResult(accepted=len(events), changed=changed)
+
+    @app.get("/api/v1/pool", response_model=PoolOut, response_model_by_alias=True)
+    async def pool_items(user: User, svc: Svc) -> PoolOut:
+        pool = require_pool(svc)
+        items = [
+            PoolItemOut(
+                song_id=r["song_id"],
+                artist=r["artist"],
+                title=r["title"],
+                album=r["album"],
+                duration_ms=r["duration_ms"],
+                cover_url=r["cover_url"],
+                status=r["status"],
+                source=r["source"],
+                added_at=r["added_at"],
+                full_plays=r["full_plays"],
+                early_skips=r["early_skips"],
+                shown=r["shown"],
+            )
+            for r in pool.items(user.username)
+        ]
+        return PoolOut(items=items, counts=pool.counts(user.username), size=svc.settings.pool_size)
+
+    @app.post("/api/v1/pool/status", response_model=dict[str, str])
+    async def pool_status(user: User, svc: Svc, body: PoolStatusRequest) -> dict[str, str]:
+        return require_pool(svc).status_of(user.username, list(dict.fromkeys(body.ids)))
+
+    @app.get("/api/v1/pool/hidden", response_model=PoolHidden, response_model_by_alias=True)
+    async def pool_hidden(user: User, svc: Svc) -> PoolHidden:
+        hidden = await require_pool(svc).hidden()
+        return PoolHidden(song_ids=hidden["songIds"], album_ids=hidden["albumIds"], artist_ids=hidden["artistIds"])
+
+    @app.post("/api/v1/pool/refill", status_code=202, response_class=Response)
+    async def pool_refill(user: User, svc: Svc) -> Response:
+        pool = require_pool(svc)
+        asyncio.create_task(pool.refill(user.username, force=True))  # noqa: RUF006 — фоновое пополнение
+        return Response(status_code=202)
 
     # endregion
 

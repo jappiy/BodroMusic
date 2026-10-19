@@ -23,6 +23,7 @@ import ru.bodro.music.ui.screens.library.TracksScreen
 import ru.bodro.music.ui.screens.login.LoginScreen
 import ru.bodro.music.ui.screens.playlist.PlaylistScreen
 import ru.bodro.music.ui.screens.playlist.PlaylistsScreen
+import ru.bodro.music.ui.screens.pool.PoolScreen
 import ru.bodro.music.ui.screens.search.SearchScreen
 import ru.bodro.music.ui.screens.settings.AboutScreen
 import ru.bodro.music.ui.screens.settings.AccountsScreen
@@ -69,6 +70,7 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onOpenStarredAlbums = { navController.navigate(AlbumsRoute(AlbumSort.Starred.name, starredOnly = true)) },
                 onOpenGenres = { navController.navigate(GenresRoute) },
                 onOpenTracks = { navController.navigate(TracksRoute) },
+                onOpenPool = { navController.navigate(PoolRoute) },
             )
         }
         composable<SearchRoute> { SearchScreen(onOpenDownloads = { navController.navigate(DownloadsRoute) }) }
@@ -124,5 +126,6 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
             SourcesScreen(onBack = back, onOpenArtists = { navController.navigate(ExportArtistsRoute) })
         }
         composable<ExportArtistsRoute> { ExportArtistsScreen(onBack = back) }
+        composable<PoolRoute> { PoolScreen(onBack = back) }
     }
 }

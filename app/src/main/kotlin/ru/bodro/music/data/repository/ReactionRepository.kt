@@ -61,6 +61,7 @@ class ReactionRepository @Inject constructor(
     private val connection: ConnectionManager,
     private val log: LogRepository,
     private val syncScheduler: dagger.Lazy<SyncScheduler>,
+    private val pool: dagger.Lazy<ru.bodro.music.data.reco.PoolRepository>,
     private val clock: Clock,
     @AppScope private val scope: CoroutineScope,
 ) {
@@ -167,6 +168,13 @@ class ReactionRepository @Inject constructor(
             }
         }
         enqueue(PendingReaction(accountId, ReactionTarget.Song, song.id, from, to, now))
+        val event = when {
+            to == Reaction.Liked -> "liked"
+            to == Reaction.Disliked -> "disliked"
+            from == Reaction.Liked -> "unliked"
+            else -> null
+        }
+        event?.let { pool.get().track(song, it, if (pool.get().isPoolSong(song.id)) "pool" else "library") }
         return to
     }
 

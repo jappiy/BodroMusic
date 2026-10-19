@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
+import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.subsonic.NetworkLogLevel
 import ru.bodro.music.di.AppScope
 
@@ -40,6 +41,8 @@ data class AppSettings(
     val downloadLiked: Boolean = false,
     val logLevel: NetworkLogLevel = NetworkLogLevel.Normal,
     val waveDiscoveryShare: Float = DEFAULT_DISCOVERY,
+    /** Характер волны: доля треков из пула «На пробу» (Любимое 0 %, Микс 25 %, Незнакомое 50 %). */
+    val waveCharacter: WaveCharacter = WaveCharacter.Mix,
     /** Пропуски раньше этого момента не учитываются волной («Сбросить статистику пропусков»). */
     val skipStatsResetAt: Long = 0,
     val activeAccountId: Long? = null,
@@ -84,6 +87,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.downloadLiked] = updated.downloadLiked
             prefs[Keys.logLevel] = updated.logLevel.name
             prefs[Keys.discovery] = updated.waveDiscoveryShare
+            prefs[Keys.character] = updated.waveCharacter.name
             prefs[Keys.skipReset] = updated.skipStatsResetAt
             val active = updated.activeAccountId
             if (active == null) prefs.remove(Keys.activeAccount) else prefs[Keys.activeAccount] = active
@@ -101,6 +105,7 @@ class SettingsRepository @Inject constructor(
         downloadLiked = this[Keys.downloadLiked] ?: false,
         logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
         waveDiscoveryShare = this[Keys.discovery] ?: AppSettings.DEFAULT_DISCOVERY,
+        waveCharacter = enumOr(this[Keys.character], WaveCharacter.Mix),
         skipStatsResetAt = this[Keys.skipReset] ?: 0,
         activeAccountId = this[Keys.activeAccount],
     )
@@ -119,6 +124,7 @@ class SettingsRepository @Inject constructor(
         val downloadLiked = booleanPreferencesKey("download_liked")
         val logLevel = stringPreferencesKey("log_level")
         val discovery = floatPreferencesKey("wave_discovery")
+        val character = stringPreferencesKey("wave_character")
         val skipReset = longPreferencesKey("skip_stats_reset_at")
         val activeAccount = longPreferencesKey("active_account")
     }

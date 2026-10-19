@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 DISLIKE_RATING = 1
-_OPTIONAL_COLUMNS = ("album_artist", "disc_number", "track_number", "has_cover_art")
+_OPTIONAL_COLUMNS = ("album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id")
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,20 @@ class NdSong:
     track_number: int | None = None
     """Есть встроенная обложка (по данным сканера Navidrome)."""
     has_cover_art: bool | None = None
+    artist_id: str | None = None
+    album_artist_id: str | None = None
+
+
+@dataclass(frozen=True)
+class NdAnnotation:
+    username: str
+    item_id: str
+    starred: bool
+    rating: int
+    play_count: int
+    """Когда последний раз слушал (строка даты из БД Navidrome)."""
+    play_date: str | None = None
+    starred_at: str | None = None
 
 
 class NavidromeDb:
@@ -135,6 +149,51 @@ class NavidromeDb:
             ).fetchall()
         return {r["item_id"]: int(r["n"] or 0) for r in rows if r["n"]}
 
+    def annotations(self, item_ids: list[str]) -> list[NdAnnotation]:
+        """Отметки пользователей на треках: лайк, оценка, прослушивания (для треков пула)."""
+        result: list[NdAnnotation] = []
+        if not item_ids:
+            return result
+        with self._connect() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(annotation)")}
+            play_date = "a.play_date" if "play_date" in cols else "NULL"
+            for start in range(0, len(item_ids), 500):
+                chunk = item_ids[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT u.user_name, a.item_id, COALESCE(a.starred, 0) AS starred, "
+                    f"COALESCE(a.rating, 0) AS rating, "
+                    f"COALESCE(a.play_count, 0) AS play_count, {play_date} AS play_date FROM annotation a "
+                    f"JOIN user u ON u.id = a.user_id WHERE a.item_type = 'media_file' AND a.item_id IN ({marks})",
+                    chunk,
+                ).fetchall()
+                result.extend(
+                    NdAnnotation(r["user_name"], r["item_id"], bool(r["starred"]), int(r["rating"]),
+                                 int(r["play_count"]), r["play_date"])
+                    for r in rows
+                )  # fmt: skip
+        return result
+
+    def user_annotations(self, username: str) -> list[NdAnnotation]:
+        """Все отметки пользователя на треках: лайки, оценки, прослушивания (семена рекомендаций)."""
+        with self._connect() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(annotation)")}
+            play_date = "a.play_date" if "play_date" in cols else "NULL"
+            starred_at = "a.starred_at" if "starred_at" in cols else "NULL"
+            rows = conn.execute(
+                f"SELECT u.user_name, a.item_id, COALESCE(a.starred, 0) AS starred, "
+                f"COALESCE(a.rating, 0) AS rating, "
+                f"COALESCE(a.play_count, 0) AS play_count, {play_date} AS play_date, {starred_at} AS starred_at "
+                f"FROM annotation a JOIN user u ON u.id = a.user_id "
+                f"WHERE a.item_type = 'media_file' AND u.user_name = ?",
+                (username,),
+            ).fetchall()
+        return [
+            NdAnnotation(r["user_name"], r["item_id"], bool(r["starred"]), int(r["rating"]), int(r["play_count"]),
+                         r["play_date"], r["starred_at"])
+            for r in rows
+        ]  # fmt: skip
+
     def iter_songs(self) -> Iterator[NdSong]:
         """Все треки библиотеки (для поиска заблокированных). Читается потоком, без загрузки в память целиком."""
         with self._connect() as conn:
@@ -161,4 +220,6 @@ def _song(r: sqlite3.Row) -> NdSong:
         disc_number=r["disc_number"],
         track_number=r["track_number"],
         has_cover_art=bool(r["has_cover_art"]) if r["has_cover_art"] is not None else None,
+        artist_id=r["artist_id"] or None,
+        album_artist_id=r["album_artist_id"] or None,
     )

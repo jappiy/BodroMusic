@@ -41,9 +41,13 @@ import ru.bodro.music.core.downloads.DownloadsError
 import ru.bodro.music.core.downloads.DownloadsException
 import ru.bodro.music.core.downloads.ExportArtist
 import ru.bodro.music.core.downloads.ExportStatus
+import ru.bodro.music.core.downloads.FeedbackEvent
+import ru.bodro.music.core.downloads.FeedbackResult
 import ru.bodro.music.core.downloads.LibraryCheck
 import ru.bodro.music.core.downloads.MaintenanceActionsPage
 import ru.bodro.music.core.downloads.MaintenanceStatus
+import ru.bodro.music.core.downloads.PoolHidden
+import ru.bodro.music.core.downloads.PoolList
 import ru.bodro.music.core.downloads.RequestStatus
 import ru.bodro.music.core.downloads.ServiceInfo
 import ru.bodro.music.data.account.ConnectionManager
@@ -57,6 +61,7 @@ private val Context.downloadsStore: DataStore<Preferences> by preferencesDataSto
  * Сервис загрузок (bodrod): глобальный поиск, заявки на скачивание по цепочке источников.
  * Адрес сервиса хранится отдельно для каждой учётки; авторизация — учёткой Navidrome.
  */
+@Suppress("TooManyFunctions")
 @Singleton
 class DownloadsRepository @Inject constructor(
     @ApplicationContext context: Context,
@@ -184,6 +189,18 @@ class DownloadsRepository @Inject constructor(
     suspend fun refreshExportArtists(): List<ExportArtist> = client.refreshExportArtists()
 
     suspend fun selectExportArtists(ids: List<String>): List<ExportArtist> = client.selectExportArtists(ids)
+
+    // endregion
+
+    // region Пул «На пробу» и обратная связь
+
+    suspend fun feedback(events: List<FeedbackEvent>): FeedbackResult = client.feedback(events)
+
+    suspend fun pool(): PoolList = client.pool()
+
+    suspend fun poolHidden(): PoolHidden = client.poolHidden()
+
+    suspend fun refillPool() = client.refillPool()
 
     // endregion
 

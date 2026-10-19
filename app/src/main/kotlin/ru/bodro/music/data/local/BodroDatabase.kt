@@ -1,5 +1,6 @@
 package ru.bodro.music.data.local
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
@@ -15,9 +16,11 @@ import androidx.room.withTransaction
         QueueStateEntity::class,
         SearchHistoryEntity::class,
         LogEntryEntity::class,
+        PendingFeedbackEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class BodroDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
@@ -33,6 +36,8 @@ abstract class BodroDatabase : RoomDatabase() {
     abstract fun searchHistoryDao(): SearchHistoryDao
 
     abstract fun logDao(): LogDao
+
+    abstract fun feedbackDao(): FeedbackDao
 
     /** Удаляет все локальные данные учётки (при выходе). */
     suspend fun clearAccountData(accountId: Long) {
@@ -54,6 +59,7 @@ abstract class BodroDatabase : RoomDatabase() {
             "queue_state",
             "search_history",
             "log_entries",
+            "pending_feedback",
         )
     }
 }

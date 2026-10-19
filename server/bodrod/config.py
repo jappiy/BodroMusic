@@ -202,6 +202,21 @@ class Settings:
     reserve_batch: int = 20
     """Discovery-пул (виден Navidrome). Пусто — `<MUSIC_DIR>/_discovery`."""
     discovery_dir: str | None = None
+    """Правила пула «на пробу» (задача 2 ТЗ рекомендаций)."""
+    pool_size: int = 150
+    pool_refill_below: int = 100
+    """Promote: столько полных прослушиваний (не меньше этой доли длительности)."""
+    promote_full_plays: int = 2
+    full_play_ratio: float = 0.8
+    """Reject: скип раньше стольких секунд — на такой раз; отклонённое не предлагается столько дней."""
+    early_skip_s: int = 30
+    reject_early_skips: int = 2
+    reject_block_days: int = 180
+    """Expire: столько дней без прослушиваний или столько показов в волне без запуска."""
+    expire_days: int = 21
+    expire_shown: int = 3
+    """У артиста столько и больше reject — понижающий коэффициент."""
+    artist_reject_threshold: int = 3
 
     @property
     def archive_path(self) -> str:
@@ -337,6 +352,16 @@ class Settings:
             reserve_limit=_int("RESERVE_LIMIT", 500),
             reserve_batch=_int("RESERVE_BATCH", 20),
             discovery_dir=_opt("DISCOVERY_DIR"),
+            pool_size=_int("POOL_SIZE", 150),
+            pool_refill_below=_int("POOL_REFILL_BELOW", 100),
+            promote_full_plays=_int("POOL_PROMOTE_FULL_PLAYS", 2),
+            full_play_ratio=float(_opt("POOL_FULL_PLAY_RATIO") or 0.8),
+            early_skip_s=_int("POOL_EARLY_SKIP_S", 30),
+            reject_early_skips=_int("POOL_REJECT_EARLY_SKIPS", 2),
+            reject_block_days=_int("POOL_REJECT_BLOCK_DAYS", 180),
+            expire_days=_int("POOL_EXPIRE_DAYS", 21),
+            expire_shown=_int("POOL_EXPIRE_SHOWN", 3),
+            artist_reject_threshold=_int("POOL_ARTIST_REJECT_THRESHOLD", 3),
         )
 
 

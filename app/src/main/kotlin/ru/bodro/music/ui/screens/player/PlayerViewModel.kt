@@ -9,9 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.bodro.music.core.domain.player.SleepTimerOption
 import ru.bodro.music.core.model.Lyrics
+import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.playback.PlayerConnection
 import ru.bodro.music.playback.PlayerUiState
@@ -28,8 +30,14 @@ sealed interface LyricsState {
 class PlayerViewModel @Inject constructor(
     private val player: PlayerConnection,
     private val library: LibraryRepository,
+    pool: PoolRepository,
 ) : ViewModel() {
     val state: StateFlow<PlayerUiState> = player.state
+
+    /** Треки пула «На пробу» — у них в плеере метка «Новое». */
+    val poolSongIds: StateFlow<Set<String>> = pool.visibility
+        .map { it.songIds }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), pool.visibility.value.songIds)
 
     private val _lyrics = MutableStateFlow<LyricsState>(LyricsState.Missing)
     val lyrics: StateFlow<LyricsState> = _lyrics.asStateFlow()

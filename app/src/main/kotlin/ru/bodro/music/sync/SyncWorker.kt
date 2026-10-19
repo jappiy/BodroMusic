@@ -21,6 +21,7 @@ import javax.inject.Singleton
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.log.LogRepository
 import ru.bodro.music.data.log.PlayerEvent
+import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.data.repository.ScrobbleRepository
 
@@ -31,6 +32,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val scrobbles: ScrobbleRepository,
     private val reactions: ReactionRepository,
+    private val pool: PoolRepository,
     private val connection: ConnectionManager,
     private val log: LogRepository,
 ) : CoroutineWorker(context, params) {
@@ -39,7 +41,8 @@ class SyncWorker @AssistedInject constructor(
         connection.reselect()
         val reactionsDone = runCatching { reactions.syncPending() }.getOrDefault(false)
         val scrobbleResult = runCatching { scrobbles.flush() }.getOrNull()
-        val retry = !reactionsDone || scrobbleResult?.shouldRetry == true
+        val feedbackDone = runCatching { pool.flush() }.getOrDefault(false)
+        val retry = !reactionsDone || scrobbleResult?.shouldRetry == true || !feedbackDone
         log.event(
             PlayerEvent.Sync,
             "Синхронизация: реакции ${if (reactionsDone) "отправлены" else "ждут"}, скробблов осталось ${scrobbleResult?.remaining ?: "?"}",

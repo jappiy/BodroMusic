@@ -238,6 +238,11 @@
     <string name="settings_gapless_summary">Всегда включено: ExoPlayer сам убирает паузы, где формат это поддерживает (MP3 с LAME-заголовком, AAC, FLAC).</string>
     <string name="settings_scrobble_threshold">Порог засчитывания прослушивания</string>
     <string name="settings_scrobble_threshold_summary">50% трека или 4 минуты — что раньше; треки короче 30 с не учитываются</string>
+    <string name="settings_wave_character">Характер волны</string>
+    <string name="settings_wave_character_hint">Сколько в волне новых треков из пула «На пробу»: Любимое — нисколько, Микс — четверть, Незнакомое — половина. Понравившиеся (лайк, два полных прослушивания или добавление в плейлист) переходят в библиотеку.</string>
+    <string name="wave_character_favorites">Любимое</string>
+    <string name="wave_character_mix">Микс</string>
+    <string name="wave_character_discover">Незнакомое</string>
     <string name="settings_wave_discovery">Доля «открытий» в волне</string>
     <string name="settings_wave_discovery_value">%1$d%%</string>
     <string name="settings_wave_discovery_hint">Сколько незнакомых треков подмешивать в режиме «Для вас».</string>
@@ -522,4 +527,10 @@
     <string name="downloads_error_unauthorized">Сервис загрузок не принял учётку Navidrome</string>
     <string name="downloads_error_disabled">Эта возможность не настроена на сервере</string>
     <string name="downloads_error_unreachable">Сервис загрузок недоступен</string>
+    <string name="pool_title">На пробу</string>
+    <string name="pool_hint">Новые треки, которые подобрал сервер. Лайк, два полных прослушивания или добавление в плейлист переводят трек в библиотеку; дизлайк или два быстрых пропуска — убирают.</string>
+    <string name="pool_empty">Пока пусто: сервер пополняет пул раз в сутки</string>
+    <string name="pool_unsupported">Пул «На пробу» появится, когда в настройках задан сервис загрузок bodrod 0.9.0 или новее</string>
+    <string name="player_new_badge">Новое</string>
+    <string name="action_refresh">Обновить</string>
 </resources>

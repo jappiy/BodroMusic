@@ -46,7 +46,7 @@ class DeleteResult:
 
 def _remap(path: str, src_root: str, dst_root: str) -> str | None:
     src = src_root.rstrip("/")
-    if path != src and not path.startswith(src + "/"):
+    if path != src and not path.startswith(src + "/") and not path.startswith(src + os.sep):
         return None
     return dst_root.rstrip("/") + path[len(src) :]
 

@@ -126,3 +126,12 @@ data class LogEntryEntity(
 )
 
 enum class LogType { Network, Player }
+
+/** Событие прослушивания для рекомендаций bodrod (офлайн-очередь): [payload] — `FeedbackEvent` в JSON. */
+@Entity(tableName = "pending_feedback", indices = [Index("accountId")])
+data class PendingFeedbackEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountId: Long,
+    val payload: String,
+    val createdAt: Long,
+)

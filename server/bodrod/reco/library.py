@@ -28,6 +28,9 @@ class LibrarySnapshot:
     artists: set[str] = field(default_factory=set)
     """id трека → путь (как его видит Navidrome) для треков пула."""
     pool_paths: dict[str, str] = field(default_factory=dict)
+    """Альбомы и исполнители, у которых все треки — в пуле: приложение их скрывает."""
+    pool_only_albums: set[str] = field(default_factory=set)
+    pool_only_artists: set[str] = field(default_factory=set)
     built_at: float = 0.0
 
 
@@ -65,20 +68,31 @@ class LibraryIndex:
     def _build(self) -> LibrarySnapshot:
         assert self._db is not None
         snap = LibrarySnapshot(built_at=self._clock())
+        albums: dict[str, bool] = {}
+        artists: dict[str, bool] = {}
         for song in self._db.iter_songs():
-            self._add(snap, song)
+            in_pool = self._add(snap, song)
+            for album in (song.album_id,):
+                if album:
+                    albums[album] = albums.get(album, True) and in_pool
+            for artist in {song.artist_id, song.album_artist_id} - {None}:
+                artists[artist] = artists.get(artist, True) and in_pool
+        snap.pool_only_albums = {a for a, only in albums.items() if only}
+        snap.pool_only_artists = {a for a, only in artists.items() if only}
         return snap
 
-    def _add(self, snap: LibrarySnapshot, song: NdSong) -> None:
+    def _add(self, snap: LibrarySnapshot, song: NdSong) -> bool:
+        """`True` — трек из пула."""
         key = track_key(song.artist, song.title)
         if self._pool_prefix and song.path.startswith(self._pool_prefix):
             snap.pool[key] = song.id
             snap.pool_paths[song.id] = song.path
-            return
+            return True
         snap.library.setdefault(key, song.id)
         snap.artists.add(artist_key(song.artist))
         if song.album_artist:
             snap.artists.add(artist_key(song.album_artist))
+        return False
 
     async def in_library(self, artist: str, title: str) -> str | None:
         """id трека в библиотеке (не в пуле) или `None`."""

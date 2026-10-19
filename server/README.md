@@ -105,6 +105,11 @@ HTTP разрешён только для адресов локальной се
 | `HARVEST_WAVE_RUNS_PER_DAY`, `HARVEST_WAVE_BATCHES` | нет | «Моя волна»: 3 прогона в сутки по 5 пачек |
 | `HARVEST_TOP_ARTISTS` | нет | Похожие артисты — для 200 любимых |
 | `RESERVE_DIR`, `RESERVE_LIMIT`, `RESERVE_BATCH` | нет | Резерв предзакачки: `<MUSIC_DIR>/_reserve` (с `.ndignore`), до 500 треков на пользователя, по 20 за проход |
+| `POOL_SIZE`, `POOL_REFILL_BELOW` | нет | Пул «На пробу»: 150 треков на пользователя, пополнение раз в сутки, если меньше 100 |
+| `POOL_PROMOTE_FULL_PLAYS`, `POOL_FULL_PLAY_RATIO` | нет | Promote: 2 полных прослушивания (≥ 0.8 длительности) |
+| `POOL_EARLY_SKIP_S`, `POOL_REJECT_EARLY_SKIPS`, `POOL_REJECT_BLOCK_DAYS` | нет | Reject: на 2-й скип раньше 30 с; в чёрный список пользователя на 180 дней |
+| `POOL_EXPIRE_DAYS`, `POOL_EXPIRE_SHOWN` | нет | Expire: 21 день без прослушиваний или 3 показа в волне без запуска |
+| `POOL_ARTIST_REJECT_THRESHOLD` | нет | У артиста ≥ 3 reject — понижающий коэффициент в движке кандидатов |
 | `DISCOVERY_DIR` | нет | Discovery-пул (виден Navidrome), по умолчанию `<MUSIC_DIR>/_discovery` |
 | `DATA_DIR`, `PORT`, `LOG_LEVEL` | нет | `/data`, `8790`, `INFO` |
 
@@ -171,6 +176,23 @@ HTTP разрешён только для адресов локальной се
 Сырые ответы — в `YANDEX_ARCHIVE_DIR`, нормализованное — в таблицы `y_tracks`, `y_artists`, `y_albums`, `y_likes`,
 `reco_edges` (семя → кандидат: тип, ранг, сколько раз встречалось). Ошибка доступа (нет Плюса, токен отозван)
 отключает только свой сборщик, через 7 дней — новая попытка. Состояние — `GET /api/v1/reco/harvest`.
+
+## Discovery-пул «На пробу» (0.9.0)
+
+Новые треки сначала попадают в `DISCOVERY_DIR` (Navidrome их видит), а в библиотеку их переводят сигналы
+пользователя (`bodrod/reco/pool.py`). Трек хранится одной копией, владельцы — в `pool_owners` со статусом
+`candidate → queued → downloading → in_pool → promoted | rejected | expired | failed`.
+
+- Сигналы: события приложения (`POST /api/v1/feedback`) и лайк/дизлайк в БД Navidrome (из любого клиента).
+- Promote: лайк (любого пользователя), 2 полных прослушивания или добавление в плейлист — файл переносится в
+  `LIBRARY_DIR` по `LIBRARY_LAYOUT`. Старый id записывается в `replacements`: если Navidrome выдаст файлу новый id,
+  приложение перенесёт лайк (`/api/v1/library/check`). Счётчик прослушиваний при смене id не переносится — Subsonic API
+  не даёт менять его за другого пользователя.
+- Reject: дизлайк — сразу, ранний скип — на второй раз; трек — в чёрный список пользователя на 180 дней.
+- Expire: 21 день без прослушиваний или 3 показа в волне без запуска.
+- Файл удаляется, только когда трек не держит ни один владелец (другой пользователь или чарт).
+- Пополнение раз в сутки (при `< POOL_REFILL_BELOW`): сначала из резерва (`RESERVE_DIR`), затем — движок кандидатов.
+- Регламент обслуживания папки пула и резерва не трогает.
 
 ## Размещение в библиотеке
 
@@ -348,6 +370,11 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | POST | `/api/v1/yandex/export/pause` | Пауза |
 | GET / PUT | `/api/v1/yandex/export/artists` | Артисты из лайков; PUT `{selected: [id...]}` — кого брать целиком |
 | POST | `/api/v1/yandex/export/artists/refresh` | Собрать артистов из «Мне нравится» заново |
+| POST | `/api/v1/feedback` | `{events: [{songId, event, positionMs?, durationMs?, context?, at?}]}` — события: `started`, `skipped`, `completed`, `liked`, `unliked`, `disliked`, `playlisted`, `shown`; в ответе — сменившиеся статусы треков пула |
+| GET | `/api/v1/pool` | Пул пользователя: треки `in_pool`, счётчики по статусам, размер |
+| POST | `/api/v1/pool/status` | `{ids: [...]}` → `{id: статус}` только для треков пула |
+| GET | `/api/v1/pool/hidden` | Что приложение прячет: `songIds` пула, `albumIds` и `artistIds`, у которых все треки в пуле |
+| POST | `/api/v1/pool/refill` | Пополнить пул сейчас (202) |
 | GET | `/api/v1/reco/harvest` | Архив Яндекса: по аккаунтам — сборщики (когда работали, отключены ли), лайки, рёбра, резерв (только админ) |
 | POST | `/api/v1/reco/harvest/run` | Пройти по аккаунтам сейчас |
 

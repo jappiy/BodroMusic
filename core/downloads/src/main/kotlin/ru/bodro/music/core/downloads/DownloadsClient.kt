@@ -185,6 +185,23 @@ class DownloadsClient(
 
     // endregion
 
+    // region Пул «На пробу» и обратная связь (bodrod 0.9.0+)
+
+    suspend fun feedback(events: List<FeedbackEvent>): FeedbackResult = post(listOf("api", "v1", "feedback"), FeedbackBody(events))
+
+    suspend fun pool(): PoolList = get(listOf("api", "v1", "pool"))
+
+    /** Статус в пуле для треков: в ответе только треки пула. */
+    suspend fun poolStatus(ids: List<String>): Map<String, String> = post(listOf("api", "v1", "pool", "status"), IdsBody(ids))
+
+    suspend fun poolHidden(): PoolHidden = get(listOf("api", "v1", "pool", "hidden"))
+
+    suspend fun refillPool() {
+        execute<Unit?>(Request.Builder().url(url(listOf("api", "v1", "pool", "refill"))).post(EMPTY), null) { null }
+    }
+
+    // endregion
+
     private suspend inline fun <reified B, reified T> send(method: String, path: List<String>, body: B): T {
         val payload = downloadsJson.encodeToString(serializer<B>(), body).toRequestBody(JSON)
         return execute(Request.Builder().url(url(path)).method(method, payload), null) {

@@ -222,3 +222,25 @@ interface LogDao {
     @Query("DELETE FROM log_entries WHERE accountId = :accountId OR accountId IS NULL")
     suspend fun clear(accountId: Long)
 }
+
+@Dao
+interface FeedbackDao {
+    @Insert
+    suspend fun insert(entity: PendingFeedbackEntity): Long
+
+    @Query("SELECT * FROM pending_feedback WHERE accountId = :accountId ORDER BY id LIMIT :limit")
+    suspend fun pending(accountId: Long, limit: Int): List<PendingFeedbackEntity>
+
+    @Query("DELETE FROM pending_feedback WHERE id IN (:ids)")
+    suspend fun delete(ids: List<Long>)
+
+    @Query("SELECT COUNT(*) FROM pending_feedback WHERE accountId = :accountId")
+    suspend fun count(accountId: Long): Int
+
+    /** Очередь не растёт бесконечно без сети или без bodrod: старые события отбрасываются. */
+    @Query(
+        "DELETE FROM pending_feedback WHERE accountId = :accountId AND id NOT IN " +
+            "(SELECT id FROM pending_feedback WHERE accountId = :accountId ORDER BY id DESC LIMIT :keep)",
+    )
+    suspend fun trim(accountId: Long, keep: Int)
+}

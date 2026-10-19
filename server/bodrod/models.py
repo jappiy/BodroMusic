@@ -131,6 +131,8 @@ class ServiceInfo(ApiModel):
     album_downloads: bool = False
     """Есть экран «Источники загрузки» (bodrod 0.7.0+)."""
     sources: bool = False
+    """Discovery-пул «на пробу» и события обратной связи (bodrod 0.9.0+)."""
+    pool: bool = False
 
 
 class CleanupUser(ApiModel):
@@ -345,3 +347,55 @@ class HarvestAccount(ApiModel):
 class HarvestStatus(ApiModel):
     enabled: bool
     accounts: list[HarvestAccount] = []
+
+
+class FeedbackEvent(ApiModel):
+    song_id: str
+    """started / skipped / completed / liked / unliked / disliked / playlisted / shown."""
+    event: str
+    position_ms: int | None = None
+    duration_ms: int | None = None
+    """wave / chart / library / playlist / pool."""
+    context: str | None = None
+    at: int | None = None
+
+
+class FeedbackBatch(ApiModel):
+    events: list[FeedbackEvent] = Field(max_length=1000)
+
+
+class FeedbackResult(ApiModel):
+    accepted: int
+    """Треки пула, у которых сменился статус: id → promoted / rejected / expired."""
+    changed: dict[str, str] = {}
+
+
+class PoolItemOut(ApiModel):
+    song_id: str | None = None
+    artist: str
+    title: str
+    album: str | None = None
+    duration_ms: int | None = None
+    cover_url: str | None = None
+    status: str
+    source: str | None = None
+    added_at: int
+    full_plays: int = 0
+    early_skips: int = 0
+    shown: int = 0
+
+
+class PoolOut(ApiModel):
+    items: list[PoolItemOut] = []
+    counts: dict[str, int] = {}
+    size: int = 150
+
+
+class PoolStatusRequest(ApiModel):
+    ids: list[str] = Field(max_length=5000)
+
+
+class PoolHidden(ApiModel):
+    song_ids: list[str] = []
+    album_ids: list[str] = []
+    artist_ids: list[str] = []

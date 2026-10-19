@@ -58,6 +58,7 @@ class PlaylistRepository @Inject constructor(
     private val client: SubsonicClient,
     private val connection: ConnectionManager,
     private val reactions: ReactionRepository,
+    private val pool: dagger.Lazy<ru.bodro.music.data.reco.PoolRepository>,
 ) {
     suspend fun playlists(): List<Playlist> = client.getPlaylists()
 
@@ -67,13 +68,20 @@ class PlaylistRepository @Inject constructor(
 
     fun isEditable(playlist: Playlist): Boolean = playlist.isEditableBy(connection.activeAccount?.username.orEmpty())
 
-    suspend fun create(name: String, songs: List<Song> = emptyList()): Playlist? = client.createPlaylist(name, songs.map { it.id })
+    suspend fun create(name: String, songs: List<Song> = emptyList()): Playlist? =
+        client.createPlaylist(name, songs.map { it.id }).also {
+            songs.filter { pool.get().isPoolSong(it.id) }.forEach { pool.get().track(it, "playlisted", "playlist") }
+        }
 
     suspend fun rename(id: String, name: String) = client.updatePlaylist(id, name = name)
 
     suspend fun delete(id: String) = client.deletePlaylist(id)
 
-    suspend fun addSongs(id: String, songs: List<Song>) = client.updatePlaylist(id, songIdsToAdd = songs.map { it.id })
+    suspend fun addSongs(id: String, songs: List<Song>) {
+        client.updatePlaylist(id, songIdsToAdd = songs.map { it.id })
+        // Трек пула «На пробу», добавленный в плейлист, переходит в библиотеку.
+        songs.filter { pool.get().isPoolSong(it.id) }.forEach { pool.get().track(it, "playlisted", "playlist") }
+    }
 
     suspend fun removeAt(id: String, index: Int) = client.updatePlaylist(id, songIndexesToRemove = listOf(index))
 }

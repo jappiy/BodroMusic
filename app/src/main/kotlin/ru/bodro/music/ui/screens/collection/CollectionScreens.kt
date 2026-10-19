@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
@@ -81,6 +82,7 @@ import ru.bodro.music.ui.components.BodroTopBar
 import ru.bodro.music.ui.components.EmptyState
 import ru.bodro.music.ui.components.SectionHeader
 import ru.bodro.music.ui.components.SongRow
+import ru.bodro.music.ui.screens.pool.PoolCountViewModel
 import ru.bodro.music.ui.screens.wave.WaveBackground
 import ru.bodro.music.ui.screens.wave.waveColors
 import ru.bodro.music.ui.util.UiError
@@ -137,9 +139,12 @@ fun CollectionScreen(
     onOpenStarredAlbums: () -> Unit,
     onOpenGenres: () -> Unit,
     onOpenTracks: () -> Unit,
+    onOpenPool: () -> Unit = {},
     viewModel: CollectionViewModel = hiltViewModel(),
+    poolCount: PoolCountViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val inPool by poolCount.count.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
     val navigator = LocalNavigator.current
     val favoriteTracksTitle = stringResource(R.string.collection_favorite_tracks)
@@ -195,6 +200,15 @@ fun CollectionScreen(
                     onOpenPlaylists,
                     "entry-playlists",
                 )
+                if (inPool > 0) {
+                    CollectionEntry(
+                        Icons.Rounded.NewReleases,
+                        stringResource(R.string.pool_title),
+                        pluralStringResource(R.plurals.tracks, inPool, inPool),
+                        onOpenPool,
+                        "entry-pool",
+                    )
+                }
             }
         }
         val topArtists = state.stats?.topArtists.orEmpty()

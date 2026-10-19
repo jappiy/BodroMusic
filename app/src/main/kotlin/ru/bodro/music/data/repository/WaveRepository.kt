@@ -8,6 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bodro.music.core.domain.wave.LocalWaveSource
+import ru.bodro.music.core.domain.wave.PoolMixer
 import ru.bodro.music.core.domain.wave.WaveEngine
 import ru.bodro.music.core.domain.wave.WaveLibrary
 import ru.bodro.music.core.domain.wave.WaveProfile
@@ -17,11 +18,13 @@ import ru.bodro.music.core.model.AlbumListType
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveMode
+import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.core.subsonic.SubsonicClient
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.log.LogRepository
 import ru.bodro.music.data.log.PlayerEvent
+import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.di.Clock
 
@@ -76,6 +79,7 @@ class WaveRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val connection: ConnectionManager,
     private val log: LogRepository,
+    private val pool: PoolRepository,
     private val clock: Clock,
 ) {
     private val random = Random(clock.now())
@@ -114,9 +118,27 @@ class WaveRepository @Inject constructor(
             nowMs = clock.now(),
             random = Random(random.nextLong()),
         )
-        val batch = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
+        val familiar = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
+        val batch = withPool(familiar, resolved, fullProfile, queue)
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
         batch
+    }
+
+    /** «Моя волна» по всей медиатеке: подмешать треки пула «На пробу» по характеру волны (показ — событие для bodrod). */
+    private suspend fun withPool(batch: List<Song>, settings: WaveSettings, profile: WaveProfile, queue: List<Song>): List<Song> {
+        if (settings.seed != WaveSeed.Everything && settings.seed != WaveSeed.Collection) return batch
+        val share = this.settings.current.waveCharacter.poolShare
+        val poolIds = pool.visibility.value.songIds
+        if (poolIds.isEmpty()) return batch
+        val state = reactions.state.value
+        val candidates = if (share > 0.0) {
+            pool.songs().filter { it.id !in profile.dislikedSongIds && state.of(it) != Reaction.Disliked }
+        } else {
+            emptyList()
+        }
+        val mixed = PoolMixer.mix(batch, candidates, share, Random(random.nextLong()), queue, poolIds)
+        mixed.filter { it.id in poolIds }.forEach { pool.track(it, "shown", "wave") }
+        return mixed
     }
 
     /** Для «Микса десятилетия» без выбранного десятилетия — любимое десятилетие пользователя. */

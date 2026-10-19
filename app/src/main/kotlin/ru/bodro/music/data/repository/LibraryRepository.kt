@@ -20,6 +20,7 @@ import ru.bodro.music.core.model.Starred
 import ru.bodro.music.core.subsonic.SubsonicClient
 import ru.bodro.music.data.account.AccountRepository
 import ru.bodro.music.data.account.ConnectionManager
+import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.di.Clock
 
 data class HomeData(
@@ -65,6 +66,7 @@ class LibraryRepository @Inject constructor(
     private val accounts: AccountRepository,
     private val reactions: ReactionRepository,
     private val history: HistoryRepository,
+    private val pool: PoolRepository,
     private val clock: Clock,
 ) {
     private data class Cached<T>(val value: T, val atMs: Long, val accountId: Long?)
@@ -77,6 +79,31 @@ class LibraryRepository @Inject constructor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Cached<AlbumDetails>>?) = size > 64
     }
 
+    // region Пул «На пробу» скрыт из исполнителей, альбомов и поиска
+
+    private val hidden get() = pool.visibility.value
+
+    private fun List<Song>.visible(): List<Song> = hidden.let { h -> if (h.songIds.isEmpty()) this else filterNot { it.id in h.songIds } }
+
+    @JvmName("visibleAlbums")
+    private fun List<Album>.visible(): List<Album> = hidden.let { h ->
+        if (h.albumIds.isEmpty()) this else filterNot { it.id in h.albumIds }
+    }
+
+    @JvmName("visibleArtists")
+    private fun List<Artist>.visible(): List<Artist> = hidden.let { h ->
+        if (h.artistIds.isEmpty()) {
+            this
+        } else {
+            filterNot {
+                it.id in
+                    h.artistIds
+            }
+        }
+    }
+
+    // endregion
+
     suspend fun home(): HomeData = coroutineScope {
         val starred = async { starred() }
         val newest = async { client.getAlbumList2(AlbumListType.Newest, size = 20) }
@@ -85,8 +112,8 @@ class LibraryRepository @Inject constructor(
         val playlists = async { client.getPlaylists() }
         HomeData(
             starredSongs = starred.await().songs.take(30),
-            newestAlbums = newest.await(),
-            recentAlbums = recent.await(),
+            newestAlbums = newest.await().visible(),
+            recentAlbums = recent.await().visible(),
             randomArtists = artists.await(),
             playlists = playlists.await(),
         )
@@ -105,7 +132,7 @@ class LibraryRepository @Inject constructor(
                 albumCache[id]
             }?.takeIf { it.accountId == accountId && clock.now() - it.atMs < TTL_MS }?.let { return it.value }
         }
-        val details = client.getAlbum(id)
+        val details = client.getAlbum(id).let { it.copy(songs = it.songs.visible()) }
         reactions.ingest(details.songs)
         mutex.withLock { albumCache[id] = Cached(details, clock.now(), accountId) }
         return details
@@ -126,14 +153,14 @@ class LibraryRepository @Inject constructor(
             genre = genre,
             fromYear = fromYear ?: if (sort == AlbumSort.Year) 0 else null,
             toYear = toYear ?: if (sort == AlbumSort.Year) 9999 else null,
-        )
+        ).visible()
 
     suspend fun artists(force: Boolean = false): List<Artist> {
         val accountId = connection.activeAccountId
         if (!force) {
-            artistsCache?.takeIf { it.accountId == accountId && clock.now() - it.atMs < TTL_MS }?.let { return it.value }
+            artistsCache?.takeIf { it.accountId == accountId && clock.now() - it.atMs < TTL_MS }?.let { return it.value.visible() }
         }
-        return client.getArtists().also { artistsCache = Cached(it, clock.now(), accountId) }
+        return client.getArtists().also { artistsCache = Cached(it, clock.now(), accountId) }.visible()
     }
 
     /** Исполнитель + топ-треки: из своей истории, затем getTopSongs (если сервер умеет). */
@@ -141,9 +168,9 @@ class LibraryRepository @Inject constructor(
         val details = client.getArtist(id)
         val own = async { history.topSongsOfArtist(id, TOP_SONGS) }
         val server = async { client.getTopSongs(details.artist.name, TOP_SONGS) }
-        val top = (own.await() + server.await()).distinctBy { it.id }.take(TOP_SONGS)
+        val top = (own.await() + server.await()).visible().distinctBy { it.id }.take(TOP_SONGS)
         reactions.ingest(top)
-        details.copy(albums = details.albums.sortedWith(compareByDescending<Album> { it.year ?: 0 }.thenBy { it.name })) to top
+        details.copy(albums = details.albums.visible().sortedWith(compareByDescending<Album> { it.year ?: 0 }.thenBy { it.name })) to top
     }
 
     /** Все треки исполнителя (для «играть всё» и волны по исполнителю). */
@@ -161,16 +188,20 @@ class LibraryRepository @Inject constructor(
     }
 
     suspend fun songsByGenre(genre: String, offset: Int, count: Int = PAGE): List<Song> =
-        client.getSongsByGenre(genre, count, offset).also { reactions.ingest(it) }
+        client.getSongsByGenre(genre, count, offset).visible().also { reactions.ingest(it) }
 
     suspend fun allSongs(offset: Int, count: Int = PAGE): List<Song> =
-        client.search3("", artistCount = 0, albumCount = 0, songCount = count, songOffset = offset).songs.also { reactions.ingest(it) }
+        client.search3("", artistCount = 0, albumCount = 0, songCount = count, songOffset = offset).songs.visible().also {
+            reactions.ingest(it)
+        }
 
     suspend fun randomSongs(count: Int = 50, genre: String? = null, fromYear: Int? = null, toYear: Int? = null): List<Song> =
-        client.getRandomSongs(count, genre, fromYear, toYear).also { reactions.ingest(it) }
+        client.getRandomSongs(count, genre, fromYear, toYear).visible().also { reactions.ingest(it) }
 
     suspend fun search(query: String): SearchResult =
-        client.search3(query, artistCount = 10, albumCount = 20, songCount = 40).also { reactions.ingest(it.songs) }
+        client.search3(query, artistCount = 10, albumCount = 20, songCount = 40)
+            .let { it.copy(songs = it.songs.visible(), albums = it.albums.visible(), artists = it.artists.visible()) }
+            .also { reactions.ingest(it.songs) }
 
     suspend fun song(id: String): Song = client.getSong(id)
 

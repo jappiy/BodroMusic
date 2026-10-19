@@ -88,6 +88,7 @@ class ReactionRepositoryTest {
             connection = connection,
             log = mockk<LogRepository>(relaxed = true),
             syncScheduler = { mockk<SyncScheduler>(relaxed = true) },
+            pool = { mockk<ru.bodro.music.data.reco.PoolRepository>(relaxed = true) },
             clock = { 1_000L },
             // Не backgroundScope: advanceUntilIdle() не выполняет фоновые корутины.
             scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()).also { repoScope = it },

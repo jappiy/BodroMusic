@@ -144,6 +144,8 @@ data class ServiceInfo(
     val albumDownloads: Boolean = false,
     /** Есть экран «Источники загрузки» (bodrod 0.7.0+). */
     val sources: Boolean = false,
+    /** Discovery-пул «На пробу» и события обратной связи (bodrod 0.9.0+). */
+    val pool: Boolean = false,
 )
 
 /** Источник загрузки. [state]: `ok` — работает, `disabled` — выключен, `unavailable` — не может работать ([reason]). */
@@ -293,6 +295,55 @@ data class BlockEntry(
 
 @Serializable
 data class BlocklistPage(val total: Int = 0, val items: List<BlockEntry> = emptyList())
+
+/**
+ * Событие прослушивания для рекомендаций. [event]: started / skipped / completed / liked / unliked / disliked /
+ * playlisted / shown; [context]: wave / chart / library / playlist / pool.
+ */
+@Serializable
+data class FeedbackEvent(
+    val songId: String,
+    val event: String,
+    val positionMs: Long? = null,
+    val durationMs: Long? = null,
+    val context: String? = null,
+    val at: Long,
+)
+
+/** [changed] — треки пула, у которых сменился статус (promoted / rejected / expired). */
+@Serializable
+data class FeedbackResult(val accepted: Int = 0, val changed: Map<String, String> = emptyMap())
+
+/** Трек пула «На пробу». [status]: in_pool / promoted / rejected / expired. */
+@Serializable
+data class PoolItem(
+    val songId: String? = null,
+    val artist: String,
+    val title: String,
+    val album: String? = null,
+    val durationMs: Long? = null,
+    val coverUrl: String? = null,
+    val status: String = "in_pool",
+    val source: String? = null,
+    val addedAt: Long = 0,
+    val fullPlays: Int = 0,
+    val earlySkips: Int = 0,
+    val shown: Int = 0,
+)
+
+@Serializable
+data class PoolList(val items: List<PoolItem> = emptyList(), val counts: Map<String, Int> = emptyMap(), val size: Int = 150)
+
+/** Что прятать из исполнителей, альбомов и поиска: треки пула и альбомы/исполнители, у которых все треки в пуле. */
+@Serializable
+data class PoolHidden(
+    val songIds: List<String> = emptyList(),
+    val albumIds: List<String> = emptyList(),
+    val artistIds: List<String> = emptyList(),
+)
+
+@Serializable
+internal data class FeedbackBody(val events: List<FeedbackEvent>)
 
 @Serializable
 internal data class DeleteSongsBody(val ids: List<String>)

@@ -31,6 +31,7 @@ import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.data.log.LogRepository
 import ru.bodro.music.data.log.PlayerEvent
+import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.data.repository.HistoryRepository
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.data.repository.ScrobbleRepository
@@ -52,6 +53,7 @@ class PlaybackDeps @Inject constructor(
     val log: LogRepository,
     val items: MediaItemFactory,
     val clock: Clock,
+    val pool: PoolRepository,
 )
 
 /**
@@ -244,6 +246,15 @@ class PlaybackCoordinator(
         sessionSong = song
         sessionAccountId = accountId
         scope.launch(Dispatchers.IO) { deps.scrobbles.nowPlaying(song.id) }
+        deps.pool.track(song, "started", feedbackContext(song))
+    }
+
+    /** Откуда играет трек — для событий рекомендаций. */
+    private fun feedbackContext(song: Song): String = when {
+        deps.sources.source.value is QueueSource.WaveSource -> "wave"
+        deps.sources.source.value is QueueSource.PlaylistSource -> "playlist"
+        deps.pool.isPoolSong(song.id) -> "pool"
+        else -> "library"
     }
 
     private fun finishSession(userSkipped: Boolean) {
@@ -252,6 +263,11 @@ class PlaybackCoordinator(
         val session = tracker.finish(userSkipped) ?: return
         sessionSong = null
         scope.launch(Dispatchers.IO + NonCancellable) { deps.history.record(accountId, song, session) }
+        if (session.listenedMs >= MIN_FEEDBACK_MS || session.skippedEarly) {
+            val full = session.durationMs > 0 && session.listenedMs >= session.durationMs * FULL_PLAY_RATIO
+            val event = if (full) "completed" else "skipped"
+            deps.pool.track(song, event, feedbackContext(song), session.listenedMs, session.durationMs.takeIf { it > 0 })
+        }
     }
 
     private fun startTicks() {
@@ -381,5 +397,7 @@ class PlaybackCoordinator(
         const val MAX_ERROR_SKIPS = 3
         const val HEALTHY_PLAYBACK_MS = 5_000L
         const val RECENT_FOR_WAVE = 200
+        const val MIN_FEEDBACK_MS = 1_000L
+        const val FULL_PLAY_RATIO = 0.8
     }
 }

@@ -100,6 +100,7 @@ fun FullPlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val poolIds by viewModel.poolSongIds.collectAsStateWithLifecycle()
     val song = state.currentSong ?: return
     val actions = LocalAppActions.current
     val navigator = LocalNavigator.current
@@ -195,6 +196,19 @@ fun FullPlayerScreen(
             Spacer(Modifier.weight(0.5f))
             // Название, исполнитель и альбом — на всю ширину.
             Column(Modifier.fillMaxWidth()) {
+                if (song.id in poolIds) {
+                    // Трек из пула «На пробу»: в библиотеку его переведут лайк, два полных прослушивания или плейлист.
+                    Text(
+                        stringResource(R.string.player_new_badge),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = background,
+                        modifier = Modifier
+                            .padding(bottom = 6.dp)
+                            .background(accent, MaterialTheme.shapes.small)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .testTag("player-new-badge"),
+                    )
+                }
                 Text(
                     song.title,
                     style = MaterialTheme.typography.headlineSmall,

@@ -1,6 +1,7 @@
 package ru.bodro.music.ui.screens.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -62,6 +64,7 @@ import kotlinx.coroutines.delay
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
+import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.components.BodroTopBar
@@ -331,11 +334,34 @@ private fun CacheSizeField(currentMb: Int, onSave: (Int) -> Unit) {
 
 private const val OFFLINE_REFRESH_MS = 5_000L
 
+private fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
+    WaveCharacter.Favorites -> R.string.wave_character_favorites
+    WaveCharacter.Mix -> R.string.wave_character_mix
+    WaveCharacter.Discover -> R.string.wave_character_discover
+}
+
 @Composable
 fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     Scaffold(topBar = { BodroTopBar(stringResource(R.string.settings_wave), onBack) }) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
+            Text(stringResource(R.string.settings_wave_character), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                WaveCharacter.entries.forEach { character ->
+                    FilterChip(
+                        selected = settings.waveCharacter == character,
+                        onClick = { viewModel.update { it.copy(waveCharacter = character) } },
+                        label = { Text(stringResource(waveCharacterLabel(character))) },
+                        modifier = Modifier.testTag("wave-character-${character.name}"),
+                    )
+                }
+            }
+            Text(
+                stringResource(R.string.settings_wave_character_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
             Text(stringResource(R.string.settings_wave_discovery), style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(R.string.settings_wave_discovery_value, (settings.waveDiscoveryShare * 100).roundToInt()),
