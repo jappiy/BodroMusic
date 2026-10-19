@@ -73,7 +73,7 @@
 ## 2. Статус
 
 **Задание 008** (0.14.0 / bodrod 0.7.0 — цепочка источников загрузки: Яндекс Музыка, slskd, YouTube Music, Lidarr;
-экран «Источники загрузки»; выгрузка из Яндекса): CI_STATUS_PENDING. Подробности —
+экран «Источники загрузки»; выгрузка из Яндекса): **CI зелёный** на `9fc4188`, образ bodrod `9fc4188`, релиз https://github.com/jappiy/BodroMusic/releases/tag/v0.14.0. Подробности —
 [`docs/history/008-download-sources-chain.md`](history/008-download-sources-chain.md).
 Предыдущее состояние: CI зелёный на `a9eab7f` (0.13.1 — постоянный ключ подписи; 0.13.0 / bodrod 0.6.0 — Last.fm,
 образ `6425a2c`), релиз v0.13.1.
