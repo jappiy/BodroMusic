@@ -330,7 +330,7 @@ class MaintenanceService:
             if local is None:
                 continue
             path = Path(local)
-            if self._in_quarantine(path) or not path.is_file():
+            if self._in_quarantine(path) or self._in_reco(path) or not path.is_file():
                 continue
             pinned = any(path.is_relative_to(d) for d in pinned_dirs)
             f = LibraryFile(song, path, pinned, marks.get(song.id, 0))
@@ -370,6 +370,11 @@ class MaintenanceService:
 
     def _in_quarantine(self, path: Path) -> bool:
         return path.is_relative_to(self.quarantine_root)
+
+    def _in_reco(self, path: Path) -> bool:
+        """Discovery-пул и резерв рекомендаций обслуживает их владелец (`reco`), а не регламент."""
+        roots = (self._settings.discovery_path, self._settings.reserve_path)
+        return any(path.is_relative_to(Path(r)) for r in roots)
 
     def _index(self, ctx: RunContext, files: list[LibraryFile]) -> None:
         counts: dict[Path, int] = defaultdict(int)

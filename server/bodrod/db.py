@@ -314,6 +314,45 @@ class Store:
         with self._lock:
             self._conn.close()
 
+    # region Общий доступ для модулей со своими таблицами (рекомендации, чарты, анализ)
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            self._conn.executescript(script)
+
+    def execute(self, sql: str, params: Any = ()) -> int:
+        """Изменение; возвращает `lastrowid` для INSERT и число строк для остального."""
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            return int(cur.lastrowid) if sql.lstrip().upper().startswith("INSERT") and cur.lastrowid else cur.rowcount
+
+    def executemany(self, sql: str, rows: list[Any]) -> None:
+        if not rows:
+            return
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                self._conn.executemany(sql, rows)
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+
+    def query(self, sql: str, params: Any = ()) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
+
+    def query_one(self, sql: str, params: Any = ()) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return dict(row) if row else None
+
+    def columns(self, table: str) -> set[str]:
+        with self._lock:
+            return {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+
+    # endregion
+
     def create(
         self,
         *,

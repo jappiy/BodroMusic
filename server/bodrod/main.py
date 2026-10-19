@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from . import __version__
-from .cleanup import CleanupError, CleanupService
+from .cleanup import CleanupError, CleanupService, _remap
 from .clients.lidarr import LidarrClient
 from .clients.navidrome import Credentials, NavidromeClient
 from .clients.slskd import SlskdClient
@@ -41,6 +41,8 @@ from .models import (
     ExportArtistsUpdate,
     ExportStart,
     ExportStatus,
+    HarvestAccount,
+    HarvestStatus,
     LibraryCheck,
     LibraryCheckRequest,
     MaintenanceActionOut,
@@ -54,6 +56,10 @@ from .models import (
     TrackCandidate,
 )
 from .navidrome_db import NavidromeDb, NdSong
+from .reco.harvest import YandexHarvester
+from .reco.library import LibraryIndex
+from .reco.store import RecoStore
+from .reco.yandex_account import YandexAccountApi
 from .sources.base import KIND_NAMES, DirectSource
 from .sources.export import YandexExport
 from .sources.placer import Placer
@@ -83,6 +89,9 @@ class Services:
     youtube: YouTubeSource | None = None
     export: YandexExport | None = None
     wanted: LidarrWantedSync | None = None
+    reco: RecoStore | None = None
+    library_index: LibraryIndex | None = None
+    harvester: YandexHarvester | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -176,6 +185,15 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     if lidarr is not None and settings.lidarr_wanted_sync:
         wanted = LidarrWantedSync(store, settings, lidarr, worker)
     export = YandexExport(store, settings, yandex, placer, worker, navidrome) if library_ready else None
+    reco = RecoStore(store)
+    pool_prefix = _remap(settings.discovery_path, settings.music_dir, settings.navidrome_music_dir)
+    library_index = LibraryIndex(navidrome_db, navidrome, pool_prefix)
+    harvester = None
+    if settings.harvest_enabled and settings.yandex_accounts:
+        delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
+        accounts = {u: YandexAccountApi(u, t, delay) for u, t in settings.yandex_accounts.items()}
+        harvester = YandexHarvester(store, reco, settings, accounts, library_index, placer if library_ready else None)
+        log.info("Архив Яндекса: аккаунты %s", ", ".join(accounts))
     return Services(
         settings=settings,
         store=store,
@@ -190,6 +208,9 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         youtube=youtube,
         export=export,
         wanted=wanted,
+        reco=reco,
+        library_index=library_index,
+        harvester=harvester,
     )
 
 
@@ -225,7 +246,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 tasks.append(asyncio.create_task(app.state.services.cleanup.run_forever()))
             if app.state.services.maintenance is not None:
                 tasks.append(asyncio.create_task(app.state.services.maintenance.run_forever()))
-            for extra in (app.state.services.wanted, app.state.services.export):
+            for extra in (app.state.services.wanted, app.state.services.export, app.state.services.harvester):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
             tasks.append(asyncio.create_task(sources_upkeep(app.state.services)))
@@ -605,6 +626,23 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def export_select(admin: Admin, svc: Svc, body: ExportArtistsUpdate) -> list[ExportArtistOut]:
         require_export(svc).select_artists(body.selected)
         return artists_out(svc)
+
+    # endregion
+
+    # region Архив Яндекса для рекомендаций (только администраторы)
+
+    @app.get("/api/v1/reco/harvest", response_model=HarvestStatus, response_model_by_alias=True)
+    async def harvest_status(admin: Admin, svc: Svc) -> HarvestStatus:
+        if svc.harvester is None:
+            return HarvestStatus(enabled=False, accounts=[])
+        return HarvestStatus(enabled=True, accounts=[HarvestAccount(**a) for a in svc.harvester.status()])
+
+    @app.post("/api/v1/reco/harvest/run", response_model=HarvestStatus, response_model_by_alias=True)
+    async def harvest_run(admin: Admin, svc: Svc) -> HarvestStatus:
+        if svc.harvester is None:
+            raise HTTPException(409, "Архив Яндекса не настроен: задайте YANDEX_ACCOUNTS")
+        svc.harvester.wake()
+        return HarvestStatus(enabled=True, accounts=[HarvestAccount(**a) for a in svc.harvester.status()])
 
     # endregion
 

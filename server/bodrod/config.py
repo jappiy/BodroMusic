@@ -183,6 +183,38 @@ class Settings:
     """Массовая выгрузка из Яндекса: пауза между треками (секунды) — низкий приоритет."""
     export_delay_s: float = 5.0
 
+    """Архив Яндекса для рекомендаций: пользователь Navidrome → токен его аккаунта Яндекс Музыки."""
+    yandex_accounts: dict[str, str] = field(default_factory=dict)
+    """Сырые ответы API: `<папка>/<пользователь>/<дата>/<тип>.json`. Пусто — `<DATA_DIR>/yandex-archive`."""
+    yandex_archive_dir: str | None = None
+    harvest_enabled: bool = True
+    """Пауза между запросами харвестера к одному аккаунту (секунды)."""
+    harvest_delay_s: float = 1.0
+    """Сколько раз в сутки сэмплировать «Мою волну» и сколько пачек за прогон."""
+    harvest_wave_runs_per_day: int = 3
+    harvest_wave_batches: int = 5
+    """Похожие артисты — для стольких любимых артистов пользователя."""
+    harvest_top_artists: int = 200
+    """Резерв: предзакачанные кандидаты (Navidrome не видит — `.ndignore`). Пусто — `<MUSIC_DIR>/_reserve`."""
+    reserve_dir: str | None = None
+    reserve_limit: int = 500
+    """Сколько треков в резерв за один проход харвестера (проход — раз в 10 минут)."""
+    reserve_batch: int = 20
+    """Discovery-пул (виден Navidrome). Пусто — `<MUSIC_DIR>/_discovery`."""
+    discovery_dir: str | None = None
+
+    @property
+    def archive_path(self) -> str:
+        return self.yandex_archive_dir or os.path.join(self.data_dir, "yandex-archive")
+
+    @property
+    def reserve_path(self) -> str:
+        return self.reserve_dir or os.path.join(self.music_dir, "_reserve")
+
+    @property
+    def discovery_path(self) -> str:
+        return self.discovery_dir or os.path.join(self.music_dir, "_discovery")
+
     @property
     def ytdlp_dir(self) -> str:
         return os.path.join(self.data_dir, "ytdlp")
@@ -294,4 +326,47 @@ class Settings:
             lidarr_wanted_retry_days=_int("LIDARR_WANTED_RETRY_DAYS", 7),
             lidarr_wanted_batch=_int("LIDARR_WANTED_BATCH", 20),
             export_delay_s=float(_opt("EXPORT_DELAY_S") or 5.0),
+            yandex_accounts=yandex_accounts(),
+            yandex_archive_dir=_opt("YANDEX_ARCHIVE_DIR"),
+            harvest_enabled=_bool("HARVEST_ENABLED", True),
+            harvest_delay_s=float(_opt("HARVEST_DELAY_S") or 1.0),
+            harvest_wave_runs_per_day=max(1, _int("HARVEST_WAVE_RUNS_PER_DAY", 3)),
+            harvest_wave_batches=max(1, _int("HARVEST_WAVE_BATCHES", 5)),
+            harvest_top_artists=_int("HARVEST_TOP_ARTISTS", 200),
+            reserve_dir=_opt("RESERVE_DIR"),
+            reserve_limit=_int("RESERVE_LIMIT", 500),
+            reserve_batch=_int("RESERVE_BATCH", 20),
+            discovery_dir=_opt("DISCOVERY_DIR"),
         )
+
+
+YANDEX_ACCOUNTS_DIR = os.path.join(SECRETS_DIR, "yandex_accounts")
+
+
+def yandex_accounts(accounts_dir: str = YANDEX_ACCOUNTS_DIR) -> dict[str, str]:
+    """Токены аккаунтов Яндекса для архива рекомендаций.
+
+    `YANDEX_ACCOUNTS=nikolai:/secrets/ya_nikolai,olga:/secrets/ya_olga` (пользователь Navidrome : файл с токеном)
+    или просто файлы `/secrets/yandex_accounts/<пользователь Navidrome>` с токеном внутри.
+    """
+    pairs: dict[str, str] = {}
+    raw = _opt("YANDEX_ACCOUNTS")
+    for part in (raw or "").split(","):
+        user, _, path = part.strip().partition(":")
+        if user and path:
+            pairs[user.strip()] = path.strip()
+    if not pairs and os.path.isdir(accounts_dir):
+        for name in sorted(os.listdir(accounts_dir)):
+            path = os.path.join(accounts_dir, name)
+            if os.path.isfile(path) and not name.startswith("."):
+                pairs[name] = path
+    result: dict[str, str] = {}
+    for user, path in pairs.items():
+        with open(path, encoding="utf-8") as f:
+            content = f.read().strip()
+        token = _COMMENT.sub("", content.splitlines()[0]).strip().strip("\"'") if content else ""
+        if not token.isascii():
+            raise RuntimeError(f"Токен Яндекса для {user}: не-ASCII символы — проверьте файл {path}")
+        if token:
+            result[user] = token
+    return result

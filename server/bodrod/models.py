@@ -316,3 +316,32 @@ class ExportArtistsUpdate(ApiModel):
     """id артистов, которых брать целиком (остальные — снять отметку)."""
 
     selected: list[str] = Field(max_length=5000)
+
+
+class HarvestCollector(ApiModel):
+    name: str
+    title: str
+    last_at: int | None = None
+    """Отключён после ошибки доступа (причина); через 7 дней — новая попытка."""
+    disabled: str | None = None
+    count: int | None = None
+
+
+class HarvestAccount(ApiModel):
+    """Архив Яндекса по аккаунту: что собрано и когда."""
+
+    username: str
+    plus: bool | None = None
+    running: str | None = None
+    collectors: list[HarvestCollector] = []
+    likes: dict[str, int] = {}
+    edges: dict[str, int] = {}
+    reserve: int = 0
+    blocked: int = 0
+    similar_done: int = 0
+    error: str | None = None
+
+
+class HarvestStatus(ApiModel):
+    enabled: bool
+    accounts: list[HarvestAccount] = []

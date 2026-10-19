@@ -48,3 +48,6 @@ services:
       # Last.fm — дополнительный канал для тегов, обложек и поиска; ключ — файлом /secrets/lastfm_api_key.
       # LASTFM_API_KEY_FILE: /secrets/lastfm_api_key
       # DISCOVER_PROVIDERS: yandex,deezer,lastfm
+      # Архив Яндекса для рекомендаций: токены аккаунтов файлами /secrets/yandex_accounts/<пользователь Navidrome>
+      # (или явно: YANDEX_ACCOUNTS: nikolai:/secrets/ya_nikolai,olga:/secrets/ya_olga). Архив — на большой диск:
+      # YANDEX_ARCHIVE_DIR: /archive

@@ -71,8 +71,11 @@ class Placer:
         log.info("Перетегировано по Яндексу: %s — %s", new_tags.artist, new_tags.title)
         return new_tags, meta.cover_url or cover_url, True
 
-    async def place(self, file: FetchedFile, source: str, request_id: str | None) -> Path:
-        library = self._settings.library_dir
+    async def place(
+        self, file: FetchedFile, source: str, request_id: str | None, root: str | Path | None = None
+    ) -> Path:
+        """Положить в библиотеку (или в `root`: резерв, discovery-пул) по шаблону `LIBRARY_LAYOUT`."""
+        library = root or self._settings.library_dir
         assert library is not None
         tags, cover_url = file.tags, file.cover_url
         if source != "yandex":
