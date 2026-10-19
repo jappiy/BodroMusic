@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-19 (задание 008). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-20 (задания 009–013, ТЗ рекомендаций и чартов). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,15 +64,22 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.14.0** (`versionCode 15`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.7.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.14.0
-  (`BodroMusic-0.14.0.apk` — release с R8; `BodroMusic-0.14.0-debug.apk` — debug, ставится рядом).
+- Текущая версия приложения: **0.18.0** (`versionCode 19`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.12.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+  Воркер анализа звучания: **0.1.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer`).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.18.0
+  (`BodroMusic-0.18.0.apk` — release с R8; `BodroMusic-0.18.0-debug.apk` — debug, ставится рядом).
+- ТЗ рекомендательной системы и чартов (пять задач): [`docs/reco/`](reco/README.md).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
 
-**Задание 008** (0.14.0 / bodrod 0.7.0 — цепочка источников загрузки: Яндекс Музыка, slskd, YouTube Music, Lidarr;
+**Задания 009–013** (ТЗ [`docs/reco/`](reco/README.md)): 009 — архив Яндекс Музыки (bodrod 0.8.0);
+010 — пул «На пробу» и обратная связь (0.15.0 / 0.9.0); 011 — движок кандидатов (0.16.0 / 0.10.0); 012 — чарты
+(0.17.0 / 0.11.0); 013 — анализ звучания (0.18.0 / 0.12.0, воркер `analyzer/`). Релизы v0.15.0–v0.18.0. Всё покрыто
+тестами на подделках; с настоящими API (Яндекс, Last.fm, Deezer, ListenBrainz, Apple, Essentia) не проверялось.
+
+Ранее — **задание 008** (0.14.0 / bodrod 0.7.0 — цепочка источников загрузки: Яндекс Музыка, slskd, YouTube Music, Lidarr;
 экран «Источники загрузки»; выгрузка из Яндекса): **CI зелёный** на `9fc4188`, образ bodrod `9fc4188`, релиз https://github.com/jappiy/BodroMusic/releases/tag/v0.14.0. Подробности —
 [`docs/history/008-download-sources-chain.md`](history/008-download-sources-chain.md).
 Предыдущее состояние: CI зелёный на `a9eab7f` (0.13.1 — постоянный ключ подписи; 0.13.0 / bodrod 0.6.0 — Last.fm,
@@ -96,8 +103,11 @@
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **144** — `core:subsonic` 53, `core:domain` 61, `core:downloads` 11, `app` 19 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
-- Сервер (`server/tests`, pytest): **113** (в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
+- Unit: **155** — `core:subsonic` 53, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 11,
+  `app` 21 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Воркер анализа (`analyzer/tests`): 2 — цикл воркера без Essentia.
+- Сервер (`server/tests`, pytest): **147** (рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+  `test_charts.py`, `test_analysis.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
 - Инструментальные: **9** — 8 проходят, 1 пропускается (`RealServerSmokeTest`, нет данных тестовой учётки).
@@ -144,6 +154,15 @@
   Lidarr; порядок, переключатели и «Яндекс: метаданные» — в БД bodrod, меняются на экране «Источники загрузки»
   (`ui/screens/settings/SourcesScreen.kt`, только админы). У заявки — история попыток и итоговый источник
   («Яндекс Музыка, FLAC»), видны в списке заявок. «Метки» Lidarr (wanted) и массовая выгрузка из Яндекса — тоже там.
+- **Рекомендации** (bodrod 0.8.0–0.12.0, `server/bodrod/reco/`): `harvest.py` — архив Яндекса по аккаунтам
+  пользователей (`YANDEX_ACCOUNTS`), рёбра «семя → кандидат», предзакачка в `_reserve`; `pool.py` — пул «На пробу»
+  в `_discovery` (promote / reject / expire по событиям `POST /api/v1/feedback` и отметкам Navidrome, перенос в
+  библиотеку); `engine.py` — движок кандидатов (Last.fm, Deezer, ListenBrainz, архив Яндекса), заявки `pool:<user>`
+  идут в обычную цепочку и кладутся в `_discovery`; `charts.py` — чарты (топ-30 → пул владельца `charts`);
+  `analysis.py` — признаки от воркера `analyzer/`, кластеры вкуса, фильтр пула, похожие по звуку. Регламент
+  обслуживания `_discovery` и `_reserve` не трогает. Приложение: `data/reco/` (`PoolRepository` — события в Room
+  `pending_feedback` (БД версии 2) и скрытие пула из библиотеки, `ChartsRepository`, `SoundRepository`), экраны
+  «На пробу», «Рекомендации» (админ), чарт, «Чарты на главной»; волна — характер (доля пула) и настроение.
 - Last.fm (bodrod 0.6.0, `metadata/lastfm.py`) — дополнительный канал, последний в цепочках тегов, обложек и поиска
   (`TAG_PROVIDERS`, `COVER_PROVIDERS`, `DISCOVER_PROVIDERS`); нужен `LASTFM_API_KEY`. После 3 сбоев подряд 5 минут
   не опрашивается. Скробблинг в Last.fm — средствами Navidrome (`ND_LASTFM_*`), см. задание 007.
@@ -221,7 +240,11 @@ Smoke-тест против реального Navidrome: скопировать
 0. Обновить проект `bodrod` на сервере до 0.5.0: пароль Navidrome — в `/secrets/navidrome_password`, убрать его из YAML,
    два пробных прогона регламента подряд (счётчики должны совпасть) — раздел «Что нужно сделать на сервере» в
    [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md). `MAINTENANCE_DRY_RUN=false` владелец включает сам.
-1. На сервере: образ bodrod 0.7.0, токен `/secrets/yandex_music_token` (аккаунт с Плюсом; подписка до 20 ноября —
+1. **До 20 ноября** — архив Яндекса: токены обоих аккаунтов в `/secrets/yandex_accounts/<пользователь Navidrome>`,
+   архив на volume2 (`YANDEX_ARCHIVE_DIR`), образ bodrod 0.12.0 — раздел «Что нужно сделать на сервере» в
+   [`docs/history/009-yandex-archive.md`](history/009-yandex-archive.md); затем — шаги из 010–013 (ListenBrainz,
+   токен и контейнер анализатора). Проверить на телефоне «На пробу», чарты, «Рекомендации», настроение волны.
+1а. На сервере: образ bodrod 0.7.0, токен `/secrets/yandex_music_token` (аккаунт с Плюсом; подписка до 20 ноября —
    **выгрузку из Яндекса запустить до этой даты**), по желанию `YOUTUBE_PROXY` — раздел «Что нужно сделать на
    сервере» в [`docs/history/008-download-sources-chain.md`](history/008-download-sources-chain.md). Там же — что
    проверить (скачивание FLAC, `.opus` с ffmpeg, «метки» Lidarr). Ключ Last.fm — по заданию 007.
@@ -268,6 +291,11 @@ Smoke-тест против реального Navidrome: скопировать
 | 005 | 2026-10-16 | Регламент обслуживания библиотеки, популярное исполнителя из Яндекса, быстрый старт воспроизведения, мелкие правки | app 0.11.0, bodrod 0.4.0 | [005-maintenance-artist-playback.md](history/005-maintenance-artist-playback.md) |
 | 006 | 2026-10-17 | Исправления обслуживания библиотеки и заявок по разбору `bodrod.sqlite3`: пробный режим, дубли, короткие, альбомы, чужие релизы, источники обложек, очередь Soulseek, секреты | app 0.12.0, bodrod 0.5.0 | [006-maintenance-fixes.md](history/006-maintenance-fixes.md) |
 | 007 | 2026-10-19 | Last.fm — дополнительный канал тегов, обложек, глобального поиска и популярного исполнителя; ответ про скробблинг | app 0.13.0, bodrod 0.6.0 | [007-lastfm-channel.md](history/007-lastfm-channel.md) |
+| 009 | 2026-10-20 | Архив Яндекс Музыки для рекомендаций (два аккаунта, рёбра, предзакачка в резерв) | bodrod 0.8.0 | [009-yandex-archive.md](history/009-yandex-archive.md) |
+| 010 | 2026-10-20 | Discovery-пул «На пробу», события обратной связи, характер волны | app 0.15.0, bodrod 0.9.0 | [010-discovery-pool.md](history/010-discovery-pool.md) |
+| 011 | 2026-10-20 | Движок кандидатов, экран «Рекомендации» | app 0.16.0, bodrod 0.10.0 | [011-candidate-engine.md](history/011-candidate-engine.md) |
+| 012 | 2026-10-20 | Чарты на главной | app 0.17.0, bodrod 0.11.0 | [012-charts.md](history/012-charts.md) |
+| 013 | 2026-10-20 | Анализ звучания: воркер Essentia, настроение волны, похожие по звучанию | app 0.18.0, bodrod 0.12.0 | [013-audio-analysis.md](history/013-audio-analysis.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)
