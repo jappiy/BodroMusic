@@ -497,6 +497,8 @@ class AnalysisResult(ApiModel):
     """bpm, key, scale, loudness, danceability, voice, moods {happy, sad, aggressive, relaxed}, genres [[метка, p]]."""
     features: dict[str, Any] | None = None
     embedding: list[float] | None = Field(default=None, max_length=4096)
+    status: Literal["ok", "failed"] | None = None
+    """`failed` — трек не обработан (текст в `error`); такие треки в очередь больше не попадают."""
     error: str | None = None
 
 

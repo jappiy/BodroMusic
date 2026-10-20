@@ -86,6 +86,11 @@ def test_queue_pool_first_then_library_and_leases(tmp_path: Path) -> None:
     assert asyncio.run(service.next_jobs(5)) == ["lib/b.flac"]
     service.save("lib/a.flac", {"bpm": 120}, vector(0), None)
     assert service.status()["analyzed"] == 1
+    # Упавший трек (failed) не выдаётся снова и после истечения аренды.
+    service.save("lib/b.flac", None, None, "ValueError: не аудио")
+    service._clock = lambda: 10**15
+    assert asyncio.run(service.next_jobs(5)) == ["_discovery/P/q.flac"]
+    assert service.status()["errors"] == 1
 
 
 def test_similar_and_taste_filter(tmp_path: Path) -> None:
@@ -123,3 +128,9 @@ def test_worker_api_requires_token(tmp_path: Path) -> None:
         ok = client.post("/api/v1/analysis/result", json=body, headers={"X-Analyzer-Token": "secret"})
         assert ok.status_code == 204
         assert service.status()["analyzed"] == 1
+        failed = {"path": "lib/b.flac", "status": "failed"}
+        assert (
+            client.post("/api/v1/analysis/result", json=failed, headers={"X-Analyzer-Token": "secret"}).status_code
+            == 204
+        )
+        assert service.status()["errors"] == 1

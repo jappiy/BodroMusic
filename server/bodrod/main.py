@@ -809,7 +809,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def analysis_result(
         svc: Svc, body: AnalysisResult, x_analyzer_token: Annotated[str | None, Header()] = None
     ) -> Response:
-        analyzer(svc, x_analyzer_token).save(body.path, body.features, body.embedding, body.error)
+        error = body.error or ("Ошибка анализа" if body.status == "failed" else None)
+        analyzer(svc, x_analyzer_token).save(body.path, body.features, body.embedding, error)
         return Response(status_code=204)
 
     @app.get("/api/v1/analysis", response_model=AnalysisStatus, response_model_by_alias=True)

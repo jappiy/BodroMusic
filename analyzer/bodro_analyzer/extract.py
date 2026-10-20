@@ -35,7 +35,11 @@ class EssentiaExtractor:
     """Загружает модели один раз; `analyze(path)` — признаки одного файла."""
 
     def __init__(self, models_dir: str) -> None:
-        import essentia.standard as es  # noqa: PLC0415 — тяжёлый импорт только в контейнере
+        import essentia  # noqa: PLC0415 — тяжёлый импорт только в контейнере
+
+        essentia.log.infoActive = False  # без спама предупреждений на каждый файл
+        essentia.log.warningActive = False
+        import essentia.standard as es  # noqa: PLC0415
 
         self._es = es
         self._models_dir = models_dir

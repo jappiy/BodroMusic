@@ -29,7 +29,6 @@ from ..cleanup import _remap
 from ..config import Settings
 from ..db import Store
 from ..navidrome_db import NavidromeDb
-from .store import DAY_MS
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +43,6 @@ CREATE TABLE IF NOT EXISTS audio_features (
 """
 
 LEASE_MS = 30 * 60 * 1000
-RETRY_ERROR_MS = 7 * DAY_MS
 INDEX_REFRESH_S = 600
 MIN_LIKED_FOR_PROFILE = 10
 MOODS = ("happy", "sad", "aggressive", "relaxed")
@@ -162,12 +160,15 @@ class AnalysisService:
 
     # region Очередь для воркера
 
-    def _known(self) -> dict[str, dict[str, Any]]:
-        rows = self._store.query("SELECT path, error, analyzed_at FROM audio_features")
-        return {r["path"]: r for r in rows}
+    def _known(self) -> set[str]:
+        """Пути с результатом — признаками или ошибкой."""
+        return {r["path"] for r in self._store.query("SELECT path FROM audio_features")}
 
     async def next_jobs(self, limit: int) -> list[str]:
-        """Пути для анализа: сначала пул и резерв (новые), потом библиотека. Выданное держится 30 минут."""
+        """Пути для анализа: сначала пул и резерв (новые), потом библиотека. Выданное держится 30 минут.
+
+        Треки с ошибкой (статус `failed`) повторно не выдаются, чтобы воркер не зацикливался на битых файлах.
+        """
         now = self._clock()
         self._leases = {p: t for p, t in self._leases.items() if now - t < LEASE_MS}
         known = self._known()
@@ -175,8 +176,7 @@ class AnalysisService:
         def wanted(rel: str | None) -> bool:
             if not rel or rel in self._leases:
                 return False
-            row = known.get(rel)
-            return row is None or (row["error"] is not None and now - int(row["analyzed_at"]) > RETRY_ERROR_MS)
+            return rel not in known
 
         jobs: list[str] = []
         pool = self._store.query(
