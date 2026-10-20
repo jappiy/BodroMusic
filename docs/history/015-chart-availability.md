@@ -3,7 +3,7 @@
 - **Дата:** 2026-10-20
 - **Версии:** приложение 0.19.0 (`versionCode 20`), bodrod 0.13.0 — общий релиз с заданием 014
 - **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.19.0
-- **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:<хеш коммита 0.19.0>` (см. раздел 1 HANDOFF)
+- **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:d25e9bf` (CI зелёный на `d25e9bf`)
 - **Статус:** реализовано; pytest на подделках; на реальном сервере не проверено
 
 ## Задание
