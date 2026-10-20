@@ -125,8 +125,7 @@ environment:
   PYTHONUTF8: "1"
   NAVIDROME_URL: http://navidrome:4533
   NAVIDROME_ADMIN_USER: bodrod                 # отдельный админ Navidrome
-  # пароль — должен читаться из файла /secrets/navidrome_password (600, владелец 1027); на 2026-10-20
-  #   в YAML ещё стоит NAVIDROME_ADMIN_PASSWORD, а переменная важнее файла — см. раздел 7
+  # пароль — только файлом /secrets/navidrome_password (600, владелец 1027), в YAML его нет (с 2026-10-20)
   LIDARR_URL: http://lidarr:8686
   SLSKD_URL: http://slskd:5030
   SLSKD_DOWNLOADS_DIR: /music/slsk
@@ -275,10 +274,8 @@ bodrod 0.5.0 (исправления регламента и заявок, па�
 - Ключ slskd: `/volume1/docker/slskd/slskd.yml` → `web.authentication.api_keys.worker.key`.
 - Для bodrod оба ключа копируются в `/volume1/docker/bodrod/secrets/env` (600, владелец 1027) при каждом старте проекта.
 - Пароль служебного админа Navidrome `bodrod`: с bodrod 0.5.0 читается из `/volume1/docker/bodrod/secrets/navidrome_password`
-  (600, владелец 1027) — смонтирован как `/secrets/navidrome_password`. На 2026-10-20 образ уже
-  `da1984a` (0.12.0), но в YAML проекта `bodrod` всё ещё стоит `NAVIDROME_ADMIN_PASSWORD` открытым текстом; пока
-  переменная задана, файл не читается. Нужно записать пароль в файл и удалить строку из YAML;
-  пароль владелец решил не менять (2026-10-20).
+  (600, владелец 1027) — смонтирован как `/secrets/navidrome_password`. С 2026-10-20 строки
+  `NAVIDROME_ADMIN_PASSWORD` в YAML проекта `bodrod` нет. Пароль при переносе не менялся (решение владельца).
 - Пароли Navidrome для `liked2lidarr` — в его compose (`NAVIDROME_PASSWORD_1/2`).
 - Не выводить содержимое этих файлов в логи и ответы.
 
@@ -298,7 +295,5 @@ bodrod 0.5.0 (исправления регламента и заявок, па�
 5. **AudioMuse-AI:** агент прописан в Navidrome, но плагина и сервера нет. Либо установить, либо убрать из `ND_AGENTS`.
 6. **Отдельная «волна» для жены:** сейчас разделение есть на уровне учёток Navidrome и двух экземпляров Explo;
    проверить, что «Моя волна» в приложении считается по учётке, а не по общей библиотеке.
-7. **Пароль `bodrod` в YAML:** образ уже 0.12.0, осталось записать пароль в `secrets/navidrome_password`
-   и удалить `NAVIDROME_ADMIN_PASSWORD` из YAML (раздел 7, задание 006). Пароль не меняется — решение владельца.
-8. **Внешний доступ:** через встроенный reverse proxy DSM с Let's Encrypt на DDNS. Порты 4533 и 8790 на роутере не открывать.
-9. **Порт 50300 на Keenetic** для slskd: проверить проброс, без него меньше пиров и хуже поиск.
+7. **Внешний доступ:** через встроенный reverse proxy DSM с Let's Encrypt на DDNS. Порты 4533 и 8790 на роутере не открывать.
+8. **Порт 50300 на Keenetic** для slskd: проверить проброс, без него меньше пиров и хуже поиск.
