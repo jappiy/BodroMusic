@@ -110,7 +110,7 @@ slskd сохраняет готовый файл в `/downloads/<имя роди
 | Контейнер | Образ | Роль |
 | --- | --- | --- |
 | `bodrod-secrets` | `alpine:3.20` | Одноразовый при каждом старте: достаёт `ApiKey` из `lidarr/config.xml` и ключ slskd из `slskd.yml`, пишет `/volume1/docker/bodrod/secrets/env` (`chmod 600`), делает `chown -R 1027:100` для `env` и `data` |
-| `bodrod` | `ghcr.io/jappiy/bodromusic-server:<тег>` (обновлён владельцем 2026-10-20, не ниже 0.5.0; точный тег уточнить по YAML проекта), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки»; с 0.7.0 — цепочка источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr, выгрузка из Яндекса; в образе ffmpeg |
+| `bodrod` | `ghcr.io/jappiy/bodromusic-server:da1984a` (0.12.0, с 2026-10-20), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки»; с 0.7.0 — цепочка источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr, выгрузка из Яндекса; в образе ffmpeg |
 
 Ключевые настройки `bodrod`:
 ```yaml
@@ -125,7 +125,8 @@ environment:
   PYTHONUTF8: "1"
   NAVIDROME_URL: http://navidrome:4533
   NAVIDROME_ADMIN_USER: bodrod                 # отдельный админ Navidrome
-  # пароль — с 0.5.0 только файлом /secrets/navidrome_password (600, владелец 1027), в YAML его нет
+  # пароль — должен читаться из файла /secrets/navidrome_password (600, владелец 1027); на 2026-10-20
+  #   в YAML ещё стоит NAVIDROME_ADMIN_PASSWORD, а переменная важнее файла — см. раздел 7
   LIDARR_URL: http://lidarr:8686
   SLSKD_URL: http://slskd:5030
   SLSKD_DOWNLOADS_DIR: /music/slsk
@@ -274,8 +275,9 @@ bodrod 0.5.0 (исправления регламента и заявок, па�
 - Ключ slskd: `/volume1/docker/slskd/slskd.yml` → `web.authentication.api_keys.worker.key`.
 - Для bodrod оба ключа копируются в `/volume1/docker/bodrod/secrets/env` (600, владелец 1027) при каждом старте проекта.
 - Пароль служебного админа Navidrome `bodrod`: с bodrod 0.5.0 читается из `/volume1/docker/bodrod/secrets/navidrome_password`
-  (600, владелец 1027) — смонтирован как `/secrets/navidrome_password`. С 2026-10-20 строки `NAVIDROME_ADMIN_PASSWORD`
-  в YAML проекта `bodrod` нет, пароль после переноса сменён.
+  (600, владелец 1027) — смонтирован как `/secrets/navidrome_password`. На 2026-10-20 образ уже
+  `da1984a` (0.12.0), но в YAML проекта `bodrod` всё ещё стоит `NAVIDROME_ADMIN_PASSWORD` открытым текстом; пока
+  переменная задана, файл не читается. Нужно удалить строку из YAML, сменить пароль и записать новый в файл.
 - Пароли Navidrome для `liked2lidarr` — в его compose (`NAVIDROME_PASSWORD_1/2`).
 - Не выводить содержимое этих файлов в логи и ответы.
 
@@ -295,5 +297,7 @@ bodrod 0.5.0 (исправления регламента и заявок, па�
 5. **AudioMuse-AI:** агент прописан в Navidrome, но плагина и сервера нет. Либо установить, либо убрать из `ND_AGENTS`.
 6. **Отдельная «волна» для жены:** сейчас разделение есть на уровне учёток Navidrome и двух экземпляров Explo;
    проверить, что «Моя волна» в приложении считается по учётке, а не по общей библиотеке.
-7. **Внешний доступ:** через встроенный reverse proxy DSM с Let's Encrypt на DDNS. Порты 4533 и 8790 на роутере не открывать.
-8. **Порт 50300 на Keenetic** для slskd: проверить проброс, без него меньше пиров и хуже поиск.
+7. **Пароль `bodrod` в YAML:** образ уже 0.12.0, осталось удалить `NAVIDROME_ADMIN_PASSWORD` из YAML, сменить пароль
+   и записать новый в `secrets/navidrome_password` (раздел 7, задание 006).
+8. **Внешний доступ:** через встроенный reverse proxy DSM с Let's Encrypt на DDNS. Порты 4533 и 8790 на роутере не открывать.
+9. **Порт 50300 на Keenetic** для slskd: проверить проброс, без него меньше пиров и хуже поиск.
