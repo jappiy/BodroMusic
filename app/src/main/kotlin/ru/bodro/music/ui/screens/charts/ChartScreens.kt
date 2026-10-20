@@ -19,12 +19,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.FiberNew
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -46,11 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -121,31 +126,76 @@ class ChartViewModel @Inject constructor(savedState: SavedStateHandle, private v
     private val _state = MutableStateFlow(ChartUi())
     val state: StateFlow<ChartUi> = _state.asStateFlow()
 
+    private var loadJob: Job? = null
+    private var pollJob: Job? = null
+
     init {
         load()
     }
 
+    /**
+     * Позиции с доступностью, посчитанной сервером сейчас (без кэша): при открытии, при возврате на экран и,
+     * пока что-то качается, раз в [POLL_MS].
+     */
     fun load() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(loading = it.entries.isEmpty(), error = null) }
             runCatching { charts.entries(route.id) }
                 .onSuccess { entries ->
                     _state.update { it.copy(loading = false, entries = entries) }
-                    val songs = charts.songs(entries)
-                    _state.update { it.copy(songs = songs) }
+                    val known = _state.value.songs
+                    val fresh = charts.songs(entries.filter { e -> e.songId != null && e.songId !in known })
+                    _state.update { it.copy(songs = known + fresh) }
+                    schedulePoll(entries)
                 }
-                .onFailure { e -> _state.update { it.copy(loading = false, error = e.toUiError()) } }
+                .onFailure { e ->
+                    // Фоновое обновление не прячет уже показанный чарт за ошибкой.
+                    _state.update {
+                        if (it.entries.isEmpty()) it.copy(loading = false, error = e.toUiError()) else it.copy(loading = false)
+                    }
+                }
+        }
+    }
+
+    fun onResume() {
+        if (_state.value.entries.isNotEmpty()) load()
+    }
+
+    fun onPause() {
+        pollJob?.cancel()
+    }
+
+    private fun schedulePoll(entries: List<ChartEntry>) {
+        pollJob?.cancel()
+        if (entries.none { it.isPending || it.isReady }) return
+        pollJob = viewModelScope.launch {
+            delay(POLL_MS)
+            load()
         }
     }
 
     fun download(entry: ChartEntry) {
         viewModelScope.launch {
-            runCatching { charts.download(entry) }.onSuccess {
+            runCatching { charts.download(route.id, entry) }.onSuccess { request ->
                 _state.update { s ->
-                    s.copy(entries = s.entries.map { if (it.position == entry.position) it.copy(state = "downloading") else it })
+                    s.copy(
+                        entries = s.entries.map {
+                            if (it.position == entry.position) {
+                                it.copy(state = "queued", requestId = request.id, requestStatus = "queued")
+                            } else {
+                                it
+                            }
+                        },
+                    )
                 }
+                schedulePoll(_state.value.entries)
             }
         }
+    }
+
+    private companion object {
+        const val POLL_MS = 10_000L
     }
 }
 
@@ -155,6 +205,10 @@ fun ChartScreen(onBack: () -> Unit, viewModel: ChartViewModel = hiltViewModel())
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
     val source = QueueSource.CustomSource(viewModel.title)
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onResume()
+        onPauseOrDispose { viewModel.onPause() }
+    }
     Scaffold(topBar = { BodroTopBar(viewModel.title, onBack) }) { padding ->
         val error = state.error
         when {
@@ -203,7 +257,7 @@ fun ChartScreen(onBack: () -> Unit, viewModel: ChartViewModel = hiltViewModel())
 
 @Composable
 private fun ChartRow(entry: ChartEntry, onPlay: () -> Unit, onDownload: () -> Unit) {
-    val unavailable = entry.state == "unavailable"
+    val unavailable = entry.state == "unavailable" && !entry.isReady
     Row(
         Modifier
             .fillMaxWidth()
@@ -234,10 +288,18 @@ private fun ChartRow(entry: ChartEntry, onPlay: () -> Unit, onDownload: () -> Un
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        when (entry.state) {
-            "downloading" -> Icon(Icons.Rounded.Downloading, contentDescription = stringResource(R.string.chart_state_downloading))
-            "unavailable" -> Icon(Icons.Rounded.CloudDownload, contentDescription = stringResource(R.string.chart_download))
-            "pool" -> Text(
+        when {
+            entry.state == "queued" ->
+                Icon(Icons.Rounded.Schedule, contentDescription = stringResource(R.string.chart_state_queued))
+            entry.state == "downloading" ->
+                Icon(Icons.Rounded.Downloading, contentDescription = stringResource(R.string.chart_state_downloading))
+            entry.isReady -> Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = stringResource(R.string.chart_state_ready),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            entry.state == "unavailable" -> Icon(Icons.Rounded.CloudDownload, contentDescription = stringResource(R.string.chart_download))
+            entry.state == "pool" -> Text(
                 stringResource(R.string.player_new_badge),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,

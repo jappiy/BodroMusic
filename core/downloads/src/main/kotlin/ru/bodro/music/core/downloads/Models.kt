@@ -162,6 +162,9 @@ data class DownloadSource(
     val kinds: List<String> = emptyList(),
     /** Версия yt-dlp, когда проверялась подписка и т. п. */
     val details: String? = null,
+    /** Яндекс (bodrod 0.13.0+): чей токен — `user` (ваш) или `global` (общий) и то же текстом. */
+    val tokenSource: String? = null,
+    val tokenSourceTitle: String? = null,
 )
 
 /** Цепочка источников по порядку и «Яндекс: метаданные». */
@@ -361,7 +364,8 @@ data class Chart(
 
 /**
  * Позиция чарта. [movement]: up / down / same / new. [state]: library и pool — можно слушать ([songId]);
- * downloading — качается; unavailable — нет на сервере.
+ * queued — в очереди; downloading — качается; unavailable — нет на сервере.
+ * [requestStatus] (bodrod 0.13.0+) — статус заявки bodrod на этот трек: queued, downloading, completed, failed…
  */
 @Serializable
 data class ChartEntry(
@@ -375,8 +379,16 @@ data class ChartEntry(
     val movement: String = "same",
     val state: String = "unavailable",
     val songId: String? = null,
+    val requestId: String? = null,
+    val requestStatus: String? = null,
 ) {
     val isPlayable: Boolean get() = songId != null && (state == "library" || state == "pool")
+
+    /** Скачивание идёт (в очереди или качается) — экран чарта обновляет доступность сам. */
+    val isPending: Boolean get() = state == "queued" || state == "downloading"
+
+    /** Скачано, но Navidrome ещё не нашёл трек (ждём скана). */
+    val isReady: Boolean get() = !isPlayable && !isPending && requestStatus == "completed"
 }
 
 /** Источник движка рекомендаций: [weight] — ручной (0..3), [learnedWeight] — выученный по доле promote. */
@@ -493,6 +505,9 @@ internal data class CreateRequestBody(
     val album: String? = null,
     val durationMs: Long? = null,
     val coverUrl: String? = null,
+    /** Трек качается из позиции чарта — сервер привяжет позицию к скачанному файлу. */
+    val chartId: String? = null,
+    val chartPosition: Int? = null,
 )
 
 /** Ключ для сопоставления трека из каталога с заявкой. */

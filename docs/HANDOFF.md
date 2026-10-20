@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-20 (задания 009–013, ТЗ рекомендаций и чартов). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-20 (задания 014–015: токены Яндекса по пользователям, доступность треков в чартах). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,15 +64,21 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.18.0** (`versionCode 19`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.12.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Текущая версия приложения: **0.19.0** (`versionCode 20`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.13.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
   Воркер анализа звучания: **0.1.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.18.0
-  (`BodroMusic-0.18.0.apk` — release с R8; `BodroMusic-0.18.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.19.0
+  (`BodroMusic-0.19.0.apk` — release с R8; `BodroMusic-0.19.0-debug.apk` — debug, ставится рядом).
 - ТЗ рекомендательной системы и чартов (пять задач): [`docs/reco/`](reco/README.md).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
+
+**Задания 014–015** (app 0.19.0 / bodrod 0.13.0, один релиз v0.19.0): 014 — токен Яндекса берётся у пользователя,
+от имени которого запрос (иначе общий `YANDEX_MUSIC_TOKEN`), статус «Источники загрузки» — по токену смотрящего,
+«не задан» ≠ «недействителен»; 015 — доступность треков в чартах: прямая привязка позиции к скачанному файлу,
+пересчёт при каждой отдаче чарта, нормализация без диакритики и с любым исполнителем из списка, ISRC.
+Покрыто pytest на подделках, на сервере не проверено.
 
 **Задания 009–013** (ТЗ [`docs/reco/`](reco/README.md)): 009 — архив Яндекс Музыки (bodrod 0.8.0);
 010 — пул «На пробу» и обратная связь (0.15.0 / 0.9.0); 011 — движок кандидатов (0.16.0 / 0.10.0); 012 — чарты
@@ -103,11 +109,11 @@
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **155** — `core:subsonic` 53, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 11,
+- Unit: **156** — `core:subsonic` 53, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
   `app` 21 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 2 — цикл воркера без Essentia.
-- Сервер (`server/tests`, pytest): **147** (рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
-  `test_charts.py`, `test_analysis.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
+- Сервер (`server/tests`, pytest): **158** (рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+  `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
 - Инструментальные: **9** — 8 проходят, 1 пропускается (`RealServerSmokeTest`, нет данных тестовой учётки).
@@ -150,6 +156,15 @@
 - Повторное нажатие на выбранную вкладку — возврат к корню раздела (`BodroRoot.onTabClick`).
 - «Популярные треки» на экране исполнителя — из Яндекс Музыки через bodrod (`/api/v1/artists/popular`): скачанные
   и нескачанные (с загрузкой). Без bodrod — своя история + `getTopSongs`.
+- **Токены Яндекса** (bodrod 0.13.0, `server/bodrod/sources/yandex_tokens.py`, `YandexTokens.resolve`): токен
+  пользователя (`/secrets/yandex_accounts/<пользователь>`) → общий `YANDEX_MUSIC_TOKEN`. Заявка качается токеном того,
+  кто её поставил (`pool:<user>` → владелец пула), фоновые (чарты, «метки» Lidarr) — общим, выгрузка — токеном
+  запустившего; архив рекомендаций — только своим (`fallback=False`). Каждый токен проверяется запросом к API
+  (кэш на `YANDEX_CHECK_INTERVAL_S`); статус источника — для того, кто смотрит, с `tokenSource`.
+- **Доступность в чартах** (bodrod 0.13.0, `reco/charts.py`): при каждой отдаче чарта — привязка `chart_links`
+  (id трека в источнике чарта → заявка → путь файла → песня Navidrome по пути), затем ключ `reco/keys.py`
+  (без диакритики, любой исполнитель из списка), затем ISRC. Заявка из чарта несёт `chartId`/`chartPosition`;
+  воркер находит скачанный трек по пути файла (`LibraryIndex.song_by_path`), а не только поиском по строкам.
 - **Цепочка источников загрузки** (bodrod 0.7.0, `server/bodrod/sources/`): Яндекс Музыка → slskd → YouTube Music →
   Lidarr; порядок, переключатели и «Яндекс: метаданные» — в БД bodrod, меняются на экране «Источники загрузки»
   (`ui/screens/settings/SourcesScreen.kt`, только админы). У заявки — история попыток и итоговый источник
@@ -237,7 +252,10 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Образ `bodrod` на сервере — `da1984a` (0.12.0), пароль Navidrome только в `/secrets/navidrome_password` (2026-10-20).
+0. Обновить образ `bodrod` на сервере до 0.13.0 (тег — в задании 015 и `docs/INFRA.md`) и проверить на телефоне:
+   «Источники загрузки» — Яндекс «Работает» с подписью «Токен пользователя»; чарт Deezer — ADÉLA — Nicole Kidman
+   доступна (разделы «Что осталось» в [014](history/014-yandex-user-tokens.md) и [015](history/015-chart-availability.md)).
+   Сейчас на сервере `da1984a` (0.12.0), пароль Navidrome только в `/secrets/navidrome_password` (2026-10-20).
    Осталось: проверить результат регламента — шаги 5–6 раздела «Что нужно сделать на сервере» в
    [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md). В YAML уже стоит `MAINTENANCE_DRY_RUN: "false"` — регламент работает не в пробном режиме.
 1. **До 20 ноября** — архив Яндекса: токены обоих аккаунтов в `/secrets/yandex_accounts/<пользователь Navidrome>`,
@@ -296,6 +314,8 @@ Smoke-тест против реального Navidrome: скопировать
 | 011 | 2026-10-20 | Движок кандидатов, экран «Рекомендации» | app 0.16.0, bodrod 0.10.0 | [011-candidate-engine.md](history/011-candidate-engine.md) |
 | 012 | 2026-10-20 | Чарты на главной | app 0.17.0, bodrod 0.11.0 | [012-charts.md](history/012-charts.md) |
 | 013 | 2026-10-20 | Анализ звучания: воркер Essentia, настроение волны, похожие по звучанию | app 0.18.0, bodrod 0.12.0 | [013-audio-analysis.md](history/013-audio-analysis.md) |
+| 014 | 2026-10-20 | Токены Яндекса по пользователям: резолв «пользователь → общий», статус источников по пользователю, «не задан» / «недействителен» | app 0.19.0, bodrod 0.13.0 | [014-yandex-user-tokens.md](history/014-yandex-user-tokens.md) |
+| 015 | 2026-10-20 | Чарты: скачанные треки становятся доступными (привязка к файлу, пересчёт при отдаче, нормализация, ISRC) | app 0.19.0, bodrod 0.13.0 | [015-chart-availability.md](history/015-chart-availability.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)

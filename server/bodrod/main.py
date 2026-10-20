@@ -94,6 +94,7 @@ from .sources.placer import Placer
 from .sources.registry import SourceRegistry
 from .sources.wanted import LidarrWantedSync
 from .sources.yandex import YandexMetadata, YandexMusicApi, YandexSource
+from .sources.yandex_tokens import YandexTokens
 from .sources.youtube import YouTubeSource, YtDlpProcess, YtMusicClient
 from .worker import Worker
 
@@ -172,9 +173,17 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     # Источники загрузки: реестр знает порядок и переключатели; прямые источники — Яндекс и YouTube.
     direct: dict[str, DirectSource] = {}
     registry = SourceRegistry(store, settings, direct, slskd is not None, lidarr is not None)
-    yandex_api = YandexMusicApi(settings.yandex_token, (settings.yandex_delay_min_s, settings.yandex_delay_max_s))
+    delay = (settings.yandex_delay_min_s, settings.yandex_delay_max_s)
+    yandex_tokens = YandexTokens(
+        settings.yandex_accounts,
+        settings.yandex_token,
+        lambda token: YandexMusicApi(token, delay),
+        settings.yandex_check_interval_s,
+    )
+    yandex_tokens.log_startup()
     library_ready = bool(settings.library_dir)
-    yandex = YandexSource(yandex_api, library_ready, settings.yandex_check_interval_s, settings.preview_ratio)
+    yandex = YandexSource(yandex_tokens, library_ready, settings.yandex_check_interval_s, settings.preview_ratio)
+    yandex_api = yandex.api  # общий токен (или без токена): поиск, метаданные, чарт
     youtube = YouTubeSource(
         YtMusicClient(settings.youtube_proxy),
         YtDlpProcess(settings.ytdlp_dir, settings.youtube_proxy),
@@ -186,7 +195,10 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     direct.update({"yandex": yandex, "youtube": youtube})
     yandex_metadata = YandexMetadata(yandex_api, registry.yandex_metadata)
     log.info("Цепочка источников: %s", ", ".join(registry.order()))
-    providers: list[MetadataProvider] = [YandexMusicProvider(http, settings.yandex_token, registry.yandex_metadata)]
+    metadata_token = yandex_tokens.resolve(None)
+    providers: list[MetadataProvider] = [
+        YandexMusicProvider(http, metadata_token.token if metadata_token else None, registry.yandex_metadata)
+    ]
     if settings.deezer_enabled:
         providers.append(DeezerProvider(http))
     lastfm = LastFmClient(http, settings.lastfm_api_key) if settings.lastfm_api_key else None
@@ -219,7 +231,15 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     export = YandexExport(store, settings, yandex, placer, worker, navidrome) if library_ready else None
     reco = RecoStore(store)
     pool_prefix = _remap(settings.discovery_path, settings.music_dir, settings.navidrome_music_dir)
-    library_index = LibraryIndex(navidrome_db, navidrome, pool_prefix)
+    library_index = LibraryIndex(
+        navidrome_db,
+        navidrome,
+        pool_prefix,
+        path_map=lambda path: _remap(path, settings.music_dir, settings.navidrome_music_dir),
+    )
+    if navidrome_db is not None:
+        worker.song_by_path = library_index.song_by_path
+    worker.on_finish.append(lambda _request: library_index.invalidate())
     pool = PoolService(store, reco, settings, navidrome, navidrome_db, library_index)
     pool.wake_worker = worker.wake
     engine = None
@@ -244,16 +264,23 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         pool.engine_refill = engine_refill
 
     async def yandex_chart() -> list[ChartTrack]:
-        return [ChartTrack(t.artist, t.title, t.album, t.cover_url, t.duration_ms) for t in await yandex_api.chart()]
+        return [
+            ChartTrack(t.artist, t.title, t.album, t.cover_url, t.duration_ms, ext_id=t.id)
+            for t in await yandex_api.chart_tracks()
+        ]
 
     analysis = AnalysisService(store, settings, navidrome_db) if settings.analyzer_token else None
     pool.analysis = analysis
     chart_sources = build_sources(http, lastfm, yandex_chart, settings.deezer_enabled)
     charts = ChartsService(store, settings, chart_sources, library_index, pool)
+    if navidrome_db is not None:
+        charts.song_by_path = library_index.song_by_path
     harvester = None
-    if settings.harvest_enabled and settings.yandex_accounts:
+    if settings.harvest_enabled and yandex_tokens.users:
         delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
-        accounts = {u: YandexAccountApi(u, t, delay) for u, t in settings.yandex_accounts.items()}
+        # Данные аккаунта (лайки, история) — только своим токеном, без общего.
+        own = {u: yandex_tokens.resolve(u, fallback=False) for u in yandex_tokens.users}
+        accounts = {u: YandexAccountApi(u, ref.token, delay) for u, ref in own.items() if ref is not None}
         harvester = YandexHarvester(store, reco, settings, accounts, library_index, placer if library_ready else None)
         log.info("Архив Яндекса: аккаунты %s", ", ".join(accounts))
     return Services(
@@ -377,9 +404,9 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         registry = svc.worker.registry
         return ServiceInfo(
             version=__version__,
-            track_downloads=await registry.usable(RequestKind.TRACK),
-            artist_downloads=await registry.usable(RequestKind.ARTIST),
-            album_downloads=await registry.usable(RequestKind.ALBUM),
+            track_downloads=await registry.usable(RequestKind.TRACK, user.username),
+            artist_downloads=await registry.usable(RequestKind.ARTIST, user.username),
+            album_downloads=await registry.usable(RequestKind.ALBUM, user.username),
             metadata_sources=svc.discover.source_names,
             cleanup=svc.cleanup is not None,
             admin=svc.cleanup is not None and await svc.cleanup.is_admin(user.username),
@@ -436,7 +463,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             raise HTTPException(422, "Для трека нужно название")
         if body.kind == RequestKind.ALBUM and not (body.album and body.album.strip()):
             raise HTTPException(422, "Для альбома нужно название альбома")
-        if not await svc.worker.registry.usable(body.kind):
+        if not await svc.worker.registry.usable(body.kind, user.username):
             raise HTTPException(409, f"Нет доступных источников, которые скачивают {KIND_NAMES[body.kind]}")
         if body.kind == RequestKind.TRACK and svc.store.is_blocked(body.artist, body.title):
             raise HTTPException(409, "Трек в чёрном списке: его удалили с сервера")
@@ -449,6 +476,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             duration_ms=body.duration_ms,
             cover_url=body.cover_url,
         )
+        if body.chart_id and body.chart_position and svc.charts is not None:
+            svc.charts.link_request(body.chart_id, body.chart_position, request.id)
         if not created:
             svc.worker.wake()  # заявка могла ожить после ошибки
         if created:
@@ -624,7 +653,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
 
     @app.get("/api/v1/sources", response_model=SourcesOut, response_model_by_alias=True)
     async def sources(admin: Admin, svc: Svc) -> SourcesOut:
-        return await svc.worker.registry.describe()
+        return await svc.worker.registry.describe(admin.username)
 
     @app.put("/api/v1/sources", response_model=SourcesOut, response_model_by_alias=True)
     async def update_sources(admin: Admin, svc: Svc, body: SourcesUpdate) -> SourcesOut:
@@ -634,13 +663,13 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             raise HTTPException(422, str(e)) from e
         log.info("%s изменил источники загрузки", admin.username)
         svc.worker.wake()
-        return await svc.worker.registry.describe()
+        return await svc.worker.registry.describe(admin.username)
 
     @app.post("/api/v1/sources/yandex/check", response_model=SourcesOut, response_model_by_alias=True)
     async def check_yandex(admin: Admin, svc: Svc) -> SourcesOut:
         if svc.yandex is not None:
-            await svc.yandex.check_subscription(force=True)
-        return await svc.worker.registry.describe()
+            await svc.yandex.check_subscription(force=True, user=admin.username)
+        return await svc.worker.registry.describe(admin.username)
 
     @app.post("/api/v1/sources/youtube/update", response_model=SourcesOut, response_model_by_alias=True)
     async def update_ytdlp(admin: Admin, svc: Svc) -> SourcesOut:
@@ -650,7 +679,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             await svc.youtube.update_ytdlp()
         except Exception as e:  # noqa: BLE001 — показать причину в приложении
             raise HTTPException(502, f"yt-dlp не обновлён: {e}") from e
-        return await svc.worker.registry.describe()
+        return await svc.worker.registry.describe(admin.username)
 
     def require_export(svc: Services) -> YandexExport:
         if svc.export is None:
@@ -670,7 +699,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     @app.post("/api/v1/yandex/export/start", response_model=ExportStatus, response_model_by_alias=True)
     async def export_start(admin: Admin, svc: Svc, body: ExportStart) -> ExportStatus:
         export = require_export(svc)
-        await export.start(body.likes, body.playlists, body.artists)
+        await export.start(body.likes, body.playlists, body.artists, owner=admin.username)
         log.info("%s запустил выгрузку из Яндекса", admin.username)
         return export.status()
 
@@ -691,7 +720,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def export_artists_refresh(admin: Admin, svc: Svc) -> list[ExportArtistOut]:
         export = require_export(svc)
         try:
-            await export.refresh_artists()
+            await export.refresh_artists(admin.username)
         except Exception as e:  # noqa: BLE001 — токен, сеть
             raise HTTPException(502, f"Яндекс не отдал «Мне нравится»: {e}") from e
         return artists_out(svc)
@@ -827,7 +856,12 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     @app.post("/api/v1/charts/refresh", status_code=202, response_class=Response)
     async def charts_refresh(admin: Admin, svc: Svc) -> Response:
         if svc.charts is not None:
-            asyncio.create_task(svc.charts.update(force=True))  # noqa: RUF006 — фоновое обновление
+
+            async def refresh() -> None:
+                await svc.charts.update(force=True)
+                await svc.charts.relink(force=True)
+
+            asyncio.create_task(refresh())  # noqa: RUF006 — фоновое обновление
         return Response(status_code=202)
 
     # endregion

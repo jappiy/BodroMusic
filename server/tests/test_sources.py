@@ -200,9 +200,9 @@ class Env:
         )
 
     def add(self, kind: RequestKind = RequestKind.TRACK, artist: str = "Трофим", title: str | None = "Город Сочи",
-            album: str | None = None, duration_ms: int | None = 200_000):  # fmt: skip
+            album: str | None = None, duration_ms: int | None = 200_000, username: str = "vasya"):  # fmt: skip
         request, created = self.store.create(
-            username="vasya",
+            username=username,
             kind=kind,
             artist=artist,
             title=title,
@@ -294,12 +294,13 @@ def test_no_plus_makes_yandex_unavailable_and_chain_goes_to_slskd(tmp_path):
     current = env.run(request.id, RequestStatus.DOWNLOADING)
     assert current.source == "slskd"
     assert current.attempts[0] | {"at": 0} == {
-        "source": "yandex", "title": "Яндекс Музыка", "result": "skip", "reason": "Нет подписки Плюс", "at": 0
+        "source": "yandex", "title": "Яндекс Музыка", "result": "skip", "reason": "Нет подписки Плюс (общий токен)",
+        "at": 0,
     }  # fmt: skip
     assert api.downloads == []
     status = asyncio.run(env.registry.describe())
     yandex = next(s for s in status.sources if s.name == "yandex")
-    assert yandex.state == "unavailable" and yandex.reason == "Нет подписки Плюс" and yandex.enabled
+    assert yandex.state == "unavailable" and yandex.reason == "Нет подписки Плюс (общий токен)" and yandex.enabled
 
 
 def test_subscription_checked_once_a_day(tmp_path):
@@ -310,7 +311,7 @@ def test_subscription_checked_once_a_day(tmp_path):
     assert api.plus_checks == 1
     env.clock.advance(24 * 3600 + 1)
     api.plus = False
-    assert asyncio.run(env.yandex.status()).reason == "Нет подписки Плюс"
+    assert asyncio.run(env.yandex.status()).reason == "Нет подписки Плюс (общий токен)"
     assert api.plus_checks == 2
 
 
@@ -550,7 +551,7 @@ def test_export_waits_without_plus_and_collects_selected_artists(tmp_path):
     export = YandexExport(env.store, env.settings, env.yandex, env.placer, env.worker, env.navidrome)
     asyncio.run(export.start(likes=True, playlists=False, artists=True))
     asyncio.run(export._tick())
-    assert export.status().message == "Ждём: Яндекс недоступен — Нет подписки Плюс"
+    assert export.status().message == "Ждём: Яндекс недоступен — Нет подписки Плюс (общий токен)"
     api.plus = False
     env.clock.advance(25 * 3600)
     api.plus = True
@@ -581,7 +582,8 @@ def test_sources_api_admin_only_and_updates(tmp_path):
         body = client.get("/api/v1/sources", headers=auth()).json()
         assert [s["name"] for s in body["sources"]] == ["yandex", "slskd", "youtube", "lidarr"]
         yandex = body["sources"][0]
-        assert yandex["state"] == "unavailable" and yandex["reason"] == "Не задан токен YANDEX_MUSIC_TOKEN"
+        assert yandex["state"] == "unavailable"
+        assert yandex["reason"] == "Не задан токен: ни у пользователя vasya, ни общий YANDEX_MUSIC_TOKEN"
         assert body["sources"][1]["state"] == "ok" and body["yandexMetadata"] is True
         updated = client.put(
             "/api/v1/sources",

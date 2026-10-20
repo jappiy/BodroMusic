@@ -54,6 +54,7 @@ from .placement import (
 from .sources.base import SOURCE_TITLES, FetchJob, FetchResult, SourceMiss
 from .sources.placer import Placer
 from .sources.registry import SourceRegistry
+from .sources.yandex_tokens import POOL_USER_PREFIX, request_owner
 from .text import search_queries
 
 log = logging.getLogger(__name__)
@@ -89,7 +90,6 @@ ARTIST_IDLE_CHECKS = 3
 ARTIST_SCAN_THROTTLE_S = 120
 """Ключи состояния, которые переживают смену источника: номер повтора, данные «метки» Lidarr."""
 """Заявки движка рекомендаций и чартов: `pool:<пользователь>` — файлы кладутся в discovery-пул, а не в библиотеку."""
-POOL_USER_PREFIX = "pool:"
 PERSIST_KEYS = ("retryRound", "roundStart", "wanted", "lidarrAlbumId", "lidarrArtistId", "excludeSources")
 
 
@@ -119,6 +119,10 @@ class Worker:
         self._last_search_at = 0.0
         self._jobs: dict[str, asyncio.Task[FetchResult]] = {}
         self._job_progress: dict[str, tuple[float | None, str]] = {}
+        """Путь файла → id песни Navidrome (по БД Navidrome); без неё — поиск по строкам."""
+        self.song_by_path: Callable[[str], Awaitable[str | None]] | None = None
+        """Заявка завершилась (успех или ошибка) — например, сбросить индекс библиотеки."""
+        self.on_finish: list[Callable[[DownloadRequest], None]] = []
 
     def _root(self, r: DownloadRequest) -> str | None:
         """Куда класть файлы заявки: discovery-пул для заявок рекомендаций, иначе библиотека."""
@@ -226,7 +230,7 @@ class Worker:
             if not self._registry.is_enabled(name):
                 self._attempt(r, name, "skip", "Выключен")
                 continue
-            status = await self._registry.status(name)
+            status = await self._registry.status(name, request_owner(r.username))
             if not status.available:
                 self._attempt(r, name, "skip", status.reason or "Недоступен")
                 continue
@@ -325,6 +329,7 @@ class Worker:
             exists=exists,
             place=place,
             progress=progress,
+            owner=request_owner(r.username),
         )
 
         async def run() -> FetchResult:
@@ -658,7 +663,11 @@ class Worker:
         if await self._navidrome.is_scanning():
             r.next_check_at = now + IMPORT_POLL_S
             return
-        song_id = await find_in_library(self._navidrome, r.artist, r.title or "")
+        song_id = None
+        dest = r.state.get("destPath")
+        if dest and self.song_by_path is not None:
+            song_id = await self.song_by_path(dest)  # точнее поиска: не зависит от написания тегов
+        song_id = song_id or await find_in_library(self._navidrome, r.artist, r.title or "")
         if song_id:
             r.song_id = song_id
             self._finish(r, RequestStatus.COMPLETED, "Скачано")
@@ -824,13 +833,17 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — у Navidrome может быть своё автосканирование
             log.warning("Не удалось запустить сканирование Navidrome: %s", e)
 
-    @staticmethod
-    def _finish(r: DownloadRequest, status: RequestStatus, message: str) -> None:
+    def _finish(self, r: DownloadRequest, status: RequestStatus, message: str) -> None:
         r.status = status
         r.message = message
         if status == RequestStatus.COMPLETED:
             r.progress = 1.0
         r.next_check_at = 0
+        for callback in self.on_finish:
+            try:
+                callback(r)
+            except Exception:  # noqa: BLE001 — подписчик не должен ломать заявку
+                log.exception("Заявка %s: ошибка обработчика завершения", r.id)
 
 
 def _what(r: DownloadRequest) -> str:

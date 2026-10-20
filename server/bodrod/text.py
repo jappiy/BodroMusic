@@ -112,15 +112,15 @@ def similarity_any(a: str | None, b: str | None) -> float:
     return max(direct, 1.0 if ta == tb else SequenceMatcher(None, ta, tb).ratio())
 
 
-# «A feat. B», «A & B», «A, B», «A x B», «A и B», «A при уч. B» — основной исполнитель A.
-_ARTIST_SPLIT = re.compile(
-    r"\s*(?:,|;|/|\s&\s|\s\+\s|\s(?:feat|ft|featuring|vs|x|и|при уч|при участии)\b\.?)\s*", re.IGNORECASE
+# «A feat. B», «A & B», «A, B», «A x B», «A with B», «A и B», «A при уч. B» — основной исполнитель A.
+ARTIST_SPLIT = re.compile(
+    r"\s*(?:,|;|/|\s&\s|\s\+\s|\s(?:feat|ft|featuring|vs|x|with|и|при уч|при участии)\b\.?)\s*", re.IGNORECASE
 )
 
 
 def main_artist(artist: str | None) -> str:
     """Основной исполнитель без feat., второстепенных и списков через запятую."""
-    return _ARTIST_SPLIT.split((artist or "").strip(), maxsplit=1)[0].strip()
+    return ARTIST_SPLIT.split((artist or "").strip(), maxsplit=1)[0].strip()
 
 
 def same_artist(a: str | None, b: str | None) -> bool:
@@ -131,6 +131,6 @@ def same_artist(a: str | None, b: str | None) -> bool:
         for y in (b, main_artist(b)):
             if normalize(x) == normalize(y) or translit(x) == translit(y) or similarity_any(x, y) >= 0.9:
                 return True
-    names_a = {translit(n) for n in _ARTIST_SPLIT.split(a or "") if normalize(n)}
-    names_b = {translit(n) for n in _ARTIST_SPLIT.split(b or "") if normalize(n)}
+    names_a = {translit(n) for n in ARTIST_SPLIT.split(a or "") if normalize(n)}
+    names_b = {translit(n) for n in ARTIST_SPLIT.split(b or "") if normalize(n)}
     return bool(names_a & names_b)

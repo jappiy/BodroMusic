@@ -71,7 +71,8 @@ class DownloadsClient(
     suspend fun requests(limit: Int = 100): List<DownloadRequest> =
         get(listOf("api", "v1", "requests"), listOf("limit" to limit.toString()))
 
-    suspend fun downloadTrack(track: DiscoverTrack): DownloadRequest = create(
+    /** [chartId] и [chartPosition] — трек качается из позиции чарта (bodrod 0.13.0+, старый сервер их не знает). */
+    suspend fun downloadTrack(track: DiscoverTrack, chartId: String? = null, chartPosition: Int? = null): DownloadRequest = create(
         CreateRequestBody(
             kind = RequestKind.Track,
             artist = track.artist,
@@ -79,6 +80,8 @@ class DownloadsClient(
             album = track.album,
             durationMs = track.durationMs,
             coverUrl = track.coverUrl,
+            chartId = chartId,
+            chartPosition = chartPosition,
         ),
     )
 

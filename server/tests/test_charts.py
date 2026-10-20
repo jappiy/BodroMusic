@@ -9,6 +9,7 @@ import httpx
 
 from bodrod.clients.navidrome import NavidromeClient
 from bodrod.db import Store
+from bodrod.models import RequestKind, RequestStatus
 from bodrod.reco.charts import ChartSource, ChartsService, ChartTrack, build_sources
 from bodrod.reco.keys import track_key
 from bodrod.reco.library import LibrarySnapshot
@@ -28,9 +29,9 @@ class Clock:
         return self.now
 
 
-def make(tmp_path: Path, tracks: dict[str, list[ChartTrack]], library: LibrarySnapshot | None = None):
+def make(tmp_path: Path, tracks: dict[str, list[ChartTrack]], library: LibrarySnapshot | None = None, top: int = 2):
     settings = dataclasses.replace(
-        SETTINGS, data_dir=str(tmp_path), music_dir=str(tmp_path / "music"), charts_download_top=2
+        SETTINGS, data_dir=str(tmp_path), music_dir=str(tmp_path / "music"), charts_download_top=top
     )
     store = Store(str(tmp_path / "bodrod.sqlite3"))
     reco = RecoStore(store)
@@ -81,7 +82,7 @@ def test_states_and_top_goes_to_charts_pool(tmp_path: Path) -> None:
     assert [r.artist for r in store.list_for_user("pool:charts")] == ["B"]
     assert pool.counts(CHARTS_OWNER) == {"queued": 1}
     states = {e["title"]: (e["state"], e["song_id"]) for e in asyncio.run(charts.entries("a", "vasya"))}
-    assert states == {"1": ("library", "s1"), "2": ("downloading", None), "3": ("unavailable", None)}
+    assert states == {"1": ("library", "s1"), "2": ("queued", None), "3": ("unavailable", None)}
 
 
 def test_chart_track_removed_after_dropping_out_for_30_days(tmp_path: Path) -> None:
@@ -127,3 +128,61 @@ def test_deezer_and_apple_parsers() -> None:
     apple = asyncio.run(sources["apple_ru"].fetch())[0]
     assert apple.cover_url == "https://a/600x600bb.jpg"
     assert asyncio.run(sources["listenbrainz"].fetch())[0].title == "B"
+
+
+def test_keys_ignore_diacritics_versions_and_featured_artists() -> None:
+    assert track_key("ADÉLA", "Nicole Kidman") == track_key("Adela", "Nicole Kidman (Radio Edit)")
+    assert track_key("Artist", "Song (with Guest)") == track_key("artist", "Song [Bonus Track]")
+    assert track_key("Artist", "Song - Remastered 2011") == track_key("Artist", "Song")
+    assert track_key("Artist", "Song - 2011 Remaster") == track_key("Artist", "Song (feat. X)")
+    assert track_key("Artist with Guest", "Song") == track_key("Artist", "Song")
+    assert track_key("Йорш", "Песня") != track_key("Иорш", "Песня")  # кириллицу не трогаем
+    snap = LibrarySnapshot(library_alt={track_key("ADÉLA", "Nicole Kidman"): "s2"}, library_isrc={"CZAB12345678": "s3"})
+    assert snap.find("Adéla", "Nicole Kidman") == "s2"  # основной исполнитель чарта — в списке исполнителей трека
+    assert snap.find("Кто-то", "Другое", "czab12345678") == "s3"
+
+
+def test_chart_download_is_linked_by_path_and_status(tmp_path: Path) -> None:
+    track = ChartTrack("ADÉLA", "Nicole Kidman", album="PRIMA", ext_id="3135556")
+    charts, pool, reco, store, clock = make(tmp_path, {"a": [track]}, top=0)
+    asyncio.run(charts.update())
+    request, _ = store.create(
+        username="vasya", kind=RequestKind.TRACK, artist="ADÉLA", title="Nicole Kidman", album="PRIMA",
+        duration_ms=None,
+        cover_url=None,
+    )  # fmt: skip
+    assert charts.link_request("a", 1, request.id)
+    (entry,) = asyncio.run(charts.entries("a", "vasya"))
+    assert (entry["state"], entry["request_id"], entry["request_status"]) == ("queued", request.id, "queued")
+    # Скачан: файл с другими тегами («Adela — Nicole Kidman (Prima Version)»), Navidrome нашёл его после скана.
+    request.status = RequestStatus.COMPLETED
+    request.state["destPath"] = "/music/library/Adela/PRIMA/Adela - Nicole Kidman.flac"
+    store.save(request)
+    paths: dict[str, str] = {}
+
+    async def song_by_path(path: str) -> str | None:
+        return paths.get(path)
+
+    charts.song_by_path = song_by_path
+    (entry,) = asyncio.run(charts.entries("a", "vasya"))
+    assert entry["state"] == "unavailable" and entry["request_status"] == "completed"  # скан ещё не прошёл
+    paths[request.state["destPath"]] = "nd-1"
+    (entry,) = asyncio.run(charts.entries("a", "vasya"))
+    assert (entry["state"], entry["song_id"]) == ("library", "nd-1")
+    link = store.query_one("SELECT * FROM chart_links")
+    assert link["ref"] == "test:3135556" and link["song_id"] == "nd-1"
+
+
+def test_relink_picks_up_tracks_downloaded_before(tmp_path: Path) -> None:
+    charts, pool, reco, store, clock = make(tmp_path, {"a": [t("ADÉLA", "Nicole Kidman"), t("B", "2")]}, top=0)
+    asyncio.run(charts.update())
+    request, _ = store.create(
+        username="vasya", kind=RequestKind.TRACK, artist="Adela", title="Nicole Kidman", album=None, duration_ms=None,
+        cover_url=None,
+    )  # fmt: skip
+    request.status, request.song_id = RequestStatus.COMPLETED, "nd-7"
+    store.save(request)
+    assert asyncio.run(charts.relink()) == 1
+    assert asyncio.run(charts.relink()) == 0  # разово
+    states = [(e["title"], e["state"], e["song_id"]) for e in asyncio.run(charts.entries("a", "vasya"))]
+    assert states == [("Nicole Kidman", "library", "nd-7"), ("2", "unavailable", None)]

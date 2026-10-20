@@ -13,6 +13,7 @@ from ..config import Settings
 from ..db import Store
 from ..models import RequestKind, SourceOut, SourcesOut
 from .base import SOURCE_KINDS, SOURCE_TITLES, DirectSource, SourceStatus
+from .yandex_tokens import ORIGIN_TITLES
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,12 @@ class SourceRegistry:
         self._slskd_ready = slskd_ready
         self._lidarr_ready = lidarr_ready
 
+    def _metadata_token(self) -> bool:
+        """Метаданные идут через общий токен (тексты песен только с ним)."""
+        source = self._direct.get("yandex")
+        api = getattr(source, "api", None)
+        return bool(api.has_token) if api is not None else bool(self._settings.yandex_token)
+
     def direct(self, name: str) -> DirectSource | None:
         return self._direct.get(name)
 
@@ -55,7 +62,8 @@ class SourceRegistry:
         """Источники, которые умеют этот вид заявки, в текущем порядке (включённость проверяется на шаге)."""
         return [n for n in self.order() if kind in SOURCE_KINDS[n]]
 
-    async def status(self, name: str) -> SourceStatus:
+    async def status(self, name: str, user: str | None = None) -> SourceStatus:
+        """Статус источника для пользователя (у Яндекса — его токен, иначе общий)."""
         if name == "slskd":
             return (
                 SourceStatus(True) if self._slskd_ready else SourceStatus(False, "Не заданы SLSKD_URL и SLSKD_API_KEY")
@@ -70,15 +78,15 @@ class SourceRegistry:
         if source is None:
             return SourceStatus(False, "Не настроен на сервере")
         try:
-            return await source.status()
+            return await source.status(user)
         except Exception as e:  # noqa: BLE001 — статус не должен ронять цепочку
             log.warning("Источник %s: статус не получен: %s", name, e)
             return SourceStatus(False, f"Ошибка проверки: {e}")
 
-    async def usable(self, kind: RequestKind) -> bool:
+    async def usable(self, kind: RequestKind, user: str | None = None) -> bool:
         """Есть ли хоть один включённый и доступный источник для такого вида заявок."""
         for name in self.chain_for(kind):
-            if self.is_enabled(name) and (await self.status(name)).available:
+            if self.is_enabled(name) and (await self.status(name, user)).available:
                 return True
         return False
 
@@ -101,10 +109,11 @@ class SourceRegistry:
             self._store.set_value(METADATA_KEY, bool(yandex_metadata))
             log.info("Яндекс: метаданные %s", "включены" if yandex_metadata else "выключены")
 
-    async def describe(self) -> SourcesOut:
+    async def describe(self, user: str | None = None) -> SourcesOut:
+        """Источники глазами пользователя приложения: статус Яндекса — по его токену."""
         items = []
         for name in self.order():
-            status = await self.status(name)
+            status = await self.status(name, user)
             enabled = self.is_enabled(name)
             state = "disabled" if not enabled else "ok" if status.available else "unavailable"
             items.append(
@@ -116,10 +125,12 @@ class SourceRegistry:
                     reason=status.reason,
                     kinds=[k.value for k in RequestKind if k in SOURCE_KINDS[name]],
                     details=status.details,
+                    token_source=status.token_source,
+                    token_source_title=ORIGIN_TITLES[status.token_source].capitalize() if status.token_source else None,
                 )
             )
         return SourcesOut(
             sources=items,
             yandex_metadata=self.yandex_metadata(),
-            yandex_metadata_reason=None if self._settings.yandex_token else "Без токена — без текстов песен",
+            yandex_metadata_reason=None if self._metadata_token() else "Без токена — без текстов песен",
         )

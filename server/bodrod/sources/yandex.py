@@ -32,10 +32,10 @@ from .base import (
     track_score,
     unwanted_extras,
 )
+from .yandex_tokens import YandexTokens, request_owner
 
 log = logging.getLogger(__name__)
 
-PLUS_RETRY_ON_ERROR_S = 10 * 60
 CODEC_LABELS = {"flac": "FLAC", "aac": "AAC", "mp3": "MP3"}
 _EXTENSIONS = {"flac": ".flac", "flac-mp4": ".m4a", "aac-mp4": ".m4a", "he-aac-mp4": ".m4a", "mp3": ".mp3"}
 
@@ -118,12 +118,9 @@ class YandexApi(Protocol):
 
     async def lyrics(self, track_id: str) -> str | None: ...
 
-    async def chart(self) -> list[YTrack]:
+    async def chart_tracks(self) -> list[YTrack]:
         """Чарт Яндекс Музыки (по порядку)."""
-        info = await self._call(lambda c: c.chart())
-        playlist = getattr(info, "chart", None) if info else None
-        shorts = (getattr(playlist, "tracks", None) or []) if playlist else []
-        return [_convert_track(s.track) for s in shorts if getattr(s, "track", None) is not None]
+        ...
 
     async def liked_tracks(self) -> list[YTrack]: ...
 
@@ -288,6 +285,12 @@ class YandexMusicApi:
             result.extend(_convert_track(t) for t in tracks or [])
         return result
 
+    async def chart_tracks(self) -> list[YTrack]:
+        info = await self._call(lambda c: c.chart())
+        playlist = getattr(info, "chart", None) if info else None
+        shorts = (getattr(playlist, "tracks", None) or []) if playlist else []
+        return [_convert_track(x.track) for x in shorts if getattr(x, "track", None) is not None]
+
     async def liked_tracks(self) -> list[YTrack]:
         likes = await self._call(lambda c: c.users_likes_tracks())
         return await self._tracks([t.track_id for t in (likes.tracks if likes else None) or []])
@@ -305,73 +308,82 @@ class YandexMusicApi:
 
 
 class YandexSource:
-    """Яндекс Музыка в цепочке источников: трек, альбом целиком, дискография исполнителя."""
+    """Яндекс Музыка в цепочке источников: трек, альбом целиком, дискография исполнителя.
+
+    Токен — пользователя, от имени которого заявка (`FetchJob.owner`), иначе общий (`YandexTokens`).
+    """
 
     name = "yandex"
     title = "Яндекс Музыка"
 
     def __init__(
         self,
-        api: YandexApi,
+        tokens: YandexTokens | YandexApi,
         library_ready: bool,
         check_interval_s: int = 24 * 3600,
         preview_ratio: float = 0.9,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        self._api = api
+        if not isinstance(tokens, YandexTokens):
+            tokens = YandexTokens.from_api(tokens, check_interval_s, clock)
+        self._tokens = tokens
         self._library_ready = library_ready
-        self._check_interval_s = check_interval_s
         self._preview_ratio = preview_ratio
         self._clock = clock
-        self._plus: bool | None = None
-        self._plus_error: str | None = None
-        self._checked_at = 0.0
-        self._next_check_at = 0.0
-        self._check_lock = asyncio.Lock()
+
+    @property
+    def tokens(self) -> YandexTokens:
+        return self._tokens
 
     @property
     def api(self) -> YandexApi:
-        return self._api
+        """API общего токена (без него — без токена): поиск и метаданные."""
+        return self._tokens.api_for(None)[0]
 
-    async def check_subscription(self, force: bool = False) -> None:
-        """Статус Плюса: при старте, раз в сутки и по кнопке в приложении; при ошибке — повтор через 10 минут."""
-        if not self._api.has_token:
+    def api_for(self, user: str | None) -> YandexApi:
+        """API токена пользователя, иначе общего."""
+        return self._tokens.api_for(user)[0]
+
+    async def check_subscription(self, force: bool = False, user: str | None = None) -> None:
+        """Проверка токена и Плюса: при старте, раз в сутки и по кнопке; `user=None` — все токены."""
+        if user is None:
+            await self._tokens.check_all(force)
             return
-        async with self._check_lock:
-            now = self._clock()
-            if not force and now < self._next_check_at:
-                return
-            try:
-                self._plus = await self._api.has_plus()
-                self._plus_error = None
-                self._next_check_at = now + self._check_interval_s
-                log.info("Яндекс Музыка: подписка Плюс %s", "есть" if self._plus else "НЕТ — скачивание недоступно")
-            except Exception as e:  # noqa: BLE001 — сеть или токен: источник недоступен до следующей проверки
-                self._plus_error = str(e) or type(e).__name__
-                self._next_check_at = now + PLUS_RETRY_ON_ERROR_S
-                log.warning("Яндекс Музыка: не удалось проверить подписку: %s", e)
-            self._checked_at = now
+        ref = self._tokens.resolve(user)
+        if ref is not None:
+            await self._tokens.check(ref, force)
 
-    async def status(self) -> SourceStatus:
-        if not self._api.has_token:
+    async def status(self, user: str | None = None) -> SourceStatus:
+        """Статус для пользователя: его токен, иначе общий. В `token_source` — чей токен."""
+        ref = self._tokens.resolve(user)
+        if ref is None:
+            who = request_owner(user)
+            if who:
+                return SourceStatus(False, f"Не задан токен: ни у пользователя {who}, ни общий YANDEX_MUSIC_TOKEN")
             return SourceStatus(False, "Не задан токен YANDEX_MUSIC_TOKEN")
         if not self._library_ready:
-            return SourceStatus(False, "Не задана папка библиотеки LIBRARY_DIR")
-        await self.check_subscription()
-        checked = time.strftime("%d.%m %H:%M", time.localtime(self._checked_at)) if self._checked_at else None
-        details = f"Подписка проверена {checked}" if checked else None
-        if self._plus_error is not None:
-            return SourceStatus(False, f"Не удалось проверить подписку: {self._plus_error}", details)
-        if not self._plus:
-            return SourceStatus(False, "Нет подписки Плюс", details)
-        return SourceStatus(True, None, details)
+            return SourceStatus(False, "Не задана папка библиотеки LIBRARY_DIR", token_source=ref.origin)
+        check = await self._tokens.check(ref)
+        checked_at = check.checked_at if check else None
+        checked = time.strftime("%d.%m %H:%M", time.localtime(checked_at)) if checked_at else None
+        details = f"Проверен {checked}" if checked else None
+        if check is None or check.state == "error":
+            error = check.error if check else "нет ответа"
+            return SourceStatus(False, f"Не удалось проверить токен ({ref.title}): {error}", details, ref.origin)
+        if check.state == "invalid":
+            return SourceStatus(False, f"Токен недействителен или истёк ({ref.title})", details, ref.origin)
+        if check.state == "no_plus":
+            return SourceStatus(False, f"Нет подписки Плюс ({ref.title})", details, ref.origin)
+        return SourceStatus(True, None, details, ref.origin)
 
     # region Поиск
 
-    async def find_track(self, artist: str, title: str, duration_ms: int | None) -> YTrack | None:
+    async def find_track(
+        self, artist: str, title: str, duration_ms: int | None, api: YandexApi | None = None
+    ) -> YTrack | None:
         """Лучшее уверенное совпадение «артист + название» с длительностью ±3 с; иначе `None`."""
         best: tuple[float, YTrack] | None = None
-        for t in await self._api.search_tracks(f"{artist} {title}"):
+        for t in await (api or self.api).search_tracks(f"{artist} {title}"):
             if not t.available:
                 continue
             score = track_score(artist, title, duration_ms, t.artist, t.title, t.duration_ms)
@@ -379,9 +391,9 @@ class YandexSource:
                 best = (score, t)
         return best[1] if best else None
 
-    async def find_album(self, artist: str, album: str) -> YAlbum | None:
+    async def find_album(self, artist: str, album: str, api: YandexApi | None = None) -> YAlbum | None:
         best: tuple[float, YAlbum] | None = None
-        for a in await self._api.search_albums(f"{artist} {album}"):
+        for a in await (api or self.api).search_albums(f"{artist} {album}"):
             if not same_artist(a.artist, artist) or unwanted_extras(a.title, album):
                 continue
             score = similarity_any(a.title, album)
@@ -391,8 +403,8 @@ class YandexSource:
                 best = (score, a)
         return best[1] if best else None
 
-    async def find_artist(self, name: str) -> str | None:
-        for artist_id, found in (await self._api.search_artists(name))[:5]:
+    async def find_artist(self, name: str, api: YandexApi | None = None) -> str | None:
+        for artist_id, found in (await (api or self.api).search_artists(name))[:5]:
             if same_artist(found, name):
                 return artist_id
         return None
@@ -400,36 +412,37 @@ class YandexSource:
     # endregion
 
     async def fetch(self, job: FetchJob) -> FetchResult:
+        api = self.api_for(job.owner)
         if job.kind == RequestKind.TRACK:
             assert job.title is not None
-            track = await self.find_track(job.artist, job.title, job.duration_ms)
+            track = await self.find_track(job.artist, job.title, job.duration_ms, api)
             if track is None:
                 raise SourceMiss("Нет уверенного совпадения в Яндекс Музыке")
-            return await self._download_tracks(job, [track])
+            return await self._download_tracks(job, [track], api)
         if job.kind == RequestKind.ALBUM:
             assert job.album is not None
-            album = await self.find_album(job.artist, job.album)
+            album = await self.find_album(job.artist, job.album, api)
             if album is None:
                 raise SourceMiss(f"Альбом «{job.album}» не найден в Яндекс Музыке")
             job.progress(None, f"Яндекс: альбом «{album.title}»")
-            return await self._download_tracks(job, await self._api.album_tracks(album.id))
-        artist_id = await self.find_artist(job.artist)
+            return await self._download_tracks(job, await api.album_tracks(album.id), api)
+        artist_id = await self.find_artist(job.artist, api)
         if artist_id is None:
             raise SourceMiss("Исполнитель не найден в Яндекс Музыке")
-        albums = await self._api.artist_albums(artist_id)
+        albums = await api.artist_albums(artist_id)
         if not albums:
             raise SourceMiss("У исполнителя нет альбомов в Яндекс Музыке")
         tracks: list[YTrack] = []
         seen: set[str] = set()
         for i, album in enumerate(albums, start=1):
             job.progress(None, f"Яндекс: собираем дискографию, альбом {i} из {len(albums)}")
-            for t in await self._api.album_tracks(album.id):
+            for t in await api.album_tracks(album.id):
                 if t.id not in seen:
                     seen.add(t.id)
                     tracks.append(t)
-        return await self._download_tracks(job, tracks)
+        return await self._download_tracks(job, tracks, api)
 
-    async def _download_tracks(self, job: FetchJob, tracks: list[YTrack]) -> FetchResult:
+    async def _download_tracks(self, job: FetchJob, tracks: list[YTrack], api: YandexApi) -> FetchResult:
         result = FetchResult(label=self.title)
         codecs: set[str] = set()
         reasons: list[str] = []
@@ -444,7 +457,7 @@ class YandexSource:
                 result.skipped += 1
                 continue
             try:
-                file = await self.download_track(t, job.workdir)
+                file = await self.download_track(t, job.workdir, api=api)
             except SourceMiss as e:
                 result.failed += 1
                 reasons.append(e.reason)
@@ -459,12 +472,15 @@ class YandexSource:
             result.label = f"{self.title}, {', '.join(sorted(codecs))}"
         return result
 
-    async def download_track(self, t: YTrack, workdir: Path, lyrics: bool = True) -> FetchedFile:
+    async def download_track(
+        self, t: YTrack, workdir: Path, lyrics: bool = True, api: YandexApi | None = None
+    ) -> FetchedFile:
         """Скачать трек и проверить, что это не превью (короче 90 % длительности — удалить, неудача)."""
+        api = api or self.api
         workdir.mkdir(parents=True, exist_ok=True)
         stem = workdir / sanitize_part(f"{t.artist} - {t.title} [{t.id}]")
         try:
-            got = await self._api.download(t.id, stem)
+            got = await api.download(t.id, stem)
         except SourceMiss:
             raise
         except Exception as e:  # noqa: BLE001 — сеть, нет прав: следующий источник
@@ -476,7 +492,7 @@ class YandexSource:
         text = None
         if lyrics:
             try:
-                text = await self._api.lyrics(t.id)
+                text = await api.lyrics(t.id)
             except Exception as e:  # noqa: BLE001 — текста может не быть
                 log.debug("Яндекс: текст %s не получен: %s", t.id, e)
         return FetchedFile(

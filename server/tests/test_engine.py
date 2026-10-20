@@ -55,6 +55,9 @@ class FixedLibrary(LibraryIndex):
     def invalidate(self) -> None:
         pass
 
+    def age(self) -> float:
+        return 0.0
+
 
 def c(artist: str, title: str, source: str = "lastfm", sim: float = 0.8, seed_title: str = "") -> Candidate:
     return Candidate(artist, title, source, sim, 1.0, seed_title=seed_title)

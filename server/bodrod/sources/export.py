@@ -28,7 +28,7 @@ from ..models import ExportCounts, ExportStatus
 from ..placement import sanitize_part
 from .base import SourceMiss
 from .placer import Placer
-from .yandex import YandexSource, YTrack
+from .yandex import YandexApi, YandexSource, YTrack
 
 if TYPE_CHECKING:
     from ..worker import Worker
@@ -97,10 +97,17 @@ class YandexExport:
             updated_at=state.get("updatedAt"),
         )
 
-    async def start(self, likes: bool, playlists: bool, artists: bool) -> None:
+    def _owner(self) -> str | None:
+        """Кто запустил выгрузку: его токен Яндекса, иначе общий."""
+        return self._state().get("owner")
+
+    def _api(self) -> YandexApi:
+        return self._yandex.api_for(self._owner())
+
+    async def start(self, likes: bool, playlists: bool, artists: bool, owner: str | None = None) -> None:
         """Начать или продолжить: собрать списки заново (повторы не добавляются) и качать."""
         retried = self._store.export_retry_failed()
-        self._set(state="collecting", likes=likes, playlists=playlists, artists=artists, message=None)
+        self._set(state="collecting", likes=likes, playlists=playlists, artists=artists, message=None, owner=owner)
         log.info(
             "Выгрузка из Яндекса: старт (лайки %s, плейлисты %s, артисты %s; повтор %s)",
             likes,
@@ -119,9 +126,9 @@ class YandexExport:
         self._store.export_select_artists(selected)
         self._wakeup.set()
 
-    async def refresh_artists(self) -> int:
+    async def refresh_artists(self, owner: str | None = None) -> int:
         """Собрать артистов из «Мне нравится» (без скачивания) — для выбора, кого брать целиком."""
-        tracks = await self._yandex.api.liked_tracks()
+        tracks = await self._yandex.api_for(owner or self._owner()).liked_tracks()
         self._tally_artists(tracks)
         return len(self._store.export_artists())
 
@@ -147,7 +154,7 @@ class YandexExport:
         if not registry.is_enabled("yandex"):
             self._set(message="Ждём: «Яндекс: скачивание» выключен")
             return WAIT_UNAVAILABLE_S
-        status = await self._yandex.status()
+        status = await self._yandex.status(self._owner())
         if not status.available:
             self._set(message=f"Ждём: Яндекс недоступен — {status.reason}")
             return WAIT_UNAVAILABLE_S
@@ -185,13 +192,13 @@ class YandexExport:
         added = 0
         if state.get("likes", True):
             self._set(message="Собираем «Мне нравится»")
-            tracks = await self._yandex.api.liked_tracks()
+            tracks = await self._api().liked_tracks()
             self._tally_artists(tracks)
             added += sum(self._add(t, "likes") for t in tracks)
         if state.get("playlists", True):
             self._set(message="Собираем плейлисты")
             playlists: dict[str, list[str]] = {}
-            for title, tracks in await self._yandex.api.playlists():
+            for title, tracks in await self._api().playlists():
                 playlists[title] = [t.id for t in tracks]
                 added += sum(self._add(t, f"playlist:{title}") for t in tracks)
             self._store.set_value(PLAYLISTS_KEY, playlists)
@@ -203,8 +210,9 @@ class YandexExport:
                 continue
             self._set(message=f"Собираем дискографию: {artist['name']}")
             added = 0
-            for album in await self._yandex.api.artist_albums(artist["artist_id"]):
-                for t in await self._yandex.api.album_tracks(album.id):
+            api = self._api()
+            for album in await api.artist_albums(artist["artist_id"]):
+                for t in await api.album_tracks(album.id):
                     added += self._add(t, f"artist:{artist['name']}")
             self._store.export_mark_collected(artist["artist_id"])
             log.info("Выгрузка из Яндекса: %s — %s треков в очередь", artist["name"], added)
@@ -224,7 +232,7 @@ class YandexExport:
             return
         workdir = Path(self._settings.staging_dir) / "export"
         try:
-            file = await self._yandex.download_track(track, workdir)
+            file = await self._yandex.download_track(track, workdir, api=self._api())
             dest = await self._placer.place(file, "yandex", None)
         except SourceMiss as e:
             self._store.export_set(item["id"], "failed", e.reason)

@@ -489,6 +489,8 @@
     <string name="sources_yandex_metadata">Яндекс: метаданные</string>
     <string name="sources_yandex_metadata_summary">Поиск, теги, обложки и тексты из Яндекса для файлов из любых источников. Работает и без подписки.</string>
     <string name="sources_yandex_check">Проверить подписку</string>
+    <string name="sources_token_user">Токен пользователя</string>
+    <string name="sources_token_global">Общий токен</string>
     <string name="sources_youtube_update">Обновить yt-dlp</string>
     <string name="sources_ytdlp_updated">yt-dlp обновлён</string>
     <string name="export_title">Выгрузка из Яндекса</string>
@@ -554,6 +556,8 @@
     <string name="chart_updated">Обновлён %1$s</string>
     <string name="chart_available">Можно слушать %1$d из %2$d</string>
     <string name="chart_state_downloading">Качается</string>
+    <string name="chart_state_queued">В очереди</string>
+    <string name="chart_state_ready">Готово, появится после сканирования</string>
     <string name="chart_download">Скачать</string>
     <string name="charts_settings_title">Чарты на главной</string>
     <string name="settings_charts_summary">Какие чарты показывать под «Моей волной» и в каком порядке</string>

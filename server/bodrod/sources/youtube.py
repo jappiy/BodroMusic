@@ -313,7 +313,7 @@ class YouTubeSource:
             with contextlib.suppress(Exception):  # причина уже в логе
                 await self.update_ytdlp()
 
-    async def status(self) -> SourceStatus:
+    async def status(self, user: str | None = None) -> SourceStatus:
         if not self._library_ready:
             return SourceStatus(False, "Не задана папка библиотеки LIBRARY_DIR")
         try:

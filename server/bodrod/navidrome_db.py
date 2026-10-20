@@ -7,13 +7,16 @@ Navidrome пишет в БД в режиме WAL, поэтому каждое ч
 
 from __future__ import annotations
 
+import json
 import posixpath
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 DISLIKE_RATING = 1
-_OPTIONAL_COLUMNS = ("album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id")
+_OPTIONAL_COLUMNS = (
+    "album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id", "tags",
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,8 @@ class NdSong:
     has_cover_art: bool | None = None
     artist_id: str | None = None
     album_artist_id: str | None = None
+    """ISRC из тегов (Navidrome 0.55+, колонка `tags`)."""
+    isrc: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,35 @@ class NavidromeDb:
         """Какие из треков есть в библиотеке (не удалены и не помечены сканером как пропавшие)."""
         with self._connect() as conn:
             return {s.id for s in self._by_ids(conn, ids)}
+
+    def song_ids_by_paths(self, paths: list[str]) -> dict[str, str]:
+        """Путь (как его видит Navidrome) → id трека запросом по индексу пути (без обхода всей библиотеки).
+
+        Navidrome 0.55+ хранит путь относительно папки библиотеки — ищем и абсолютный, и относительный вариант.
+        """
+        if not paths:
+            return {}
+        with self._connect() as conn:
+            roots: list[str] = []
+            if "library_id" in self._media_columns(conn):
+                roots = [r["path"].rstrip("/") + "/" for r in conn.execute("SELECT path FROM library") if r["path"]]
+            variants: dict[str, str] = {}
+            for path in paths:
+                variants[path] = path
+                for root in roots:
+                    if path.startswith(root):
+                        variants[path[len(root) :]] = path
+            result: dict[str, str] = {}
+            keys = list(variants)
+            for start in range(0, len(keys), 500):
+                chunk = keys[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"{self._select(conn)} WHERE mf.path IN ({marks}) AND {self._not_missing(conn)}", chunk
+                ).fetchall()
+                for r in rows:
+                    result[variants[r["path"]]] = r["id"]
+            return result
 
     def ids_by_path(self, paths: list[str]) -> dict[str, str]:
         """Путь (как его видит Navidrome) → id трека. Нужно, чтобы найти перенесённый файл после пересканирования."""
@@ -222,4 +256,23 @@ def _song(r: sqlite3.Row) -> NdSong:
         has_cover_art=bool(r["has_cover_art"]) if r["has_cover_art"] is not None else None,
         artist_id=r["artist_id"] or None,
         album_artist_id=r["album_artist_id"] or None,
+        isrc=_isrc(r["tags"]),
     )
+
+
+def _isrc(raw: str | None) -> str | None:
+    """ISRC из JSON тегов Navidrome: `{"isrc": ["…"]}` или `{"isrc": [{"value": "…"}]}`."""
+    if not raw or "isrc" not in raw.lower():
+        return None
+    try:
+        tags = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(tags, dict):
+        return None
+    values = next((v for k, v in tags.items() if k.lower() == "isrc"), None)
+    for value in values if isinstance(values, list) else [values]:
+        text = value.get("value") if isinstance(value, dict) else value
+        if isinstance(text, str) and text.strip():
+            return text.strip().upper()
+    return None

@@ -366,7 +366,26 @@ private fun SourceRow(position: Int, source: DownloadSource, enabled: Boolean, o
                 Text("$position", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp))
             }
         },
-        headlineContent = { Text(source.title, maxLines = 1) },
+        headlineContent = {
+            Column {
+                Text(source.title, maxLines = 1)
+                // Яндекс: чей токен используется для вас — ваш или общий (bodrod 0.13.0+).
+                val tokenSource = when (source.tokenSource) {
+                    "user" -> stringResource(R.string.sources_token_user)
+                    "global" -> stringResource(R.string.sources_token_global)
+                    else -> source.tokenSourceTitle
+                }
+                tokenSource?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.testTag("source-token-${source.name}"),
+                    )
+                }
+            }
+        },
         supportingContent = {
             Column {
                 Text(

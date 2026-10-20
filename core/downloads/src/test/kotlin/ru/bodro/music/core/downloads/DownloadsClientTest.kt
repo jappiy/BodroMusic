@@ -85,6 +85,33 @@ class DownloadsClientTest {
     }
 
     @Test
+    fun `chart download is linked to position and entry carries request status`() = runTest {
+        server.enqueue(
+            json(
+                """{"id":"r2","kind":"track","artist":"ADÉLA","title":"Nicole Kidman","status":"queued",
+                "progress":null,"createdAt":1,"updatedAt":1}""",
+                code = 201,
+            ),
+        )
+        server.enqueue(
+            json(
+                """[{"position":1,"artist":"ADÉLA","title":"Nicole Kidman","movement":"new","state":"queued",
+                "requestId":"r2","requestStatus":"queued"},
+                {"position":2,"artist":"B","title":"2","movement":"same","state":"unavailable",
+                "requestId":"r3","requestStatus":"completed"}]""",
+            ),
+        )
+        val track = DiscoverTrack("Nicole Kidman", "ADÉLA", source = "chart", sourceId = "ADÉLA — Nicole Kidman")
+        client().downloadTrack(track, chartId = "deezer_world", chartPosition = 1)
+        val body = server.takeRequest().body!!.utf8()
+        assertTrue(body, body.contains("\"chartId\":\"deezer_world\"") && body.contains("\"chartPosition\":1"))
+        val entries = client().chart("deezer_world")
+        assertEquals("queued", entries[0].requestStatus)
+        assertTrue(entries[0].isPending)
+        assertTrue(entries[1].isReady)
+    }
+
+    @Test
     fun `errors are mapped`() = runTest {
         server.enqueue(json("""{"detail":"Navidrome не принял учётные данные"}""", code = 401))
         server.enqueue(json("""{"detail":"Скачивание исполнителей не настроено (Lidarr)"}""", code = 409))

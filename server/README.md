@@ -89,17 +89,17 @@ HTTP разрешён только для адресов локальной се
 | `DISCOGS_TOKEN` | нет | Токен Discogs (или файл `/secrets/discogs_token`): без него `discogs` в списке пропускается |
 | `SOURCES_ORDER` | нет | Порядок источников загрузки по умолчанию: `yandex,slskd,youtube,lidarr`. В приложении меняется перетаскиванием |
 | `SOURCES_DISABLED` | нет | Выключенные по умолчанию источники через запятую (в приложении — переключатели) |
-| `YANDEX_MUSIC_TOKEN` | для Яндекса | OAuth-токен; лучше файлом `/secrets/yandex_music_token` (как ключ Last.fm). Скачивание — только с подпиской Плюс; метаданные работают и без неё |
+| `YANDEX_MUSIC_TOKEN` | для Яндекса | Общий OAuth-токен; лучше файлом `/secrets/yandex_music_token` (как ключ Last.fm). Скачивание — только с подпиской Плюс; метаданные работают и без неё. С 0.13.0 — запасной: у кого есть свой токен (`/secrets/yandex_accounts/<пользователь>`), тот качает своим |
 | `YANDEX_DELAY_S` | нет | Пауза между запросами к Яндексу, по умолчанию `2-3` (секунды, случайно в диапазоне) |
 | `YANDEX_METADATA` | нет | «Яндекс: метаданные» по умолчанию, `true` |
-| `YANDEX_CHECK_INTERVAL_S` | нет | Как часто проверять подписку Плюс, по умолчанию 86400 (сутки) |
+| `YANDEX_CHECK_INTERVAL_S` | нет | Как часто проверять каждый токен Яндекса запросом к API (действителен ли, есть ли Плюс), по умолчанию 86400 (сутки); после сетевой ошибки — через 10 минут |
 | `YOUTUBE_PROXY` | нет | Прокси для yt-dlp и ytmusicapi, например `socks5://vpn:1080` (или файл `/secrets/youtube_proxy`) |
 | `YTDLP_AUTO_UPDATE`, `YTDLP_UPDATE_INTERVAL_S` | нет | Обновлять yt-dlp в `<DATA_DIR>/ytdlp`: при старте и раз в сутки, по умолчанию `true` |
 | `PREVIEW_RATIO` | нет | Файл короче этой доли длительности по каталогу — превью: удаляется, источник неудачный. По умолчанию 0.9 |
 | `LIDARR_WANTED_SYNC` | нет | «Метки» Lidarr через цепочку, по умолчанию `true` |
 | `LIDARR_WANTED_INTERVAL_S`, `LIDARR_WANTED_BATCH`, `LIDARR_WANTED_RETRY_DAYS` | нет | Раз в 3600 с, до 20 альбомов за раз; ненайденное — снова через 7 дней |
 | `EXPORT_DELAY_S` | нет | Массовая выгрузка из Яндекса: пауза между треками, по умолчанию 5 с |
-| `YANDEX_ACCOUNTS` | нет | Архив Яндекса для рекомендаций: `пользователь:/путь/к/токену,…` (пользователь Navidrome → токен его аккаунта). Или файлы `/secrets/yandex_accounts/<пользователь>` |
+| `YANDEX_ACCOUNTS` | нет | Токены Яндекса пользователей: `пользователь:/путь/к/токену,…` (пользователь Navidrome → токен его аккаунта). Или файлы `/secrets/yandex_accounts/<пользователь>`. Нужны архиву рекомендаций (только свой токен, без общего) и с 0.13.0 — загрузкам: заявка качается токеном того, кто её поставил, иначе общим `YANDEX_MUSIC_TOKEN`; статус «Источники загрузки» — по токену того, кто смотрит. Фоновые задачи (чарты, «метки» Lidarr) — общим токеном, выгрузка — токеном запустившего |
 | `YANDEX_ARCHIVE_DIR` | нет | Сырые ответы архива (`<пользователь>/<дата>/<тип>.json`), по умолчанию `<DATA_DIR>/yandex-archive` |
 | `HARVEST_ENABLED`, `HARVEST_DELAY_S` | нет | Архив включён (`true`), пауза между запросами к аккаунту 1 с |
 | `HARVEST_WAVE_RUNS_PER_DAY`, `HARVEST_WAVE_BATCHES` | нет | «Моя волна»: 3 прогона в сутки по 5 пачек |
@@ -230,6 +230,18 @@ ListenBrainz (топ записей за неделю). Хранится сни�
 Чарт, который не ответил, скрывается до следующего удачного обновления. Каждый трек сопоставляется с библиотекой и
 пулом; недостающие из топ-`CHARTS_DOWNLOAD_TOP` ставятся в пул с владельцем `charts` (заявки `pool:charts`). Лайк
 любого пользователя переводит такой трек в библиотеку; выпавший из всех чартов и не слушавшийся 30 дней — удаляется.
+
+С 0.13.0 доступность позиции считается **при каждой отдаче чарта**, а не при сборке:
+1. прямая привязка `chart_links`: трек, скачанный из позиции чарта (кнопка в приложении — `chartId` + `chartPosition`
+   в заявке; топ в пул «charts»), связан с заявкой → путь файла → id песни Navidrome (по пути в БД Navidrome, после
+   ближайшего скана). Ключ привязки — id трека в источнике чарта (`deezer:3135556`), есть и ISRC;
+2. ключ «исполнитель + название» (`reco/keys.py`): NFKC → casefold → без диакритики латиницы (`ADÉLA` = `Adela`);
+   без `(with …)`, `(feat. …)`, `[…]`, `- Remaster…`, `(Radio Edit)`; совпадение, если основной исполнитель чарта есть
+   в списке исполнителей трека (`, & feat. ft. x with`);
+3. ISRC из тегов (Navidrome 0.55+, колонка `tags`).
+Если есть недоступные позиции, а индекс библиотеки старше 5 минут, он перечитывается; после завершения любой заявки
+индекс сбрасывается. В позиции — `requestId` и `requestStatus` заявки bodrod. При первом старте 0.13.0 (и по
+`POST /api/v1/charts/refresh`) уже скачанные раньше треки привязываются к позициям собранных чартов.
 
 ## Анализ звучания (0.12.0)
 
@@ -396,7 +408,7 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | GET | `/api/v1/artists/popular?name=` | Популярные треки исполнителя по имени (Яндекс Музыка), с `librarySongId` у тех, что есть в библиотеке |
 | POST | `/api/v1/library/check` | `{ids: [...]}` → `{missing: [...], replaced: {старый id: новый}}` — удалённые и заменённые треки |
 | GET | `/api/v1/requests` | Заявки пользователя |
-| POST | `/api/v1/requests` | `{kind: "track", artist, title, durationMs?}`, `{kind: "album", artist, album}` или `{kind: "artist", artist}`. В ответе — `source` и `attempts` |
+| POST | `/api/v1/requests` | `{kind: "track", artist, title, durationMs?, chartId?, chartPosition?}`, `{kind: "album", artist, album}` или `{kind: "artist", artist}`. В ответе — `source` и `attempts`. `chartId` + `chartPosition` (0.13.0) — трек из позиции чарта: позиция привязывается к скачанному файлу |
 | GET | `/api/v1/requests/{id}` | Одна заявка |
 | DELETE | `/api/v1/requests/{id}` | Отменить активную заявку или убрать завершённую. Для исполнителя Lidarr перестаёт его отслеживать и убирает его загрузки из очереди |
 | GET | `/api/v1/cleanup/users` | Пользователи для вкладок «Не нравятся …» (только админ) |
@@ -409,7 +421,7 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | GET | `/api/v1/maintenance/actions?runId=&kind=&limit=&offset=` | Отчёт: `kind` — `short`, `duplicate`, `album`, `artist_merge`, `tags`, `cover`, `mismatch` или `attention` (требует внимания: находки без исправления) |
 | POST | `/api/v1/maintenance/run` | Запустить сейчас (202; 409 — уже идёт) |
 | POST | `/api/v1/maintenance/quarantine/{id}/restore` | Вернуть файл из карантина |
-| GET | `/api/v1/sources` | Источники загрузки: порядок, `enabled`, `state` (`ok` / `disabled` / `unavailable`), `reason`, `details`; `yandexMetadata` (только админ) |
+| GET | `/api/v1/sources` | Источники загрузки: порядок, `enabled`, `state` (`ok` / `disabled` / `unavailable`), `reason`, `details`; `yandexMetadata` (только админ). Статус Яндекса — для того, кто смотрит: его токен, иначе общий; `tokenSource` (`user` / `global`) и `tokenSourceTitle` (0.13.0) |
 | PUT | `/api/v1/sources` | `{order?: [...], enabled?: {имя: bool}, yandexMetadata?: bool}` |
 | POST | `/api/v1/sources/yandex/check` | Проверить подписку Плюс сейчас |
 | POST | `/api/v1/sources/youtube/update` | Обновить yt-dlp сейчас (502 — не удалось) |
@@ -429,8 +441,8 @@ Navidrome её не сканирует) и удаляется через `QUARAN
 | POST | `/api/v1/analysis/features` | `{ids}` → признаки: `bpm`, `energy`, `danceability`, `voice`, `key`, `moods` |
 | GET | `/api/v1/analysis/similar?songId=&limit=` | Похожие по звучанию треки библиотеки: `{ids}` |
 | GET | `/api/v1/charts` | Доступные чарты: `id`, `title`, `updatedAt`, `covers` (4 обложки), `size` |
-| GET | `/api/v1/charts/{id}` | Позиции: `position`, `prevPosition`, `movement` (`up`/`down`/`same`/`new`), `state` (`library`/`pool`/`downloading`/`unavailable`), `songId` |
-| POST | `/api/v1/charts/refresh` | Обновить чарты сейчас (только админ) |
+| GET | `/api/v1/charts/{id}` | Позиции: `position`, `prevPosition`, `movement` (`up`/`down`/`same`/`new`), `state` (`library`/`pool`/`queued`/`downloading`/`unavailable`), `songId`, `requestId`, `requestStatus`. Доступность считается при каждом запросе |
+| POST | `/api/v1/charts/refresh` | Обновить чарты сейчас и пересчитать привязки скачанных треков (только админ) |
 | GET / PUT | `/api/v1/reco/engine` | Источники движка: `enabled`, `weight`, `learnedWeight`, счётчики; PUT `{enabled?, weights?, newArtistShare?}` (только админ) |
 | GET | `/api/v1/reco/engine/preview?limit=` | Что движок предложил бы пользователю сейчас (без загрузки) |
 | GET | `/api/v1/reco/harvest` | Архив Яндекса: по аккаунтам — сборщики (когда работали, отключены ли), лайки, рёбра, резерв (только админ) |

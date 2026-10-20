@@ -48,8 +48,8 @@ class ChartsRepository @Inject constructor(
         }.mapNotNull { it.await() }.associateBy { it.id }
     }
 
-    /** «Скачать» недоступный трек — обычная заявка в цепочку источников. */
-    suspend fun download(entry: ChartEntry) = downloads.downloadTrack(
+    /** «Скачать» недоступный трек — обычная заявка в цепочку источников, привязанная к позиции чарта. */
+    suspend fun download(chartId: String, entry: ChartEntry) = downloads.downloadTrack(
         DiscoverTrack(
             title = entry.title,
             artist = entry.artist,
@@ -59,6 +59,8 @@ class ChartsRepository @Inject constructor(
             source = "chart",
             sourceId = "${entry.artist} — ${entry.title}",
         ),
+        chartId = chartId,
+        chartPosition = entry.position,
     )
 
     suspend fun saveOrder(order: List<String>, hidden: Set<String>) {

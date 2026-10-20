@@ -42,6 +42,8 @@ class SourceStatus:
     reason: str | None = None
     """Дополнительно для экрана источников: версия yt-dlp, срок подписки."""
     details: str | None = None
+    """Чей токен (Яндекс): `user` — пользователя, `global` — общий."""
+    token_source: str | None = None
 
 
 class SourceMiss(Exception):  # noqa: N818 — это не ошибка, а «не нашли»
@@ -94,12 +96,14 @@ class FetchJob:
     """Прогресс для приложения: доля 0..1 и сообщение."""
     progress: Callable[[float | None, str], None] = lambda _p, _m: None
     state: dict[str, Any] = field(default_factory=dict)
+    """Пользователь, от имени которого заявка (его токен Яндекса); `None` — общий."""
+    owner: str | None = None
 
 
 class DirectSource(Protocol):
     name: str
 
-    async def status(self) -> SourceStatus: ...
+    async def status(self, user: str | None = None) -> SourceStatus: ...
 
     async def fetch(self, job: FetchJob) -> FetchResult: ...
 

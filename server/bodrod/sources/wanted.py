@@ -57,7 +57,7 @@ class LidarrWantedSync:
     async def _usable(self) -> bool:
         registry = self._worker.registry
         for name in DIRECT_ALBUM_SOURCES:
-            if registry.is_enabled(name) and (await registry.status(name)).available:
+            if registry.is_enabled(name) and (await registry.status(name, WANTED_USER)).available:
                 return True
         return False
 

@@ -7,13 +7,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from ..db import Store
-from .keys import track_key
+from .keys import KEYS_VERSION, track_key
+
+log = logging.getLogger(__name__)
+KEYS_VERSION_KEY = "reco.keys_version"
 
 ALL_USERS = "*"
 DAY_MS = 24 * 3600 * 1000
@@ -150,6 +154,29 @@ class RecoStore:
     def __init__(self, store: Store) -> None:
         self.db = store
         store.executescript(SCHEMA)
+        self._rekey()
+
+    def _rekey(self) -> None:
+        """Правила ключей изменились (`KEYS_VERSION`) — пересчитать сохранённые ключи пула и личных блокировок."""
+        if self.db.get_value(KEYS_VERSION_KEY) == KEYS_VERSION:
+            return
+        changed = 0
+        for row in self.db.query("SELECT id, key, artist, title FROM pool_tracks"):
+            key = track_key(row["artist"], row["title"])
+            if key != row["key"] and self.db.query_one("SELECT id FROM pool_tracks WHERE key = ?", (key,)) is None:
+                self.db.execute("UPDATE pool_tracks SET key = ? WHERE id = ?", (key, row["id"]))
+                changed += 1
+        for row in self.db.query("SELECT username, key, artist, title FROM user_blocklist"):
+            key = track_key(row["artist"], row["title"])
+            if key != row["key"]:
+                self.db.execute(
+                    "UPDATE OR IGNORE user_blocklist SET key = ? WHERE username = ? AND key = ?",
+                    (key, row["username"], row["key"]),
+                )
+                changed += 1
+        self.db.set_value(KEYS_VERSION_KEY, KEYS_VERSION)
+        if changed:
+            log.info("Рекомендации: ключи треков пересчитаны (%s)", changed)
 
     # region Каталог
 

@@ -84,6 +84,9 @@ class CreateRequest(ApiModel):
     album: str | None = Field(default=None, max_length=300)
     duration_ms: int | None = None
     cover_url: str | None = Field(default=None, max_length=1000)
+    """Трек качается из позиции чарта: прямая привязка позиции к скачанному файлу."""
+    chart_id: str | None = Field(default=None, max_length=100)
+    chart_position: int | None = None
 
 
 class AttemptOut(ApiModel):
@@ -261,6 +264,10 @@ class SourceOut(ApiModel):
     kinds: list[str] = Field(default_factory=list)
     """Дополнительно: версия yt-dlp, статус подписки и т. п."""
     details: str | None = None
+    """Яндекс: чей токен — `user` (пользователя приложения) или `global` (общий YANDEX_MUSIC_TOKEN)."""
+    token_source: str | None = None
+    """То же текстом: «Токен пользователя» / «Общий токен»."""
+    token_source_title: str | None = None
 
 
 class SourcesOut(ApiModel):
@@ -427,9 +434,12 @@ class ChartEntryOut(ApiModel):
     prev_position: int | None = None
     """up / down / same / new."""
     movement: str
-    """library / pool — можно слушать (`songId`); downloading — качается; unavailable — нет."""
+    """library / pool — можно слушать (`songId`); queued — в очереди; downloading — качается; unavailable — нет."""
     state: str
     song_id: str | None = None
+    """Заявка bodrod на этот трек и её статус (queued, downloading, completed, failed…)."""
+    request_id: str | None = None
+    request_status: str | None = None
 
 
 class EngineSourceOut(ApiModel):

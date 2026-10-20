@@ -132,7 +132,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun checkLibrary(ids: List<String>): LibraryCheck = client.checkLibrary(ids)
 
-    suspend fun downloadTrack(track: DiscoverTrack): DownloadRequest = remember(client.downloadTrack(track))
+    suspend fun downloadTrack(track: DiscoverTrack, chartId: String? = null, chartPosition: Int? = null): DownloadRequest =
+        remember(client.downloadTrack(track, chartId, chartPosition))
 
     suspend fun downloadArtist(artist: DiscoverArtist): DownloadRequest = remember(client.downloadArtist(artist))
 
