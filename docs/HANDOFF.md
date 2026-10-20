@@ -237,9 +237,9 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Образ `bodrod` на сервере — `da1984a` (0.12.0). Осталось: удалить `NAVIDROME_ADMIN_PASSWORD` из YAML проекта, сменить
-   пароль `bodrod` в Navidrome и записать его в `/secrets/navidrome_password` (шаги 1, 2, 4 раздела «Что нужно сделать
-   на сервере» в [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md)); проверить результат
+0. Образ `bodrod` на сервере — `da1984a` (0.12.0). Осталось: записать пароль `bodrod` в `/secrets/navidrome_password`
+   и после этого удалить `NAVIDROME_ADMIN_PASSWORD` из YAML проекта (шаги 1–2 раздела «Что нужно сделать на сервере» в
+   [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md); пароль владелец решил не менять); проверить результат
    регламента (шаги 5–6). В YAML уже стоит `MAINTENANCE_DRY_RUN: "false"` — регламент работает не в пробном режиме.
 1. **До 20 ноября** — архив Яндекса: токены обоих аккаунтов в `/secrets/yandex_accounts/<пользователь Navidrome>`,
    архив на volume2 (`YANDEX_ARCHIVE_DIR`), образ bodrod 0.12.0 — раздел «Что нужно сделать на сервере» в
