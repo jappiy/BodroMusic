@@ -1,11 +1,14 @@
 """Цикл воркера: взять задания у bodrod, посчитать признаки, отдать результат. Один файл за раз.
 
+Анализ идёт в дочернем процессе (`isolated.py`): нативный краш помечает трек `failed`, воркер продолжает работу.
+
 Переменные окружения:
 - `BODROD_URL` — адрес bodrod (`http://bodrod:8790`);
 - `ANALYZER_TOKEN` (или `ANALYZER_TOKEN_FILE`) — тот же токен, что у bodrod;
 - `MUSIC_DIR` — папка музыки внутри контейнера (пути заданий — относительно неё), по умолчанию `/music`;
 - `MODELS_DIR` — модели Essentia (в образе — `/models`);
-- `BATCH` — сколько заданий брать за раз (10), `IDLE_S` — пауза, когда заданий нет (300).
+- `BATCH` — сколько заданий брать за раз (10), `IDLE_S` — пауза, когда заданий нет (300);
+- `TRACK_TIMEOUT_S` — предел анализа одного трека (600), после него дочерний процесс убивается.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 import httpx
+
+from .isolated import ExtractorUnavailable
 
 log = logging.getLogger("bodro_analyzer")
 
@@ -105,8 +110,8 @@ class Worker:
         for relative in jobs:
             try:
                 self.process(relative)
-            except httpx.HTTPError:
-                raise  # bodrod недоступен — повтор всей пачки в run_forever
+            except (httpx.HTTPError, ExtractorUnavailable):
+                raise  # bodrod недоступен — повтор всей пачки в run_forever; модели не грузятся — остановка
             except Exception as e:  # noqa: BLE001 — один трек не роняет воркер
                 log.exception("%s — ошибка", relative)  # путь и traceback
                 try:
@@ -134,9 +139,11 @@ def main() -> None:
     base = _env("BODROD_URL")
     if not token or not base:
         raise SystemExit("Нужно задать BODROD_URL и ANALYZER_TOKEN")
-    from .extract import EssentiaExtractor
+    from .isolated import IsolatedExtractor
 
-    extractor = EssentiaExtractor(_env("MODELS_DIR", "/models") or "/models")
+    extractor = IsolatedExtractor(
+        _env("MODELS_DIR", "/models") or "/models", timeout_s=float(_env("TRACK_TIMEOUT_S", "600") or 600)
+    )
     worker = Worker(
         httpx.Client(),
         base,

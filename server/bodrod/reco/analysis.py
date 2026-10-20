@@ -38,11 +38,17 @@ CREATE TABLE IF NOT EXISTS audio_features (
     embedding BLOB,
     features TEXT NOT NULL DEFAULT '{}',
     error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
     analyzed_at INTEGER NOT NULL
 );
 """
 
 LEASE_MS = 30 * 60 * 1000
+MAX_ATTEMPTS = 3
+"""Неудачных попыток подряд, после которых трек больше не выдаётся воркеру («не анализировать»)."""
+RETRY_DELAY_MS = 60 * 60 * 1000
+"""Пауза перед повтором упавшего трека."""
+LEASE_EXPIRED_ERROR = "Нет результата за 30 минут: воркер упал или завис"
 INDEX_REFRESH_S = 600
 MIN_LIKED_FOR_PROFILE = 10
 MOODS = ("happy", "sad", "aggressive", "relaxed")
@@ -123,6 +129,10 @@ class AnalysisService:
         self._lock = asyncio.Lock()
         self._last_result_at: int | None = None
         store.executescript(SCHEMA)
+        if "attempts" not in store.columns("audio_features"):
+            # Ошибки до 0.14.0 — одна попытка: с декодированием через ffmpeg у них есть ещё две.
+            store.execute("ALTER TABLE audio_features ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+            store.execute("UPDATE audio_features SET attempts = 1 WHERE error IS NOT NULL")
 
     @property
     def token(self) -> str | None:
@@ -160,23 +170,41 @@ class AnalysisService:
 
     # region Очередь для воркера
 
-    def _known(self) -> set[str]:
-        """Пути с результатом — признаками или ошибкой."""
-        return {r["path"] for r in self._store.query("SELECT path FROM audio_features")}
+    def _known(self) -> dict[str, dict[str, Any]]:
+        """Пути с результатом — признаками или ошибкой: путь → `error`, `attempts`, `analyzed_at`."""
+        rows = self._store.query("SELECT path, error, attempts, analyzed_at FROM audio_features")
+        return {r["path"]: r for r in rows}
+
+    def _expire_leases(self, now: int) -> None:
+        """Аренды без результата за `LEASE_MS` — неудачная попытка (воркер упал вместе с треком или завис)."""
+        expired = [p for p, t in self._leases.items() if now - t >= LEASE_MS]
+        last_result_at = self._last_result_at
+        for path in expired:
+            log.warning("Анализ %s: %s", path, LEASE_EXPIRED_ERROR)
+            self.save(path, None, None, LEASE_EXPIRED_ERROR)
+        self._last_result_at = last_result_at  # это не результат воркера
 
     async def next_jobs(self, limit: int) -> list[str]:
         """Пути для анализа: сначала пул и резерв (новые), потом библиотека. Выданное держится 30 минут.
 
-        Треки с ошибкой (статус `failed`) повторно не выдаются, чтобы воркер не зацикливался на битых файлах.
+        Упавший трек (статус `failed` или аренда истекла без результата) повторяется не раньше чем через час;
+        после `MAX_ATTEMPTS` неудач подряд он больше не выдаётся, чтобы воркер не зацикливался на битых файлах.
         """
         now = self._clock()
-        self._leases = {p: t for p, t in self._leases.items() if now - t < LEASE_MS}
+        self._expire_leases(now)
         known = self._known()
 
         def wanted(rel: str | None) -> bool:
             if not rel or rel in self._leases:
                 return False
-            return rel not in known
+            row = known.get(rel)
+            if row is None:
+                return True
+            return (
+                row["error"] is not None
+                and int(row["attempts"] or 0) < MAX_ATTEMPTS
+                and now - int(row["analyzed_at"]) >= RETRY_DELAY_MS
+            )
 
         jobs: list[str] = []
         pool = self._store.query(
@@ -208,11 +236,18 @@ class AnalysisService:
         if features is not None:
             stored["energy"] = energy_of(stored)
         self._store.execute(
-            "INSERT INTO audio_features (path, embedding, features, error, analyzed_at) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO audio_features (path, embedding, features, error, attempts, analyzed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(path) DO UPDATE SET embedding = excluded.embedding, features = excluded.features, "
-            "error = excluded.error, analyzed_at = excluded.analyzed_at",
-            (relative, blob, json.dumps(stored, ensure_ascii=False), error, self._clock()),
+            "error = excluded.error, analyzed_at = excluded.analyzed_at, "
+            "attempts = CASE WHEN excluded.error IS NULL THEN 0 "
+            "WHEN audio_features.error IS NULL THEN 1 ELSE audio_features.attempts + 1 END",
+            (relative, blob, json.dumps(stored, ensure_ascii=False), error, 0 if error is None else 1, self._clock()),
         )
+        if error is not None:
+            row = self._store.query_one("SELECT attempts FROM audio_features WHERE path = ?", (relative,))
+            if row and int(row["attempts"]) >= MAX_ATTEMPTS:
+                log.warning("Анализ %s: %d неудач подряд — больше не анализируется (%s)", relative, MAX_ATTEMPTS, error)
         self._leases.pop(relative, None)
         self._last_result_at = self._clock()
         if self._index is not None and embedding:
@@ -220,12 +255,15 @@ class AnalysisService:
 
     def status(self) -> dict[str, Any]:
         row = self._store.query_one(
-            "SELECT COUNT(*) AS n, SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors FROM audio_features"
+            "SELECT COUNT(*) AS n, SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors, "
+            "SUM(CASE WHEN error IS NOT NULL AND attempts >= ? THEN 1 ELSE 0 END) AS skipped FROM audio_features",
+            (MAX_ATTEMPTS,),
         )
         return {
             "enabled": bool(self.token),
             "analyzed": int((row or {}).get("n") or 0) - int((row or {}).get("errors") or 0),
             "errors": int((row or {}).get("errors") or 0),
+            "skipped": int((row or {}).get("skipped") or 0),
             "library": len(self._paths),
             "lastResultAt": self._last_result_at,
         }

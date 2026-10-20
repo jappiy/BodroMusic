@@ -1,5 +1,6 @@
 """Признаки трека на Essentia: эмбеддинг discogs-effnet и классификаторы поверх него, темп, тональность, громкость.
 
+Аудио декодирует системный ffmpeg (`decode.py`), Essentia получает готовые массивы — её загрузчики не используются.
 Модели (некоммерческая лицензия CC BY-NC-SA 4.0 — для домашнего сервера подходит) лежат в `MODELS_DIR`; Dockerfile
 скачивает их при сборке образа. Имена входов/выходов графов берутся из json-метаданных моделей.
 """
@@ -10,6 +11,10 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any
+
+import numpy as np
+
+from .decode import SAMPLE_RATE, decode
 
 EMBEDDING_MODEL = "discogs-effnet-bs64-1"
 GENRE_MODEL = "genre_discogs400-discogs-effnet-1"
@@ -76,7 +81,10 @@ class EssentiaExtractor:
 
     def analyze(self, path: str) -> Analysis:
         es = self._es
-        audio16 = es.MonoLoader(filename=path, sampleRate=16000, resampleQuality=4)()
+        decoded = decode(path)
+        stereo = np.ascontiguousarray(decoded.stereo)
+        audio44 = decoded.mono
+        audio16 = es.Resample(inputSampleRate=SAMPLE_RATE, outputSampleRate=16000, quality=1)(audio44)
         frames = self._embedder(audio16)
         embedding = frames.mean(axis=0)
         genres = self._genre(frames).mean(axis=0)
@@ -92,12 +100,9 @@ class EssentiaExtractor:
                 features["moods"][feature] = value
             else:
                 features[feature] = value
-        stereo, rate, *_ = es.AudioLoader(filename=path)()
-        mono = es.MonoMixer()(stereo, stereo.shape[1] if stereo.ndim > 1 else 1)
-        audio44 = es.Resample(inputSampleRate=rate, outputSampleRate=44100)(mono) if rate != 44100 else mono
         bpm, *_ = es.RhythmExtractor2013(method="multifeature")(audio44)
         key, scale, strength = es.KeyExtractor()(audio44)
-        loudness = es.LoudnessEBUR128(sampleRate=rate)(stereo)[2] if stereo.ndim > 1 else None
+        loudness = es.LoudnessEBUR128(sampleRate=SAMPLE_RATE)(stereo)[2] if decoded.channels > 1 else None
         features.update(
             {
                 "bpm": round(float(bpm), 2),
@@ -105,7 +110,7 @@ class EssentiaExtractor:
                 "scale": scale,
                 "keyStrength": round(float(strength), 3),
                 "loudness": round(float(loudness), 2) if loudness is not None else None,
-                "duration": round(len(audio16) / 16000.0, 1),
+                "duration": round(decoded.duration if decoded.duration else len(audio44) / SAMPLE_RATE, 1),
             }
         )
         return Analysis(features=features, embedding=[round(float(x), 6) for x in embedding])

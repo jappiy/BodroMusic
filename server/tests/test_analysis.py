@@ -86,11 +86,43 @@ def test_queue_pool_first_then_library_and_leases(tmp_path: Path) -> None:
     assert asyncio.run(service.next_jobs(5)) == ["lib/b.flac"]
     service.save("lib/a.flac", {"bpm": 120}, vector(0), None)
     assert service.status()["analyzed"] == 1
-    # Упавший трек (failed) не выдаётся снова и после истечения аренды.
+    # Упавший трек (failed) повторяется через час, после трёх неудач подряд больше не выдаётся.
     service.save("lib/b.flac", None, None, "ValueError: не аудио")
-    service._clock = lambda: 10**15
+    assert service.status()["errors"] == 1 and service.status()["skipped"] == 0
+    assert asyncio.run(service.next_jobs(5)) == []  # q.flac ещё в аренде, b.flac — рано
+    hour = 60 * 60 * 1000
+    base = service._clock()
+    service._clock = lambda: base + hour
+    # Аренда q.flac истекла без результата — это неудачная попытка, повтор тоже через час.
+    assert asyncio.run(service.next_jobs(5)) == ["lib/b.flac"]
+    service.save("lib/b.flac", None, None, "ValueError: не аудио")
+    service._clock = lambda: base + 2 * hour
+    assert asyncio.run(service.next_jobs(5)) == ["_discovery/P/q.flac", "lib/b.flac"]
+    service.save("lib/b.flac", None, None, "ValueError: не аудио")  # третья неудача
+    service._clock = lambda: base + 10 * hour
+    assert asyncio.run(service.next_jobs(5)) == []  # q.flac: вторая истёкшая аренда
+    assert service.status()["skipped"] == 1
+    service._clock = lambda: base + 20 * hour
     assert asyncio.run(service.next_jobs(5)) == ["_discovery/P/q.flac"]
-    assert service.status()["errors"] == 1
+    service.save("_discovery/P/q.flac", {"bpm": 90}, vector(1), None)  # успех обнуляет счётчик
+    status = service.status()
+    assert status == {**status, "analyzed": 2, "errors": 1, "skipped": 1}
+    attempts = store.query_one("SELECT attempts FROM audio_features WHERE path = ?", ("_discovery/P/q.flac",))
+    assert attempts == {"attempts": 0}
+
+
+def test_migration_keeps_old_errors_retryable(tmp_path: Path) -> None:
+    store = Store(str(tmp_path / "bodrod.sqlite3"))
+    store.executescript(
+        "CREATE TABLE audio_features (path TEXT PRIMARY KEY, embedding BLOB, features TEXT NOT NULL DEFAULT '{}', "
+        "error TEXT, analyzed_at INTEGER NOT NULL);"
+        "INSERT INTO audio_features VALUES ('lib/a.flac', NULL, '{}', 'Ошибка', 0);"
+        "INSERT INTO audio_features VALUES ('lib/b.flac', NULL, '{}', NULL, 0);"
+    )
+    service, *_ = make(tmp_path, [("s1", "lib/a.flac"), ("s2", "lib/b.flac")], [])
+    rows = {r["path"]: r["attempts"] for r in store.query("SELECT path, attempts FROM audio_features")}
+    assert rows == {"lib/a.flac": 1, "lib/b.flac": 0}
+    assert asyncio.run(service.next_jobs(5)) == ["lib/a.flac"]
 
 
 def test_similar_and_taste_filter(tmp_path: Path) -> None:

@@ -10,7 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MODELS_DIR=/models \
     MUSIC_DIR=/music
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# ffmpeg декодирует любые форматы (opus, m4a, …) — загрузчики Essentia не используются.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt .

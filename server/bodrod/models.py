@@ -498,7 +498,7 @@ class AnalysisResult(ApiModel):
     features: dict[str, Any] | None = None
     embedding: list[float] | None = Field(default=None, max_length=4096)
     status: Literal["ok", "failed"] | None = None
-    """`failed` — трек не обработан (текст в `error`); такие треки в очередь больше не попадают."""
+    """`failed` — трек не обработан (текст в `error`); повтор через час, после трёх неудач подряд не выдаётся."""
     error: str | None = None
 
 
@@ -506,6 +506,9 @@ class AnalysisStatus(ApiModel):
     enabled: bool
     analyzed: int = 0
     errors: int = 0
+    """Треки с ошибкой последней попытки (включая `skipped`)."""
+    skipped: int = 0
+    """Треки, исключённые из анализа после трёх неудач подряд."""
     library: int = 0
     last_result_at: int | None = None
 
