@@ -110,7 +110,7 @@ slskd сохраняет готовый файл в `/downloads/<имя роди
 | Контейнер | Образ | Роль |
 | --- | --- | --- |
 | `bodrod-secrets` | `alpine:3.20` | Одноразовый при каждом старте: достаёт `ApiKey` из `lidarr/config.xml` и ключ slskd из `slskd.yml`, пишет `/volume1/docker/bodrod/secrets/env` (`chmod 600`), делает `chown -R 1027:100` для `env` и `data` |
-| `bodrod` | `ghcr.io/jappiy/bodromusic-server:da1984a` (0.12.0, с 2026-10-20; доступен `d25e9bf` — 0.13.0), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки»; с 0.7.0 — цепочка источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr, выгрузка из Яндекса; в образе ffmpeg |
+| `bodrod` | `ghcr.io/jappiy/bodromusic-server:da1984a` (0.12.0, с 2026-10-20; доступен `33b99e5` — 0.13.1), порт 8790 | FastAPI-сервис: поиск вне библиотеки и заявки на скачивание; с 0.3.0 — «На удаление»; с 0.4.0 — ночное «Обслуживание библиотеки»; с 0.7.0 — цепочка источников (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr, выгрузка из Яндекса; в образе ffmpeg |
 
 Ключевые настройки `bodrod`:
 ```yaml
@@ -142,6 +142,16 @@ environment:
   #   в /music/library/Плейлисты Яндекса/
   # с 0.13.0 (задания 014–015, образ d25e9bf): YAML не меняется; токены /secrets/yandex_accounts/<пользователь>
   #   используются и для загрузок (токен того, кто поставил заявку; без своего — общий /secrets/yandex_music_token)
+```
+Анализатор звучания `bodro-analyzer` (задания 013, 016): образ `ghcr.io/jappiy/bodromusic-analyzer:33b99e5` (0.1.1),
+только amd64; полный YAML — в [`analyzer/README.md`](../analyzer/README.md). Музыка только на чтение, `cpus: 1.5`,
+токен — `/volume1/docker/secrets/analyzer_token` (тот же файл читает bodrod). Логи ограничены:
+```yaml
+logging:
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 ```
 Регламент (с 0.4.0) пишет в `/volume2/music` (теги, `cover.jpg`, перенос альбомов) и складывает убранное в
 `/volume2/music/.bodrod-quarantine` (30 дней, внутри `.ndignore`). Файлы из папок исполнителей Lidarr не трогает.

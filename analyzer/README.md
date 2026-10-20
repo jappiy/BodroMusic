@@ -12,7 +12,10 @@ relaxed, danceability, голос/инструментал, BPM, тональн�
 
 ## Запуск
 
-Образ: `ghcr.io/jappiy/bodromusic-analyzer:latest` (только amd64).
+Образ: `ghcr.io/jappiy/bodromusic-analyzer:<хеш коммита>` (только amd64; текущий — `33b99e5`, 0.1.1). Есть и
+`latest`, но в проекте тег закрепляется.
+
+Трек, на котором анализ упал, отправляется в bodrod со статусом `failed` и больше не выдаётся (воркер идёт дальше).
 
 | Переменная | Описание |
 |---|---|
@@ -25,7 +28,7 @@ relaxed, danceability, голос/инструментал, BPM, тональн�
 
 ```yaml
   analyzer:
-    image: ghcr.io/jappiy/bodromusic-analyzer:latest
+    image: ghcr.io/jappiy/bodromusic-analyzer:33b99e5
     container_name: bodro-analyzer
     restart: unless-stopped
     cpus: 1.5          # не больше полутора ядер
@@ -37,6 +40,11 @@ relaxed, danceability, голос/инструментал, BPM, тональн�
     volumes:
       - /volume2/music:/music:ro
       - /volume1/docker/secrets:/secrets:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 ```
 
 ### На ПК через SMB
@@ -44,7 +52,7 @@ relaxed, danceability, голос/инструментал, BPM, тональн�
 Подключить общую папку музыки (например, `\\nas\music` → `M:`), затем:
 
 ```bash
-docker run -d --name bodro-analyzer -e BODROD_URL=http://nas.local:8790 -e ANALYZER_TOKEN=<токен> -e MUSIC_DIR=/music -v M:/:/music:ro ghcr.io/jappiy/bodromusic-analyzer:latest
+docker run -d --name bodro-analyzer -e BODROD_URL=http://nas.local:8790 -e ANALYZER_TOKEN=<токен> -e MUSIC_DIR=/music --log-opt max-size=10m --log-opt max-file=3 -v M:/:/music:ro ghcr.io/jappiy/bodromusic-analyzer:33b99e5
 ```
 
 У bodrod при этом задаётся тот же `ANALYZER_TOKEN` (или файл `/secrets/analyzer_token`).
