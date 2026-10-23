@@ -477,6 +477,12 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                 { v -> viewModel.update { it.copy(coverColors = v) } },
             )
             SwitchRow(
+                stringResource(R.string.settings_background_animation),
+                stringResource(R.string.settings_background_animation_summary),
+                settings.backgroundAnimation,
+                { v -> viewModel.update { it.copy(backgroundAnimation = v) } },
+            )
+            SwitchRow(
                 stringResource(R.string.settings_dynamic_color),
                 stringResource(R.string.settings_dynamic_color_summary),
                 settings.dynamicColor,

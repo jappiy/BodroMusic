@@ -359,6 +359,14 @@ class ExportPlaylistOut(ApiModel):
     owner: str | None = None
 
 
+class ArtistFactsOut(ApiModel):
+    """Факт о треке или исполнителе (Last.fm): одна фраза и теги. Пусто — строку не показывать."""
+
+    fact: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    source: str | None = None
+
+
 class PlaylistAuditEntry(ApiModel):
     id: str
     name: str

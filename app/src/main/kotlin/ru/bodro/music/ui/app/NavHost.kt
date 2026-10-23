@@ -4,6 +4,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -63,6 +64,14 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
                 onShowArtists = { navController.navigate(ArtistsRoute) },
                 onShowPlaylists = { navController.navigate(PlaylistsRoute) },
                 onOpenChart = { navController.navigate(ChartRoute(it.id, it.title)) },
+                onOpenSearch = {
+                    // Как нажатие на вкладку «Поиск»: с сохранением состояния разделов.
+                    navController.navigate(SearchRoute) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
             )
         }
         composable<CollectionRoute> {

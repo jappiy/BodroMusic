@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-23 (задания 020–021: персональные плейлисты и адаптивная вёрстка — этапы 1–2 из 5 большого задания; этапы 3–5 — задания 022–024). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-23 (задания 020–022: персональные плейлисты, адаптивная вёрстка, новая главная «Моя волна» — этапы 1–3 из 5 большого задания; этапы 4–5 — задания 023–024). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,17 +64,23 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.23.0** (`versionCode 24`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.17.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Текущая версия приложения: **0.24.0** (`versionCode 25`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.18.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
   Воркер анализа звучания: **0.2.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer:0016967`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.23.0
-  (`BodroMusic-0.23.0.apk` — release с R8; `BodroMusic-0.23.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.24.0
+  (`BodroMusic-0.24.0.apk` — release с R8; `BodroMusic-0.24.0-debug.apk` — debug, ставится рядом).
 - Установка bodrod и анализатора на NAS — только по [`docs/DEPLOY.md`](DEPLOY.md): образ `bodrod:local` собирается
   на NAS из скопированной папки, теги GHCR в YAML не пишутся.
 - ТЗ рекомендательной системы и чартов (пять задач): [`docs/reco/`](reco/README.md).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
+
+**Задание 022** (app 0.24.0 / bodrod 0.18.0, релиз v0.24.0) — этап 3 из 5: главная «Моя волна» (`WaveHome`):
+имя исполнителя с автоподбором размера, свайп — трек, «таблетка» с прогрессом, факт Last.fm (`/artists/facts`),
+карусель режимов (`WavePreset`, `WaveSettings.preset`); фон — эквалайзер в цветах обложки по спектру из
+`SpectrumAudioProcessor` (Media3, без микрофона), только в RESUMED; «Анимация фона» в настройках. Снимки
+Robolectric, на телефоне не проверено.
 
 **Задание 021** (app 0.23.0, релиз v0.23.0) — этап 2 из 5: плеер раскладывается по `playerLayout` (две колонки в
 ландшафте и на широком экране, обложка = min(ширина, доля высоты), прокрутка вместо обрезки, свайп «свернуть» через
@@ -142,11 +148,11 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **162** — `core:subsonic` 55, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
-  `app` 25 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Unit: **169** — `core:subsonic` 55, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
+  `app` 31 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 11 — цикл воркера без Essentia, NaN/inf → null, ошибка трека не останавливает пачку;
   дочерний процесс (краш, зависание, перезапуск); декодирование ffmpeg (3 теста, без ffmpeg пропускаются — идут в CI).
-- Сервер (`server/tests`, pytest): **177** (задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+- Сервер (`server/tests`, pytest): **180** (задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
   `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
@@ -194,6 +200,11 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   «Поделиться» = `updatePlaylist(public)`; порядок — `createPlaylist(playlistId, songId…)` (замена состава).
   Импорт из файлов Navidrome отдаёт первому админу — поэтому выгрузка Яндекса пишет `.m3u8` только с
   `EXPORT_WRITE_M3U=true`, а по умолчанию приложение создаёт плейлисты из `GET /yandex/export/playlists`.
+- **Спектр для фона** (0.24.0): `SpectrumAudioProcessor` в `DefaultAudioSink` (`SpectrumRenderersFactory`) →
+  `AudioSpectrum.frames`; анализ только при подписчике (`acquire/release`), иначе пропускает PCM без расчёта.
+- **Снимки экранов** в unit-тестах: Robolectric `GraphicsMode.NATIVE` + `ComponentActivity.setContent` +
+  `decorView.draw` (`WaveHomeScreenshotTest`, PNG в `app/build/screenshots/`). Compose ui-test в unit-тестах не
+  подключён: с ПК владельца Maven Central не отвечает, а Gradle офлайн не находит `androidx.test:runner`.
 - **Адаптивность** (0.23.0): `MainActivity` с `configChanges` — поворот и складывание не пересоздают активити;
   размеры — от `BoxWithConstraints` / `LocalConfiguration`. Плеер — `playerLayout()`; шапки — `heroCoverSize()`.
 - **Настройки учётки в DataStore**: волна и чарты — ключи `<имя>@<accountId>` (`SettingsRepository.Keys.PerAccount`).
@@ -306,7 +317,8 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Задание 020: поставить bodrod 0.17.0 по `docs/DEPLOY.md`; под админом открыть «Настройки → Плейлисты на
+0. Задание 022: поставить bodrod 0.18.0 по `docs/DEPLOY.md` (факты Last.fm на главной; нужен `LASTFM_API_KEY`).
+   Задание 020: поставить bodrod 0.17.0 по `docs/DEPLOY.md`; под админом открыть «Настройки → Плейлисты на
    сервере» и решить по списку «Проверить владельца» ([020](history/020-personal-playlists.md)).
    Задание 019: поставить bodrod 0.16.0 по `docs/DEPLOY.md` (robocopy `server` → «Остановить» → «Создать»), запустить
    обслуживание и проверить на телефоне сводку, карантин и обложки в папках `library/`
@@ -389,6 +401,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 019 | 2026-10-23 | Обслуживание библиотеки: сводка цифрами вместо списка, карантин списком, без чипсов; `cover.jpg` в папках Lidarr из Cover Art Archive; пропуски Lidarr — не проблема | app 0.21.0, bodrod 0.16.0 | [019-maintenance-summary.md](history/019-maintenance-summary.md) |
 | 020 | 2026-10-23 | Этап 1/5: персональные плейлисты («Мои» / «Общие», «Поделиться», «Сохранить себе», порядок), волна и чарты по учётке, отчёт о владельцах плейлистов, плейлисты Яндекса в учётку пользователя | app 0.22.0, bodrod 0.17.0 | [020-personal-playlists.md](history/020-personal-playlists.md) |
 | 021 | 2026-10-23 | Этап 2/5: адаптивная вёрстка — плеер в две колонки в ландшафте, обложка по высоте, прокрутка вместо обрезки, без пересоздания активити при повороте и складывании, отступы под вырез | app 0.23.0 | [021-adaptive-layout.md](history/021-adaptive-layout.md) |
+| 022 | 2026-10-23 | Этап 3/5: новая главная «Моя волна» — исполнитель, свайп треков, «таблетка» с прогрессом, факт Last.fm, карусель режимов, эквалайзер в цветах обложки по спектру плеера | app 0.24.0, bodrod 0.18.0 | [022-wave-home.md](history/022-wave-home.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)

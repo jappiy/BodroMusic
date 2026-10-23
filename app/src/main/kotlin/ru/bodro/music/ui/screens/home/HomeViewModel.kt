@@ -4,14 +4,27 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import ru.bodro.music.core.domain.wave.WaveCharacter
+import ru.bodro.music.core.domain.wave.WaveMood
+import ru.bodro.music.core.domain.wave.WavePreset
+import ru.bodro.music.core.downloads.ArtistFacts
 import ru.bodro.music.core.downloads.Chart
 import ru.bodro.music.data.reco.ChartsRepository
+import ru.bodro.music.data.reco.FactsRepository
 import ru.bodro.music.data.repository.HomeData
 import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.data.settings.AppSettings
+import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.playback.PlayerConnection
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.LoadState
@@ -22,6 +35,8 @@ class HomeViewModel @Inject constructor(
     private val library: LibraryRepository,
     private val connection: PlayerConnection,
     private val charts: ChartsRepository,
+    private val settingsRepository: SettingsRepository,
+    facts: FactsRepository,
 ) : ViewModel() {
     private val _charts = MutableStateFlow<List<Chart>>(emptyList())
 
@@ -35,6 +50,19 @@ class HomeViewModel @Inject constructor(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     val player: StateFlow<PlayerUiState> = connection.state
+
+    val settings: StateFlow<AppSettings> = settingsRepository.settings
+
+    /** Факт о текущем треке волны (Last.fm); `null` — строки нет. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val facts: StateFlow<ArtistFacts?> = connection.state
+        .map { state -> state.currentSong?.takeIf { state.source.isWave } }
+        .distinctUntilChanged { a, b -> a?.id == b?.id }
+        .transformLatest { song ->
+            emit(null)
+            if (song != null) emit(facts.factsFor(song))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
         load()
@@ -66,4 +94,21 @@ class HomeViewModel @Inject constructor(
     }
 
     fun togglePlay() = connection.togglePlay()
+
+    fun next() = connection.next()
+
+    fun previous() = connection.previous()
+
+    /** Выбранный режим волны (свой у каждой учётки); `null` — обычная «Моя волна». */
+    fun setPreset(preset: WavePreset?) {
+        viewModelScope.launch { settingsRepository.update { it.copy(waveModeId = preset?.id.orEmpty()) } }
+    }
+
+    fun setCharacter(character: WaveCharacter) {
+        viewModelScope.launch { settingsRepository.update { it.copy(waveCharacter = character) } }
+    }
+
+    fun setMood(mood: WaveMood) {
+        viewModelScope.launch { settingsRepository.update { it.copy(waveMood = mood) } }
+    }
 }

@@ -88,12 +88,21 @@
     <string name="home_recent_albums">Последние прослушанные</string>
     <string name="home_frequent">Часто слушаю</string>
     <string name="home_random_artists">Случайные исполнители</string>
-    <string name="home_playlists">Мои плейлисты</string>
+    <string name="home_playlists">Плейлисты</string>
     <string name="home_empty_title">Медиатека пуста</string>
     <string name="home_empty_message">Добавьте музыку на сервер Navidrome — она появится здесь.</string>
 
     <!-- Волна -->
     <string name="wave_title">Моя волна</string>
+    <string name="wave_settings">Настройки волны</string>
+    <string name="wave_settings_hint">Настройки сочетаются с режимом: например, «Незнакомое» + «Спокойное». Применяются к следующим трекам волны.</string>
+    <string name="wave_mode_reset">Сбросить режим</string>
+    <string name="wave_back_to_usual">Назад к привычному</string>
+    <string name="wave_start">Запустить волну</string>
+    <string name="wave_start_hint">Музыка под вас — по лайкам и прослушиваниям</string>
+    <string name="wave_more_settings">Жанры, эпохи и миксы →</string>
+    <string name="settings_background_animation">Анимация фона</string>
+    <string name="settings_background_animation_summary">Эквалайзер в цветах обложки на главной «Моя волна», реагирует на звук</string>
     <string name="wave_empty">Не удалось собрать волну: мало данных. Послушайте что-нибудь и поставьте лайки.</string>
     <string name="wave_group_mood">Настроение</string>
     <string name="wave_group_genre">Жанр</string>

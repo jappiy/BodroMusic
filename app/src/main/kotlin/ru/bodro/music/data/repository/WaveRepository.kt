@@ -9,9 +9,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bodro.music.core.domain.wave.LocalWaveSource
 import ru.bodro.music.core.domain.wave.PoolMixer
+import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveEngine
 import ru.bodro.music.core.domain.wave.WaveLibrary
 import ru.bodro.music.core.domain.wave.WaveMood
+import ru.bodro.music.core.domain.wave.WavePreset
 import ru.bodro.music.core.domain.wave.WaveProfile
 import ru.bodro.music.core.domain.wave.WaveProfileBuilder
 import ru.bodro.music.core.domain.wave.WaveRequest
@@ -112,8 +114,10 @@ class WaveRepository @Inject constructor(
         // Дизлайкнутые прямо сейчас (ещё не в Room) тоже исключаем.
         val state = reactions.state.value
         val fullProfile = profile.copy(dislikedSongIds = profile.dislikedSongIds + state.dislikedIds)
-        // Настроение волны: кандидатов втрое больше, потом отбор по признакам звучания.
-        val mood = this.settings.current.waveMood
+        // Настроение волны: кандидатов втрое больше, потом отбор по признакам звучания. Режим с главной
+        // («Бодрое», «Спокойное»…) задаёт настроение поверх настроек.
+        val preset = WavePreset.of(settings.preset)
+        val mood = preset?.mood ?: this.settings.current.waveMood
         val wanted = if (mood != WaveMood.Any && sound.isSupported()) batchSize * MOOD_OVERSAMPLE else batchSize
         val request = WaveRequest(
             settings = resolved,
@@ -126,15 +130,21 @@ class WaveRepository @Inject constructor(
         )
         val raw = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
         val familiar = sound.arrange(raw, mood, batchSize, currentSong)
-        val batch = withPool(familiar, resolved, fullProfile, queue)
+        val batch = withPool(familiar, resolved, fullProfile, queue, preset?.character)
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
         batch
     }
 
     /** «Моя волна» по всей медиатеке: подмешать треки пула «На пробу» по характеру волны (показ — событие для bodrod). */
-    private suspend fun withPool(batch: List<Song>, settings: WaveSettings, profile: WaveProfile, queue: List<Song>): List<Song> {
+    private suspend fun withPool(
+        batch: List<Song>,
+        settings: WaveSettings,
+        profile: WaveProfile,
+        queue: List<Song>,
+        character: WaveCharacter? = null,
+    ): List<Song> {
         if (settings.seed != WaveSeed.Everything && settings.seed != WaveSeed.Collection) return batch
-        val share = this.settings.current.waveCharacter.poolShare
+        val share = (character ?: this.settings.current.waveCharacter).poolShare
         val poolIds = pool.visibility.value.songIds
         if (poolIds.isEmpty()) return batch
         val state = reactions.state.value

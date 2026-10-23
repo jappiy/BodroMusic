@@ -63,7 +63,8 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        player = ExoPlayer.Builder(this)
+        // Аудиопроцессор спектра — для анимированного фона «Моей волны» (без разрешения на микрофон).
+        player = ExoPlayer.Builder(this, SpectrumRenderersFactory(this))
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources.create()))
             .setLoadControl(fastStartLoadControl())
             .setAudioAttributes(

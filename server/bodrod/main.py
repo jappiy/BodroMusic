@@ -24,6 +24,7 @@ from .config import Settings
 from .db import MaintenanceAction, MaintenanceRun, Store
 from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
+from .metadata.facts import ArtistFacts
 from .metadata.lastfm import LastFmClient, LastFmProvider
 from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
@@ -31,6 +32,7 @@ from .models import (
     AnalysisJobs,
     AnalysisResult,
     AnalysisStatus,
+    ArtistFactsOut,
     ArtistPopular,
     BlockEntryOut,
     BlocklistPage,
@@ -133,6 +135,7 @@ class Services:
     charts: ChartsService | None = None
     analysis: AnalysisService | None = None
     yandex_links: YandexLinks | None = None
+    facts: ArtistFacts | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -329,6 +332,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         charts=charts,
         analysis=analysis,
         yandex_links=yandex_links,
+        facts=ArtistFacts(lastfm),
     )
 
 
@@ -462,6 +466,18 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         user: User, svc: Svc, name: Annotated[str, Query(min_length=1, max_length=200)]
     ) -> ArtistPopular:
         return await svc.discover.artist_popular(name, user)
+
+    @app.get("/api/v1/artists/facts", response_model=ArtistFactsOut, response_model_by_alias=True)
+    async def artist_facts(
+        user: User,
+        svc: Svc,
+        artist: Annotated[str, Query(min_length=1, max_length=200)],
+        title: Annotated[str | None, Query(max_length=300)] = None,
+    ) -> ArtistFactsOut:
+        """Факт о треке или исполнителе для главной «Моя волна» (Last.fm). Нет данных — пустой ответ."""
+        if svc.facts is None:
+            return ArtistFactsOut()
+        return ArtistFactsOut(**await svc.facts.facts(artist, title))
 
     @app.post("/api/v1/library/check", response_model=LibraryCheck, response_model_by_alias=True)
     async def library_check(user: User, svc: Svc, body: LibraryCheckRequest) -> LibraryCheck:

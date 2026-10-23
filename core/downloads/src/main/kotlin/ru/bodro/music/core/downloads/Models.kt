@@ -198,6 +198,12 @@ data class ExportStatus(
 @Serializable
 data class ExportArtist(val id: String, val name: String, val liked: Int = 0, val selected: Boolean = false)
 
+/** Факт о треке или исполнителе (Last.fm) для главной: одна фраза и теги; пусто — строка не показывается. */
+@Serializable
+data class ArtistFacts(val fact: String? = null, val tags: List<String> = emptyList(), val source: String? = null) {
+    val isEmpty: Boolean get() = fact.isNullOrBlank() && tags.isEmpty()
+}
+
 /** Плейлист выгрузки из Яндекса: id песен Navidrome по порядку; [missing] — треков ещё нет в библиотеке. */
 @Serializable
 data class ExportPlaylist(val title: String, val songIds: List<String> = emptyList(), val missing: Int = 0, val owner: String? = null)

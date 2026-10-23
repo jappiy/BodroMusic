@@ -57,6 +57,8 @@ data class WaveSettings(
     /** Начало десятилетия, например 1990. */
     val decade: Int? = null,
     val seed: WaveSeed = WaveSeed.Everything,
+    /** Режим волны с главной («Бодрое», «Спокойное», …) — id пресета; `null` — обычная «Моя волна». */
+    val preset: String? = null,
 ) {
     val yearRange: IntRange? get() = decade?.let { it..(it + 9) }
 }

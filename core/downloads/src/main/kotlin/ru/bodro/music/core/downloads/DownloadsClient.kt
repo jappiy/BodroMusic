@@ -65,6 +65,10 @@ class DownloadsClient(
     /** Популярные треки исполнителя из каталога (Яндекс Музыка, запасные — Deezer и Last.fm) с отметкой «есть в библиотеке». */
     suspend fun artistPopular(name: String): ArtistPopular = get(listOf("api", "v1", "artists", "popular"), listOf("name" to name))
 
+    /** Факт о треке или исполнителе для главной (bodrod 0.18.0+). */
+    suspend fun artistFacts(artist: String, title: String?): ArtistFacts =
+        get(listOf("api", "v1", "artists", "facts"), listOfNotNull("artist" to artist, title?.let { "title" to it }))
+
     /** Какие треки удалены из библиотеки или заменены другой копией (bodrod 0.4.0+). */
     suspend fun checkLibrary(ids: List<String>): LibraryCheck = post(listOf("api", "v1", "library", "check"), IdsBody(ids))
 
