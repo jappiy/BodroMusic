@@ -14,9 +14,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -139,7 +143,8 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
         ProvidePlayerColors(playerColors) {
             SharedTransitionLayout {
                 Box(Modifier.fillMaxSize()) {
-                    Row(Modifier.fillMaxSize()) {
+                    // Слева и справа — вырез камеры и панель навигации в ландшафте: содержимое под них не заходит.
+                    Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
                         if (wide) {
                             NavigationRail {
                                 TopLevel.entries.forEach { tab ->

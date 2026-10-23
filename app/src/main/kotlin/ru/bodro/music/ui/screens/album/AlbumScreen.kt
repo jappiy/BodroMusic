@@ -67,6 +67,7 @@ import ru.bodro.music.ui.components.ErrorState
 import ru.bodro.music.ui.components.LoadState
 import ru.bodro.music.ui.components.LoadingState
 import ru.bodro.music.ui.components.SongRow
+import ru.bodro.music.ui.components.heroCoverSize
 import ru.bodro.music.ui.image.CoverColors
 import ru.bodro.music.ui.image.CoverPaletteRepository
 import ru.bodro.music.ui.util.toUiError
@@ -138,7 +139,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
                         }
                     }
-                    CoverImage(album.coverArt, Modifier.size(240.dp), sizeHint = 600.dp, shape = RoundedCornerShape(20.dp))
+                    CoverImage(album.coverArt, Modifier.size(heroCoverSize(240.dp)), sizeHint = 600.dp, shape = RoundedCornerShape(20.dp))
                     Spacer(Modifier.height(16.dp))
                     Text(
                         album.name,

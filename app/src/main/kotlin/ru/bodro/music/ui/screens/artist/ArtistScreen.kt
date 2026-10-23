@@ -93,6 +93,7 @@ import ru.bodro.music.ui.components.LoadState
 import ru.bodro.music.ui.components.LoadingState
 import ru.bodro.music.ui.components.SectionHeader
 import ru.bodro.music.ui.components.SongRow
+import ru.bodro.music.ui.components.heroCoverSize
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.screens.search.DiscoverTrackRow
 import ru.bodro.music.ui.screens.search.sourceName
@@ -246,7 +247,7 @@ private fun ArtistContent(details: ArtistDetails, topSongs: List<Song>, onBack: 
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
-                ArtistAvatar(artist.coverArt, Modifier.size(180.dp), sizeHint = 600.dp)
+                ArtistAvatar(artist.coverArt, Modifier.size(heroCoverSize(180.dp)), sizeHint = 600.dp)
                 Spacer(Modifier.height(16.dp))
                 Text(artist.name, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
                 Text(
