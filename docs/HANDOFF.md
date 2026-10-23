@@ -76,6 +76,9 @@
 
 ## 2. Статус
 
+Задания 020–024: CI зелёный на каждом этапе (`359741d`, `f055d84`, `fd3b47e`, `3288a30`, `e65c392`), релизы
+v0.22.0–v0.26.0, APK в `dist`. bodrod 0.20.0 и анализатор 0.3.0 на NAS ещё не установлены.
+
 **Задание 024** (app 0.26.0 / bodrod 0.20.0, релиз v0.26.0) — этап 5 из 5: полноэкранный плеер — `LazyColumn`
 (основной блок + `playerExtras`: исполнитель с ♡, похожие `/tracks/similar`, популярные `/artists/popular`,
 «Скачать все», свои плейлисты, таймер сна, качество), мини-плеер при прокрутке, очередь в шапке, в двух колонках —
@@ -216,6 +219,9 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   эпохе — всегда локально. Режим — `WaveSettings.preset` (id режима сервера или `WavePreset`).
 - **Спектр для фона** (0.24.0): `SpectrumAudioProcessor` в `DefaultAudioSink` (`SpectrumRenderersFactory`) →
   `AudioSpectrum.frames`; анализ только при подписчике (`acquire/release`), иначе пропускает PCM без расчёта.
+- **CI**: при падении инструментальных тестов их текст — в аннотациях проверки (`check-runs/<job>/annotations`
+  в публичном API); логи job с ПК владельца не скачиваются (хранилище GitHub недоступно).
+- **Фон «Моей волны»** при системной «Отключить анимацию» статичный — иначе Compose не простаивает и тесты падают.
 - **Снимки экранов** в unit-тестах: Robolectric `GraphicsMode.NATIVE` + `ComponentActivity.setContent` +
   `decorView.draw` (`WaveHomeScreenshotTest`, PNG в `app/build/screenshots/`). Compose ui-test в unit-тестах не
   подключён: с ПК владельца Maven Central не отвечает, а Gradle офлайн не находит `androidx.test:runner`.
