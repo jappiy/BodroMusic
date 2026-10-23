@@ -341,13 +341,18 @@ class HarvestCollector(ApiModel):
 class HarvestAccount(ApiModel):
     """Архив Яндекса по аккаунту: что собрано и когда."""
 
+    """Логин Яндекса (архив хранится под ним)."""
     username: str
+    """Пользователь приложения, к которому привязан аккаунт (резерв, чёрный список); `None` — не привязан."""
+    navidrome_user: str | None = None
     plus: bool | None = None
     running: str | None = None
     collectors: list[HarvestCollector] = []
     likes: dict[str, int] = {}
     edges: dict[str, int] = {}
     reserve: int = 0
+    """Резерв по статусам кандидата: queued, downloading, downloaded, notFound, promoted, rejected."""
+    reserve_states: dict[str, int] = {}
     blocked: int = 0
     similar_done: int = 0
     error: str | None = None
@@ -356,6 +361,12 @@ class HarvestAccount(ApiModel):
 class HarvestStatus(ApiModel):
     enabled: bool
     accounts: list[HarvestAccount] = []
+
+
+class YandexLinksUpdate(ApiModel):
+    """Пользователь Navidrome → логин Яндекса; `null` — отвязать."""
+
+    links: dict[str, str | None]
 
 
 class FeedbackEvent(ApiModel):
@@ -450,11 +461,32 @@ class EngineSourceOut(ApiModel):
     weight: float
     """Выученный по доле promote (1.0 — нет данных)."""
     learned_weight: float
+    """`False` — ошибка конфигурации (`reason`): источник не участвует в подборе, даже если включён."""
     available: bool
     reason: str | None = None
+    """Предложено и статусы кандидатов: в очереди, качается, скачано (резерв или пул), не найдено, в библиотеку,
+    отклонено."""
     suggested: int = 0
+    queued: int = 0
+    downloading: int = 0
+    downloaded: int = 0
+    not_found: int = 0
     promoted: int = 0
     rejected: int = 0
+
+
+class EngineCandidate(ApiModel):
+    artist: str
+    title: str
+    username: str
+    """queued / downloading / downloaded / notFound / promoted / rejected."""
+    state: str
+    """Через какой загрузчик скачан или пытался скачаться: yandex / slskd / youtube / lidarr."""
+    loader: str | None = None
+    attempt_at: int | None = None
+    attempts: int = 0
+    message: str | None = None
+    status_at: int | None = None
 
 
 class EngineRun(ApiModel):

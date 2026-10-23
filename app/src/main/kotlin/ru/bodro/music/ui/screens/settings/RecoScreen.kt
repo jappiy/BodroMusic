@@ -9,17 +9,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +111,24 @@ class RecoViewModel @Inject constructor(private val downloads: DownloadsReposito
             runCatching { downloads.runHarvest() }.onSuccess { harvest -> _state.update { it.copy(harvest = harvest) } }
         }
     }
+
+    /**
+     * Привязать аккаунт Яндекса [account] к пользователю приложения [user] (пусто — отвязать). Старая привязка
+     * снимается. После неё обновляются и источники: ошибка «Не привязан аккаунт Яндекса» может уйти.
+     */
+    fun linkYandex(account: HarvestAccount, user: String) {
+        val links = buildMap<String, String?> {
+            account.navidromeUser?.let { put(it, null) }
+            user.trim().takeIf { it.isNotEmpty() }?.let { put(it, account.username) }
+        }
+        if (links.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { downloads.linkYandex(links) }
+                .onSuccess { harvest -> _state.update { it.copy(harvest = harvest) } }
+                .onFailure { e -> _state.update { it.copy(error = e.toUiError()) } }
+            runCatching { downloads.engine() }.onSuccess { engine -> _state.update { it.copy(engine = engine) } }
+        }
+    }
 }
 
 @Composable
@@ -179,7 +202,7 @@ fun RecoScreen(onBack: () -> Unit, viewModel: RecoViewModel = hiltViewModel()) {
                             OutlinedButton(onClick = viewModel::runHarvest) { Text(stringResource(R.string.reco_harvest_run)) }
                         }
                     }
-                    items(harvest.accounts, key = { "h-" + it.username }) { HarvestCard(it) }
+                    items(harvest.accounts, key = { "h-" + it.username }) { HarvestCard(it, viewModel::linkYandex) }
                 }
             }
         }
@@ -192,21 +215,47 @@ private fun EngineSourceRow(source: EngineSource, onEnabled: (EngineSource, Bool
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("reco-source-${source.name}")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(source.title, style = MaterialTheme.typography.titleSmall)
-                val status = if (source.available) {
-                    stringResource(R.string.reco_source_stats, source.suggested, source.promoted, source.rejected, source.learnedWeight)
-                } else {
-                    source.reason.orEmpty()
-                }
                 Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (source.available) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    source.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (source.available) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Ошибка конфигурации: источник не участвует в подборе, пока её не устранят.
+                source.reason?.takeIf { !source.available }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                if (source.available || source.suggested > 0) {
+                    Text(
+                        stringResource(
+                            R.string.reco_source_states,
+                            source.suggested,
+                            source.downloaded,
+                            source.queued,
+                            source.downloading,
+                            source.notFound,
+                            source.promoted,
+                            source.rejected,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("reco-source-states-${source.name}"),
+                    )
+                    Text(
+                        stringResource(R.string.reco_source_learned, source.learnedWeight),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            Switch(checked = source.enabled, onCheckedChange = { onEnabled(source, it) })
+            // Пока ошибка не устранена, переключатель серый и выключен: включить источник без настройки нельзя.
+            Switch(
+                checked = source.active,
+                onCheckedChange = { onEnabled(source, it) },
+                enabled = source.available,
+                modifier = Modifier.testTag("reco-switch-${source.name}"),
+            )
         }
-        if (source.enabled) {
+        if (source.active) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.reco_weight, weight), style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.width(8.dp))
@@ -223,9 +272,27 @@ private fun EngineSourceRow(source: EngineSource, onEnabled: (EngineSource, Bool
 }
 
 @Composable
-private fun HarvestCard(account: HarvestAccount) {
+private fun HarvestCard(account: HarvestAccount, onLink: (HarvestAccount, String) -> Unit) {
+    var linking by rememberSaveable(account.username) { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("harvest-${account.username}")) {
-        Text(account.username, style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(account.username, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    account.navidromeUser?.let { stringResource(R.string.reco_harvest_linked, it) }
+                        ?: stringResource(R.string.reco_harvest_not_linked),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (account.navidromeUser != null) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
+            TextButton(onClick = { linking = true }, modifier = Modifier.testTag("harvest-link-${account.username}")) {
+                Text(stringResource(if (account.navidromeUser == null) R.string.reco_harvest_link else R.string.reco_harvest_relink))
+            }
+        }
         val plus = when (account.plus) {
             true -> stringResource(R.string.reco_harvest_plus_yes)
             false -> stringResource(R.string.reco_harvest_plus_no)
@@ -237,8 +304,23 @@ private fun HarvestCard(account: HarvestAccount) {
                 account.likes["track:1"] ?: 0,
                 account.similarDone,
                 account.edges.values.sum(),
-                account.reserve,
                 plus,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Резерв — по той же схеме статусов, что и источники рекомендаций.
+        val states = account.reserveStates
+        Text(
+            stringResource(
+                R.string.reco_harvest_reserve,
+                states.values.sum(),
+                states["downloaded"] ?: 0,
+                states["queued"] ?: 0,
+                states["downloading"] ?: 0,
+                states["notFound"] ?: 0,
+                states["promoted"] ?: 0,
+                states["rejected"] ?: 0,
             ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -257,4 +339,38 @@ private fun HarvestCard(account: HarvestAccount) {
         }
         account.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
+    if (linking) {
+        LinkYandexDialog(
+            account = account,
+            onSave = { user ->
+                onLink(account, user)
+                linking = false
+            },
+            onDismiss = { linking = false },
+        )
+    }
+}
+
+/** Логин пользователя приложения (Navidrome), которому принадлежит аккаунт Яндекса; пусто — отвязать. */
+@Composable
+private fun LinkYandexDialog(account: HarvestAccount, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var user by rememberSaveable { mutableStateOf(account.navidromeUser.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.reco_harvest_link_title, account.username)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.reco_harvest_link_hint), style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = user,
+                    onValueChange = { user = it },
+                    label = { Text(stringResource(R.string.reco_harvest_link_user)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("harvest-link-user"),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(user) }) { Text(stringResource(R.string.action_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }

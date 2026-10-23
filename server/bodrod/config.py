@@ -183,8 +183,10 @@ class Settings:
     """Массовая выгрузка из Яндекса: пауза между треками (секунды) — низкий приоритет."""
     export_delay_s: float = 5.0
 
-    """Архив Яндекса для рекомендаций: пользователь Navidrome → токен его аккаунта Яндекс Музыки."""
+    """Аккаунты Яндекс Музыки: логин (имя файла токена) → токен."""
     yandex_accounts: dict[str, str] = field(default_factory=dict)
+    """Пользователь Navidrome → логин Яндекса (`YANDEX_USERS=nikolai:jappi,...`); дополняется из приложения."""
+    yandex_users: dict[str, str] = field(default_factory=dict)
     """Сырые ответы API: `<папка>/<пользователь>/<дата>/<тип>.json`. Пусто — `<DATA_DIR>/yandex-archive`."""
     yandex_archive_dir: str | None = None
     harvest_enabled: bool = True
@@ -212,6 +214,10 @@ class Settings:
     early_skip_s: int = 30
     reject_early_skips: int = 2
     reject_block_days: int = 180
+    """Заявка пула без продвижения столько часов — зависла: отменяется и ставится снова; после стольких попыток —
+    «не найдено»."""
+    pool_stall_hours: float = 6.0
+    pool_max_attempts: int = 3
     """Expire: столько дней без прослушиваний или столько показов в волне без запуска."""
     expire_days: int = 21
     expire_shown: int = 3
@@ -357,6 +363,7 @@ class Settings:
             lidarr_wanted_batch=_int("LIDARR_WANTED_BATCH", 20),
             export_delay_s=float(_opt("EXPORT_DELAY_S") or 5.0),
             yandex_accounts=yandex_accounts(),
+            yandex_users=_pairs("YANDEX_USERS"),
             yandex_archive_dir=_opt("YANDEX_ARCHIVE_DIR"),
             harvest_enabled=_bool("HARVEST_ENABLED", True),
             harvest_delay_s=float(_opt("HARVEST_DELAY_S") or 1.0),
@@ -374,6 +381,8 @@ class Settings:
             early_skip_s=_int("POOL_EARLY_SKIP_S", 30),
             reject_early_skips=_int("POOL_REJECT_EARLY_SKIPS", 2),
             reject_block_days=_int("POOL_REJECT_BLOCK_DAYS", 180),
+            pool_stall_hours=float(_opt("POOL_STALL_HOURS") or 6),
+            pool_max_attempts=max(1, _int("POOL_MAX_ATTEMPTS", 3)),
             expire_days=_int("POOL_EXPIRE_DAYS", 21),
             expire_shown=_int("POOL_EXPIRE_SHOWN", 3),
             artist_reject_threshold=_int("POOL_ARTIST_REJECT_THRESHOLD", 3),
@@ -405,10 +414,10 @@ YANDEX_ACCOUNTS_DIR = os.path.join(SECRETS_DIR, "yandex_accounts")
 
 
 def yandex_accounts(accounts_dir: str = YANDEX_ACCOUNTS_DIR) -> dict[str, str]:
-    """Токены аккаунтов Яндекса для архива рекомендаций.
+    """Токены аккаунтов Яндекса (архив рекомендаций и загрузки от имени пользователя).
 
-    `YANDEX_ACCOUNTS=nikolai:/secrets/ya_nikolai,olga:/secrets/ya_olga` (пользователь Navidrome : файл с токеном)
-    или просто файлы `/secrets/yandex_accounts/<пользователь Navidrome>` с токеном внутри.
+    `YANDEX_ACCOUNTS=jappi:/secrets/ya_jappi,kalainidi:/secrets/ya_kalainidi` (логин Яндекса : файл с токеном)
+    или просто файлы `/secrets/yandex_accounts/<логин Яндекса>` с токеном внутри. Чей это аккаунт — `YANDEX_USERS`.
     """
     pairs: dict[str, str] = {}
     raw = _opt("YANDEX_ACCOUNTS")

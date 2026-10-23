@@ -43,6 +43,7 @@ from .models import (
     DiscoverResponse,
     DislikedSong,
     DownloadRequestOut,
+    EngineCandidate,
     EngineOut,
     EnginePreviewItem,
     EngineRun,
@@ -72,6 +73,7 @@ from .models import (
     SourcesOut,
     SourcesUpdate,
     TrackCandidate,
+    YandexLinksUpdate,
 )
 from .navidrome_db import NavidromeDb, NdSong
 from .reco.analysis import AnalysisService
@@ -88,6 +90,7 @@ from .reco.library import LibraryIndex
 from .reco.pool import PoolService
 from .reco.store import RecoStore
 from .reco.yandex_account import YandexAccountApi
+from .reco.yandex_links import YandexLinks
 from .sources.base import KIND_NAMES, DirectSource
 from .sources.export import YandexExport
 from .sources.placer import Placer
@@ -125,6 +128,7 @@ class Services:
     engine: CandidateEngine | None = None
     charts: ChartsService | None = None
     analysis: AnalysisService | None = None
+    yandex_links: YandexLinks | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -174,11 +178,19 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     direct: dict[str, DirectSource] = {}
     registry = SourceRegistry(store, settings, direct, slskd is not None, lidarr is not None)
     delay = (settings.yandex_delay_min_s, settings.yandex_delay_max_s)
+    navidrome_db = NavidromeDb(settings.navidrome_db) if settings.navidrome_db else None
+    yandex_links = YandexLinks(
+        store,
+        settings.yandex_users,
+        settings.yandex_accounts,
+        (lambda: [u.username for u in navidrome_db.users()]) if navidrome_db is not None else None,
+    )
     yandex_tokens = YandexTokens(
         settings.yandex_accounts,
         settings.yandex_token,
         lambda token: YandexMusicApi(token, delay),
         settings.yandex_check_interval_s,
+        link=yandex_links.yandex_login,
     )
     yandex_tokens.log_startup()
     library_ready = bool(settings.library_dir)
@@ -206,7 +218,6 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     discover_providers = [catalogs[name] for name in settings.discover_providers if name in catalogs]
     log.info("Каталоги поиска: %s", ", ".join(p.name for p in discover_providers) or "нет")
     cover_fetcher = make_cover_fetcher(http)
-    navidrome_db = NavidromeDb(settings.navidrome_db) if settings.navidrome_db else None
     files_lock = asyncio.Lock()
     cleanup = CleanupService(settings, store, navidrome, navidrome_db, lidarr, files_lock) if navidrome_db else None
     maintenance = None
@@ -242,13 +253,14 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     worker.on_finish.append(lambda _request: library_index.invalidate())
     pool = PoolService(store, reco, settings, navidrome, navidrome_db, library_index)
     pool.wake_worker = worker.wake
+    pool.cancel_request = worker.cancel
     engine = None
     if settings.engine_enabled:
         adapters = [
             LastFmAdapter(lastfm, library_index),
             DeezerAdapter(http, settings.deezer_enabled),
             ListenBrainzAdapter(http, settings.listenbrainz_token, settings.listenbrainz_users),
-            YandexArchiveAdapter(reco),
+            YandexArchiveAdapter(reco, yandex_links),
         ]
         engine = CandidateEngine(store, reco, settings, library_index, navidrome_db, adapters, pool.penalized_artists)
 
@@ -278,11 +290,19 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     harvester = None
     if settings.harvest_enabled and yandex_tokens.users:
         delay = (settings.harvest_delay_s, settings.harvest_delay_s * 1.2)
-        # Данные аккаунта (лайки, история) — только своим токеном, без общего.
-        own = {u: yandex_tokens.resolve(u, fallback=False) for u in yandex_tokens.users}
-        accounts = {u: YandexAccountApi(u, ref.token, delay) for u, ref in own.items() if ref is not None}
-        harvester = YandexHarvester(store, reco, settings, accounts, library_index, placer if library_ready else None)
-        log.info("Архив Яндекса: аккаунты %s", ", ".join(accounts))
+        # Данные аккаунта (лайки, история) — только своим токеном, без общего; архив — под логином Яндекса.
+        accounts = {
+            login: YandexAccountApi(login, token, delay)
+            for login in yandex_tokens.users
+            if (token := yandex_tokens.account_token(login))
+        }
+        harvester = YandexHarvester(
+            store, reco, settings, accounts, library_index, placer if library_ready else None, links=yandex_links
+        )
+        log.info(
+            "Архив Яндекса: аккаунты %s",
+            ", ".join(f"{login} → {harvester.owner(login) or 'не привязан'}" for login in accounts),
+        )
     return Services(
         settings=settings,
         store=store,
@@ -304,6 +324,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         engine=engine,
         charts=charts,
         analysis=analysis,
+        yandex_links=yandex_links,
     )
 
 
@@ -345,6 +366,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 app.state.services.harvester,
                 app.state.services.pool,
                 app.state.services.charts,
+                app.state.services.analysis,
             ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
@@ -869,10 +891,10 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
 
     # region Движок кандидатов
 
-    def engine_out(svc: Services) -> EngineOut:
+    def engine_out(svc: Services, viewer: str) -> EngineOut:
         if svc.engine is None:
             return EngineOut(enabled=False)
-        info = svc.engine.describe()
+        info = svc.engine.describe(viewer)
         users = svc.pool.users() if svc.pool else []
         runs = {u: (EngineRun(**r) if r else None) for u, r in svc.engine.last_runs(users).items()}
         return EngineOut(
@@ -884,7 +906,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
 
     @app.get("/api/v1/reco/engine", response_model=EngineOut, response_model_by_alias=True)
     async def engine_status(admin: Admin, svc: Svc) -> EngineOut:
-        return engine_out(svc)
+        return engine_out(svc, admin.username)
 
     @app.put("/api/v1/reco/engine", response_model=EngineOut, response_model_by_alias=True)
     async def engine_update(admin: Admin, svc: Svc, body: EngineUpdate) -> EngineOut:
@@ -895,7 +917,20 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         log.info("%s изменил источники рекомендаций", admin.username)
-        return engine_out(svc)
+        return engine_out(svc, admin.username)
+
+    @app.get("/api/v1/reco/engine/candidates", response_model=list[EngineCandidate], response_model_by_alias=True)
+    async def engine_candidates(
+        admin: Admin,
+        svc: Svc,
+        source: Annotated[str, Query(min_length=1)],
+        state: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    ) -> list[EngineCandidate]:
+        """Кандидаты источника: статус, загрузчик, время и число попыток (для разбора «в очереди» и «не найдено»)."""
+        if svc.engine is None:
+            raise HTTPException(409, "Движок кандидатов выключен (ENGINE_ENABLED)")
+        return [EngineCandidate(**c) for c in svc.engine.candidates(source, state, limit)]
 
     @app.get("/api/v1/reco/engine/preview", response_model=list[EnginePreviewItem], response_model_by_alias=True)
     async def engine_preview(
@@ -921,6 +956,23 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def harvest_status(admin: Admin, svc: Svc) -> HarvestStatus:
         if svc.harvester is None:
             return HarvestStatus(enabled=False, accounts=[])
+        return HarvestStatus(enabled=True, accounts=[HarvestAccount(**a) for a in svc.harvester.status()])
+
+    @app.put("/api/v1/reco/harvest/links", response_model=HarvestStatus, response_model_by_alias=True)
+    async def harvest_links(admin: Admin, svc: Svc, body: YandexLinksUpdate) -> HarvestStatus:
+        """Привязать аккаунты Яндекса к пользователям приложения: {пользователь Navidrome: логин Яндекса | null}."""
+        if svc.yandex_links is None:
+            raise HTTPException(409, "Аккаунты Яндекса не настроены")
+        known = set(svc.yandex_links.accounts)
+        for user, login in body.links.items():
+            if login and login not in known:
+                raise HTTPException(422, f"Нет токена аккаунта Яндекса {login} (/secrets/yandex_accounts/{login})")
+            svc.yandex_links.set(user, login)
+        log.info("%s изменил привязку аккаунтов Яндекса: %s", admin.username, body.links)
+        if svc.harvester is None:
+            return HarvestStatus(enabled=False, accounts=[])
+        svc.harvester.relink()
+        svc.harvester.wake()
         return HarvestStatus(enabled=True, accounts=[HarvestAccount(**a) for a in svc.harvester.status()])
 
     @app.post("/api/v1/reco/harvest/run", response_model=HarvestStatus, response_model_by_alias=True)

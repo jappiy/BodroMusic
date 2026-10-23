@@ -101,6 +101,11 @@ CREATE TABLE IF NOT EXISTS pool_tracks (
     song_id TEXT,
     request_id TEXT,
     message TEXT,
+    loader TEXT,
+    attempt_at INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    progress_sig TEXT,
+    progress_at INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -150,10 +155,51 @@ class TrackInfo:
         return ", ".join(self.artists)
 
 
+"""Колонки `pool_tracks`, добавленные после 0.14.0: загрузчик и время последней попытки, число попыток, снимок
+продвижения заявки (для поиска зависших)."""
+_POOL_COLUMNS = (
+    ("loader", "TEXT"),
+    ("attempt_at", "INTEGER"),
+    ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("progress_sig", "TEXT"),
+    ("progress_at", "INTEGER"),
+)
+
+"""Статусы кандидата для статистики источников (экран «Рекомендации»)."""
+CANDIDATE_STATES = ("queued", "downloading", "downloaded", "notFound", "promoted", "rejected")
+
+
+def candidate_state(owner_status: str, location: str | None) -> str:
+    """Статус кандидата по статусу владельца и месту трека: в очереди · качается · скачано (резерв или пул) ·
+    не найдено · в библиотеку · отклонено."""
+    if owner_status == "promoted":
+        return "promoted"
+    if owner_status in ("rejected", "expired"):
+        return "rejected"
+    if owner_status == "failed":
+        return "notFound"
+    if owner_status == "in_pool":
+        return "downloaded"
+    if owner_status == "downloading":
+        return "downloading"
+    if owner_status == "candidate":  # резерв архива Яндекса: состояние — по месту трека
+        if location == "reserve":
+            return "downloaded"
+        if location == "downloading":
+            return "downloading"
+        if location == "failed":
+            return "notFound"
+    return "queued"
+
+
 class RecoStore:
     def __init__(self, store: Store) -> None:
         self.db = store
         store.executescript(SCHEMA)
+        columns = store.columns("pool_tracks")
+        for column, ddl in _POOL_COLUMNS:
+            if column not in columns:
+                store.execute(f"ALTER TABLE pool_tracks ADD COLUMN {column} {ddl}")
         self._rekey()
 
     def _rekey(self) -> None:
@@ -482,6 +528,23 @@ class RecoStore:
             (username,),
         )
         return int(row["n"]) if row else 0
+
+    def move_user_data(self, old: str, new: str) -> int:
+        """Резерв, пул и личный чёрный список, записанные под логином Яндекса, — пользователю приложения."""
+        if old == new:
+            return 0
+        moved = 0
+        for table in ("pool_owners", "user_blocklist"):
+            row = self.db.query_one(f"SELECT COUNT(*) AS n FROM {table} WHERE username = ?", (old,))
+            count = int(row["n"]) if row else 0
+            if not count:
+                continue
+            self.db.execute(f"UPDATE OR IGNORE {table} SET username = ? WHERE username = ?", (new, old))
+            self.db.execute(f"DELETE FROM {table} WHERE username = ?", (old,))  # уже были у нового — дубли
+            moved += count
+        if moved:
+            log.info("Рекомендации: данные %s перенесены пользователю %s (%s записей)", old, new, moved)
+        return moved
 
     def yandex_ids_in_pool(self) -> set[str]:
         rows = self.db.query("SELECT yandex_id FROM pool_tracks WHERE yandex_id IS NOT NULL")

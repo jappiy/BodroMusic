@@ -80,6 +80,10 @@ def test_queue_pool_first_then_library_and_leases(tmp_path: Path) -> None:
         artist="P", title="Q", album=None, duration_ms=None, cover_url=None, yandex_id=None, location="pool",
         path="/music/_discovery/P/q.flac",
     )  # fmt: skip
+    # До первого обслуживания (ключи старых записей) библиотека не выдаётся — только пул.
+    assert asyncio.run(service.next_jobs(2)) == ["_discovery/P/q.flac"]
+    service._leases.clear()
+    asyncio.run(service.maintain())
     jobs = asyncio.run(service.next_jobs(2))
     assert jobs == ["_discovery/P/q.flac", "lib/a.flac"]
     # Выданное не выдаётся снова, пока не истекла аренда.
@@ -106,7 +110,8 @@ def test_queue_pool_first_then_library_and_leases(tmp_path: Path) -> None:
     assert asyncio.run(service.next_jobs(5)) == ["_discovery/P/q.flac"]
     service.save("_discovery/P/q.flac", {"bpm": 90}, vector(1), None)  # успех обнуляет счётчик
     status = service.status()
-    assert status == {**status, "analyzed": 2, "errors": 1, "skipped": 1}
+    # Трек пула не в библиотеке — в «проанализировано» не считается.
+    assert status == {**status, "analyzed": 1, "errors": 1, "skipped": 1, "library": 2}
     attempts = store.query_one("SELECT attempts FROM audio_features WHERE path = ?", ("_discovery/P/q.flac",))
     assert attempts == {"attempts": 0}
 
@@ -122,6 +127,7 @@ def test_migration_keeps_old_errors_retryable(tmp_path: Path) -> None:
     service, *_ = make(tmp_path, [("s1", "lib/a.flac"), ("s2", "lib/b.flac")], [])
     rows = {r["path"]: r["attempts"] for r in store.query("SELECT path, attempts FROM audio_features")}
     assert rows == {"lib/a.flac": 1, "lib/b.flac": 0}
+    asyncio.run(service.maintain())
     assert asyncio.run(service.next_jobs(5)) == ["lib/a.flac"]
 
 
@@ -152,6 +158,7 @@ def test_worker_api_requires_token(tmp_path: Path) -> None:
     service, *_ = make(tmp_path, [("s1", "lib/a.flac")], [])
     services = build_services(dataclasses.replace(SETTINGS, data_dir=str(tmp_path / "svc")), FakeWorld().client())
     services.analysis = service
+    asyncio.run(service.maintain())
     with TestClient(create_app(services, run_worker=False)) as client:
         assert client.get("/api/v1/analysis/next").status_code == 401
         jobs = client.get("/api/v1/analysis/next", headers={"X-Analyzer-Token": "secret"}).json()["jobs"]
@@ -165,4 +172,9 @@ def test_worker_api_requires_token(tmp_path: Path) -> None:
             client.post("/api/v1/analysis/result", json=failed, headers={"X-Analyzer-Token": "secret"}).status_code
             == 204
         )
-        assert service.status()["errors"] == 1
+        assert service.status()["errors"] == 0  # lib/b.flac нет в библиотеке — не считается
+        assert store_row(service, "lib/b.flac")["error"] is not None
+
+
+def store_row(service: AnalysisService, path: str) -> dict:
+    return service._store.query_one("SELECT * FROM audio_features WHERE path = ?", (path,))

@@ -231,6 +231,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun runHarvest(): HarvestStatus = client.runHarvest()
 
+    suspend fun linkYandex(links: Map<String, String?>): HarvestStatus = client.linkYandex(links)
+
     // endregion
 
     suspend fun refresh(): List<DownloadRequest> = client.requests().also { _requests.value = it }

@@ -8,7 +8,12 @@
   нет в библиотеке); теги семян → `tag.getTopTracks`;
 - `deezer` — поиск артиста семени → `/artist/{id}/related` (топ похожих) и `/artist/{id}/radio`;
 - `listenbrainz` — LB Radio по артистам и тегам семян; плейлисты Weekly Exploration / Weekly Jams пользователя;
-- `yandex_archive` — рёбра `similar`, `wave` и `artist_similar` архива Яндекса (задача 1).
+- `yandex_archive` — рёбра `similar`, `wave` и `artist_similar` архива Яндекса (задача 1) того аккаунта, к которому
+  привязан пользователь (`reco/yandex_links.py`).
+
+Источник с ошибкой конфигурации (нет ключа, не привязан аккаунт) в подборе не участвует, даже если включён.
+Статистика источника — по статусам кандидатов (`store.candidate_state`): в очереди, качается, скачано (резерв или пул),
+не найдено, в библиотеку, отклонено.
 
 Сопоставление — по `keys.track_key`; кандидат проходит, только если его нет в библиотеке, пуле, резерве и чёрных
 списках, и если это не лайв/караоке/минусовка/кавер (если само семя не такое). Скоринг:
@@ -39,7 +44,8 @@ from ..navidrome_db import NavidromeDb
 from ..sources.base import unwanted_extras
 from .keys import artist_key, track_key
 from .library import LibraryIndex
-from .store import DAY_MS, RecoStore
+from .store import CANDIDATE_STATES, DAY_MS, RecoStore, candidate_state
+from .yandex_links import NOT_LINKED, YandexLinks
 
 log = logging.getLogger(__name__)
 
@@ -262,8 +268,10 @@ class ListenBrainzAdapter:
         self._seeds_limit = seeds_limit
 
     def available(self, username: str) -> tuple[bool, str | None]:
-        if not self._token and username not in self._users:
+        if not self._token and not self._users:
             return False, "Не задан LISTENBRAINZ_TOKEN и пользователь LB (LISTENBRAINZ_USERS)"
+        if not self._token and username and username not in self._users:
+            return False, f"Не задан LISTENBRAINZ_TOKEN и пользователь LB для {username} (LISTENBRAINZ_USERS)"
         return True, None
 
     async def _get(self, path: str, **params: Any) -> dict[str, Any]:
@@ -312,18 +320,33 @@ class YandexArchiveAdapter:
 
     name = "yandex_archive"
 
-    def __init__(self, reco: RecoStore) -> None:
+    def __init__(self, reco: RecoStore, links: YandexLinks | None = None) -> None:
         self._reco = reco
+        self._links = links
+
+    def login(self, username: str) -> str | None:
+        """Логин Яндекса пользователя приложения (архив хранится под ним)."""
+        return self._links.yandex_login(username) if self._links is not None else username
 
     def available(self, username: str) -> tuple[bool, str | None]:
-        if not self._reco.edge_counts(username):
-            return False, "Архив Яндекса этого пользователя пуст"
+        if not username and self._links is not None:
+            if not self._links.accounts:
+                return False, "Нет токенов аккаунтов Яндекса (/secrets/yandex_accounts)"
+            return True, None
+        login = self.login(username)
+        if login is None:
+            return False, NOT_LINKED
+        if not self._reco.edge_counts(login):
+            return False, f"Архив Яндекса аккаунта {login} пуст: сбор ещё не прошёл"
         return True, None
 
     async def candidates(self, username: str, seeds: list[Seed]) -> list[Candidate]:
-        ranked = self._reco.candidate_frequency(username, ("similar", "wave"), 2000)
+        login = self.login(username)
+        if login is None:
+            return []
+        ranked = self._reco.candidate_frequency(login, ("similar", "wave"), 2000)
         infos = self._reco.tracks([c for c, _ in ranked])
-        liked = set(self._reco.liked_ids(username))
+        liked = set(self._reco.liked_ids(login))
         result = []
         for cand_id, freq in ranked:
             info = infos.get(cand_id)
@@ -337,7 +360,7 @@ class YandexArchiveAdapter:
                 )
             )  # fmt: skip
         # Похожие артисты: треки этих артистов, которые встречались в архиве (волна, плейлисты, чарт).
-        similar_artists = {e["cand_id"] for e in self._reco.edges(username, ("artist_similar",))}
+        similar_artists = {e["cand_id"] for e in self._reco.edges(login, ("artist_similar",))}
         if similar_artists:
             rows = self._reco.db.query("SELECT * FROM y_tracks LIMIT 50000")
             per_artist: dict[str, int] = defaultdict(int)
@@ -413,20 +436,46 @@ class CandidateEngine:
         self._store.set_value(CONFIG_KEY, config)
 
     def source_stats(self, username: str | None = None) -> dict[str, dict[str, int]]:
-        """По источникам: сколько треков предложено в пул и чем кончилось (по всем или одному пользователю)."""
-        where, params = ("WHERE username = ?", (username,)) if username else ("WHERE username != 'charts'", ())
-        rows = self._store.query(f"SELECT source, status FROM pool_owners {where}", params)
-        stats: dict[str, dict[str, int]] = defaultdict(lambda: {"suggested": 0, "promoted": 0, "rejected": 0})
+        """По источникам: сколько треков предложено и в каком они статусе (по всем или одному пользователю):
+        `suggested` и счётчики `CANDIDATE_STATES` (queued, downloading, downloaded, notFound, promoted, rejected)."""
+        where, params = ("WHERE o.username = ?", (username,)) if username else ("WHERE o.username != 'charts'", ())
+        rows = self._store.query(
+            f"SELECT o.source, o.status, t.location FROM pool_owners o JOIN pool_tracks t ON t.id = o.track_id {where}",
+            params,
+        )
+        stats: dict[str, dict[str, int]] = defaultdict(_empty_stats)
         for r in rows:
+            state = candidate_state(r["status"], r["location"])
             for source in (r["source"] or "").split(","):
                 if source not in self._adapters:
                     continue
                 stats[source]["suggested"] += 1
-                if r["status"] == "promoted":
-                    stats[source]["promoted"] += 1
-                elif r["status"] in ("rejected", "expired"):
-                    stats[source]["rejected"] += 1
+                stats[source][state] += 1
         return dict(stats)
+
+    def candidates(self, source: str, state: str | None, limit: int) -> list[dict[str, Any]]:
+        """Кандидаты источника (для диагностики): статус, загрузчик, время и число попыток."""
+        rows = self._store.query(
+            "SELECT t.artist, t.title, t.location, t.loader, t.attempt_at, t.attempts, t.message, o.username, "
+            "o.status, o.status_at FROM pool_owners o JOIN pool_tracks t ON t.id = o.track_id "
+            "WHERE o.username != 'charts' AND (',' || o.source || ',') LIKE ? ORDER BY o.status_at DESC",
+            (f"%,{source},%",),
+        )
+        result = []
+        for r in rows:
+            name = candidate_state(r["status"], r["location"])
+            if state and name != state:
+                continue
+            result.append(
+                {
+                    "artist": r["artist"], "title": r["title"], "username": r["username"], "state": name,
+                    "loader": r["loader"], "attemptAt": r["attempt_at"], "attempts": int(r["attempts"] or 0),
+                    "message": r["message"], "statusAt": r["status_at"],
+                }
+            )  # fmt: skip
+            if len(result) >= limit:
+                break
+        return result
 
     def learned_weight(self, stats: dict[str, int] | None) -> float:
         """Доля promote со сглаживанием Beta(2, 2), нормированная так, что без данных вес 1.0."""
@@ -440,12 +489,13 @@ class CandidateEngine:
         stats = self.source_stats()
         return {name: config[name]["weight"] * self.learned_weight(stats.get(name)) for name in self._adapters}
 
-    def describe(self) -> dict[str, Any]:
+    def describe(self, viewer: str = "") -> dict[str, Any]:
+        """Источники для экрана «Рекомендации»: ошибки конфигурации — для того, кто смотрит."""
         config = self.config()
         stats = self.source_stats()
         sources = []
         for name, adapter in self._adapters.items():
-            ok, reason = adapter.available("")
+            ok, reason = adapter.available(viewer)
             sources.append(
                 {
                     "name": name,
@@ -455,7 +505,7 @@ class CandidateEngine:
                     "learnedWeight": round(self.learned_weight(stats.get(name)), 3),
                     "available": ok,
                     "reason": reason,
-                    **stats.get(name, {"suggested": 0, "promoted": 0, "rejected": 0}),
+                    **stats.get(name, _empty_stats()),
                 }
             )
         return {"sources": sources, "newArtistShare": config["newArtistShare"]}
@@ -581,6 +631,10 @@ class CandidateEngine:
             )
             log.info("Движок (%s): в пул поставлено %s (%s)", username, len(picked), dict(by_source))
             return len(picked)
+
+
+def _empty_stats() -> dict[str, int]:
+    return {"suggested": 0, **dict.fromkeys(CANDIDATE_STATES, 0)}
 
 
 def _pick(scored: list[Scored], limit: int, new_share: float) -> list[Scored]:

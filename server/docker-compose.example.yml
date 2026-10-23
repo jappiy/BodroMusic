@@ -48,6 +48,15 @@ services:
       # Last.fm — дополнительный канал для тегов, обложек и поиска; ключ — файлом /secrets/lastfm_api_key.
       # LASTFM_API_KEY_FILE: /secrets/lastfm_api_key
       # DISCOVER_PROVIDERS: yandex,deezer,lastfm
-      # Архив Яндекса для рекомендаций: токены аккаунтов файлами /secrets/yandex_accounts/<пользователь Navidrome>
-      # (или явно: YANDEX_ACCOUNTS: nikolai:/secrets/ya_nikolai,olga:/secrets/ya_olga). Архив — на большой диск:
+      # Архив Яндекса для рекомендаций: токены аккаунтов файлами /secrets/yandex_accounts/<логин Яндекса>
+      # (или явно: YANDEX_ACCOUNTS: jappi:/secrets/ya_jappi,kalainidi:/secrets/ya_kalainidi). Архив — на большой диск:
       # YANDEX_ARCHIVE_DIR: /archive
+      # Чей аккаунт Яндекса у какого пользователя приложения: логин_navidrome:логин_яндекса через запятую.
+      # Можно и в приложении (Рекомендации → Архив Яндекса → Привязать) — значение из приложения важнее.
+      # Без привязки источник «Архив Яндекса» пишет «Не привязан аккаунт Яндекса», предзакачка в резерв ждёт.
+      YANDEX_USERS: ${YANDEX_USERS:-}
+      # ListenBrainz — источник рекомендаций. Токен: listenbrainz.org → Settings → User token (или файлом
+      # /secrets/listenbrainz_token). Пользователи: логин_navidrome:логин_lb через запятую — для плейлистов
+      # Weekly Exploration / Weekly Jams. Без токена и пользователя источник выключен с ошибкой конфигурации.
+      LISTENBRAINZ_TOKEN: ${LISTENBRAINZ_TOKEN:-}
+      LISTENBRAINZ_USERS: ${LISTENBRAINZ_USERS:-}

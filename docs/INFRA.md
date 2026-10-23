@@ -142,6 +142,11 @@ environment:
   #   в /music/library/Плейлисты Яндекса/
   # с 0.13.0 (задания 014–015, образ d25e9bf): YAML не меняется; токены /secrets/yandex_accounts/<пользователь>
   #   используются и для загрузок (токен того, кто поставил заявку; без своего — общий /secrets/yandex_music_token)
+  # с 0.15.0 (задание 018): файлы /secrets/yandex_accounts/<логин Яндекса> (jappi, kalainidi); привязка к
+  #   пользователям приложения — в /secrets/env: export YANDEX_USERS=<логин_navidrome>:jappi,<логин_navidrome>:kalainidi
+  #   (или в приложении: Рекомендации → Архив Яндекса → Привязать). ListenBrainz — там же:
+  #   export LISTENBRAINZ_TOKEN=… (или файл /secrets/listenbrainz_token), export LISTENBRAINZ_USERS=<логин_navidrome>:<логин_lb>,…
+  #   при желании POOL_STALL_HOURS (6), POOL_MAX_ATTEMPTS (3)
 ```
 Анализатор звучания `bodro-analyzer` (задания 013, 016, 017): образ `ghcr.io/jappiy/bodromusic-analyzer:0016967` (0.2.0,
 ffmpeg в образе, анализ в дочернем процессе),

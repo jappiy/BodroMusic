@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 DISLIKE_RATING = 1
 _OPTIONAL_COLUMNS = (
     "album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id", "tags",
+    "mbz_recording_id",
 )  # fmt: skip
 
 
@@ -49,6 +50,8 @@ class NdSong:
     album_artist_id: str | None = None
     """ISRC из тегов (Navidrome 0.55+, колонка `tags`)."""
     isrc: str | None = None
+    """MusicBrainz Recording ID (теги beets/Picard) — стабильный ключ анализа звучания."""
+    mbid: str | None = None
 
 
 @dataclass(frozen=True)
@@ -165,6 +168,35 @@ class NavidromeDb:
                     result[variants[r["path"]]] = r["id"]
             return result
 
+    def mbids_by_paths(self, paths: list[str]) -> dict[str, str]:
+        """Путь (как его видит Navidrome) → MBID записи, включая пропавшие файлы (`missing`): по ним старая запись
+        анализа находит трек, переехавший по новому пути."""
+        if not paths:
+            return {}
+        with self._connect() as conn:
+            if "mbz_recording_id" not in self._media_columns(conn):
+                return {}
+            roots: list[str] = []
+            if "library_id" in self._media_columns(conn):
+                roots = [r["path"].rstrip("/") + "/" for r in conn.execute("SELECT path FROM library") if r["path"]]
+            variants: dict[str, str] = {}
+            for path in paths:
+                variants[path] = path
+                for root in roots:
+                    if path.startswith(root):
+                        variants[path[len(root) :]] = path
+            result: dict[str, str] = {}
+            keys = list(variants)
+            for start in range(0, len(keys), 500):
+                chunk = keys[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                for r in conn.execute(
+                    f"SELECT path, mbz_recording_id FROM media_file WHERE path IN ({marks})", chunk
+                ).fetchall():
+                    if r["mbz_recording_id"]:
+                        result[variants[r["path"]]] = r["mbz_recording_id"]
+            return result
+
     def ids_by_path(self, paths: list[str]) -> dict[str, str]:
         """Путь (как его видит Navidrome) → id трека. Нужно, чтобы найти перенесённый файл после пересканирования."""
         wanted = set(paths)
@@ -257,6 +289,7 @@ def _song(r: sqlite3.Row) -> NdSong:
         artist_id=r["artist_id"] or None,
         album_artist_id=r["album_artist_id"] or None,
         isrc=_isrc(r["tags"]),
+        mbid=r["mbz_recording_id"] or None,
     )
 
 

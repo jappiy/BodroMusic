@@ -11,6 +11,12 @@ happy / sad / aggressive / relaxed, danceability, голос/инструмен�
   трек не идёт в волну; ниже `SOUND_REJECT_MATCH` — удаляется и засчитывается источнику как неудача;
 - настроение волны и плавные переходы — признаки треков отдаются приложению (`POST /api/v1/analysis/features`);
 - «Похожие по звучанию» — ближайшие соседи по библиотеке (numpy-индекс в памяти, косинус).
+
+Результат хранится по пути файла и привязан к стабильному ключу звука: MBID записи (из БД Navidrome) и хэшу
+аудиоданных без тегов (`audio_key.py`). Файл переехал или перетегирован (beets, регламент) — новый путь получает
+готовый анализ по ключу, а не анализируется заново. Раз в час (`maintain`): ключи для старых записей (по файлу, копии в
+карантине или MBID пропавшего трека в БД Navidrome), перенос анализа на новые пути, удаление записей треков, которых нет
+ни в библиотеке, ни в пуле и резерве, ни в карантине. «Проанализировано» считается только по трекам библиотеки.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -29,6 +36,7 @@ from ..cleanup import _remap
 from ..config import Settings
 from ..db import Store
 from ..navidrome_db import NavidromeDb
+from .audio_key import audio_hash
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +58,9 @@ RETRY_DELAY_MS = 60 * 60 * 1000
 """Пауза перед повтором упавшего трека."""
 LEASE_EXPIRED_ERROR = "Нет результата за 30 минут: воркер упал или завис"
 INDEX_REFRESH_S = 600
+MAINTAIN_S = 3600
+"""Новые колонки `audio_features` (bodrod 0.15.0): MBID, хэш аудиоданных, ключи вычислены."""
+_KEY_COLUMNS = (("mbid", "TEXT"), ("audio_hash", "TEXT"), ("keyed", "INTEGER NOT NULL DEFAULT 0"))
 MIN_LIKED_FOR_PROFILE = 10
 MOODS = ("happy", "sad", "aggressive", "relaxed")
 
@@ -128,11 +139,22 @@ class AnalysisService:
         self._paths: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._last_result_at: int | None = None
+        """Путь → MBID (треки библиотеки); путь → (MBID, хэш) — вычисленные ключи."""
+        self._mbids: dict[str, str] = {}
+        self._identity: dict[str, tuple[str | None, str | None]] = {}
+        """Ключи старых записей вычислены: до этого библиотека не выдаётся воркеру (иначе перенос не найдётся)."""
+        self._maintained = False
         store.executescript(SCHEMA)
-        if "attempts" not in store.columns("audio_features"):
+        columns = store.columns("audio_features")
+        if "attempts" not in columns:
             # Ошибки до 0.14.0 — одна попытка: с декодированием через ffmpeg у них есть ещё две.
             store.execute("ALTER TABLE audio_features ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
             store.execute("UPDATE audio_features SET attempts = 1 WHERE error IS NOT NULL")
+        for column, ddl in _KEY_COLUMNS:
+            if column not in columns:
+                store.execute(f"ALTER TABLE audio_features ADD COLUMN {column} {ddl}")
+        store.execute("CREATE INDEX IF NOT EXISTS idx_audio_mbid ON audio_features(mbid)")
+        store.execute("CREATE INDEX IF NOT EXISTS idx_audio_hash ON audio_features(audio_hash)")
 
     @property
     def token(self) -> str | None:
@@ -157,14 +179,150 @@ class AnalysisService:
 
         def build() -> dict[str, str]:
             result = {}
+            mbids = {}
             for song in self._db.iter_songs():
                 local = _remap(song.path, self._settings.navidrome_music_dir, self._settings.music_dir)
                 rel = self._relative(local) if local else None
                 if rel:
                     result[song.id] = rel
+                    if song.mbid:
+                        mbids[rel] = song.mbid
+            self._mbids = mbids
             return result
 
         return await asyncio.to_thread(build)
+
+    # endregion
+
+    # region Стабильный ключ звука (MBID, хэш аудиоданных)
+
+    def _identity_of(self, rel: str) -> tuple[str | None, str | None]:
+        """MBID и хэш аудиоданных файла (кэш в памяти; хэш читает до мегабайта файла)."""
+        cached = self._identity.get(rel)
+        if cached is None:
+            cached = (self._mbids.get(rel), audio_hash(Path(self._local(rel))))
+            self._identity[rel] = cached
+        return cached
+
+    def _adopt(self, rel: str, mbid: str | None, hashed: str | None) -> bool:
+        """Тот же звук уже проанализирован под другим путём (перенос, перетегирование) — скопировать результат."""
+        row = None
+        for column, value in (("mbid", mbid), ("audio_hash", hashed)):
+            if value and row is None:
+                row = self._store.query_one(
+                    f"SELECT * FROM audio_features WHERE {column} = ? AND path != ? AND error IS NULL "
+                    "ORDER BY analyzed_at DESC LIMIT 1",
+                    (value, rel),
+                )
+        if row is None:
+            return False
+        self._store.execute(
+            "INSERT OR REPLACE INTO audio_features (path, embedding, features, error, attempts, analyzed_at, mbid, "
+            "audio_hash, keyed) VALUES (?, ?, ?, NULL, 0, ?, ?, ?, 1)",
+            (
+                rel,
+                row["embedding"],
+                row["features"],
+                row["analyzed_at"],
+                mbid or row["mbid"],
+                hashed or row["audio_hash"],
+            ),
+        )
+        log.info("Анализ %s: взят у %s (тот же звук)", rel, row["path"])
+        return True
+
+    def _backfill_keys(self) -> int:
+        """Ключи записей без них: по файлу, по копии в карантине, по MBID трека в БД Navidrome (в т. ч. пропавшего)."""
+        rows = self._store.query("SELECT path FROM audio_features WHERE keyed = 0")
+        if not rows:
+            return 0
+        quarantine: dict[str, str] = {}
+        for q in self._store.query(
+            "SELECT original_path, stored_path FROM quarantine WHERE restored_at IS NULL AND purged_at IS NULL"
+        ):
+            rel = self._relative(q["original_path"])
+            if rel:
+                quarantine[rel] = q["stored_path"]
+        nd_paths: dict[str, str] = {}
+        for r in rows:
+            if r["path"] not in self._mbids:
+                nd = _remap(self._local(r["path"]), self._settings.music_dir, self._settings.navidrome_music_dir)
+                if nd:
+                    nd_paths[nd] = r["path"]
+        nd_mbids: dict[str, str] = {}
+        if self._db is not None and nd_paths:
+            nd_mbids = {nd_paths[p]: m for p, m in self._db.mbids_by_paths(list(nd_paths)).items() if p in nd_paths}
+        for r in rows:
+            rel = r["path"]
+            mbid = self._mbids.get(rel) or nd_mbids.get(rel)
+            local = Path(self._local(rel))
+            stored = quarantine.get(rel)
+            hashed = audio_hash(local) if local.exists() else audio_hash(Path(stored)) if stored else None
+            self._store.execute(
+                "UPDATE audio_features SET mbid = ?, audio_hash = ?, keyed = 1 WHERE path = ?", (mbid, hashed, rel)
+            )
+        log.info("Анализ: ключи звука вычислены для %s записей", len(rows))
+        return len(rows)
+
+    def _adopt_library(self) -> int:
+        """Треки библиотеки без анализа, чей звук уже проанализирован под старым путём, — получают его результат."""
+        known = {r["path"] for r in self._store.query("SELECT path FROM audio_features")}
+        adopted = 0
+        for rel in list(self._paths.values()):
+            if rel not in known and rel not in self._leases and self._adopt(rel, *self._identity_of(rel)):
+                adopted += 1
+        return adopted
+
+    def _keep_paths(self) -> set[str]:
+        """Записи анализа, которые нужны: библиотека, пул и резерв (в т. ч. в загрузке), карантин, выданные воркеру."""
+        keep = set(self._paths.values()) | set(self._leases)
+        for r in self._store.query("SELECT path FROM pool_tracks WHERE path IS NOT NULL AND location != 'gone'"):
+            rel = self._relative(r["path"])
+            if rel:
+                keep.add(rel)
+        for q in self._store.query(
+            "SELECT original_path FROM quarantine WHERE restored_at IS NULL AND purged_at IS NULL"
+        ):
+            rel = self._relative(q["original_path"])
+            if rel:
+                keep.add(rel)
+        return keep
+
+    def _cleanup(self) -> int:
+        """Удалить записи треков, которых нет ни в библиотеке, ни в пуле и резерве, ни в карантине."""
+        keep = self._keep_paths()
+        gone = [r["path"] for r in self._store.query("SELECT path FROM audio_features") if r["path"] not in keep]
+        for start in range(0, len(gone), 500):
+            chunk = gone[start : start + 500]
+            marks = ",".join("?" for _ in chunk)
+            self._store.execute(f"DELETE FROM audio_features WHERE path IN ({marks})", chunk)
+        if gone:
+            log.info("Анализ: удалено %s записей треков, которых больше нет в библиотеке", len(gone))
+        return len(gone)
+
+    async def maintain(self) -> dict[str, int]:
+        """Ключи старых записей → перенос анализа на новые пути → удаление лишнего. Без БД Navidrome — ничего."""
+        paths = await self._song_paths()
+        if not paths:
+            return {}
+        self._paths = paths
+        keyed = await asyncio.to_thread(self._backfill_keys)
+        adopted = await asyncio.to_thread(self._adopt_library)
+        removed = await asyncio.to_thread(self._cleanup)
+        self._maintained = True
+        if (adopted or removed) and self._index is not None:
+            self._index.built_at = 0.0
+        return {"keyed": keyed, "adopted": adopted, "removed": removed}
+
+    async def run_forever(self) -> None:
+        while True:
+            try:
+                result = await self.maintain()
+                if any(result.values()):
+                    log.info("Анализ: обслуживание — %s", result)
+            except Exception:  # noqa: BLE001 — повторим через час
+                log.exception("Анализ: ошибка обслуживания")
+            await asyncio.sleep(MAINTAIN_S)
 
     # endregion
 
@@ -206,21 +364,26 @@ class AnalysisService:
                 and now - int(row["analyzed_at"]) >= RETRY_DELAY_MS
             )
 
+        async def fresh(rel: str) -> bool:
+            """Новый путь: если тот же звук уже проанализирован (перенос, перетегирование) — взять готовое."""
+            if rel in known:
+                return True
+            identity = await asyncio.to_thread(self._identity_of, rel)
+            return not self._adopt(rel, *identity)
+
         jobs: list[str] = []
         pool = self._store.query(
             "SELECT path FROM pool_tracks WHERE location IN ('pool', 'reserve') AND path IS NOT NULL ORDER BY id DESC"
         )
         for r in pool:
             rel = self._relative(r["path"])
-            if wanted(rel) and rel not in jobs:
+            if wanted(rel) and rel not in jobs and await fresh(rel):  # type: ignore[arg-type]
                 jobs.append(rel)  # type: ignore[arg-type]
             if len(jobs) >= limit:
                 break
-        if len(jobs) < limit:
-            if not self._paths:
-                self._paths = await self._song_paths()
-            for rel in self._paths.values():
-                if wanted(rel) and rel not in jobs:
+        if len(jobs) < limit and self._maintained:
+            for rel in list(self._paths.values()):
+                if wanted(rel) and rel not in jobs and await fresh(rel):
                     jobs.append(rel)
                     if len(jobs) >= limit:
                         break
@@ -235,15 +398,22 @@ class AnalysisService:
         stored = dict(features or {})
         if features is not None:
             stored["energy"] = energy_of(stored)
+        mbid, hashed = self._identity.get(relative, (self._mbids.get(relative), None))
         self._store.execute(
-            "INSERT INTO audio_features (path, embedding, features, error, attempts, analyzed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO audio_features (path, embedding, features, error, attempts, analyzed_at, mbid, audio_hash, "
+            "keyed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(path) DO UPDATE SET embedding = excluded.embedding, features = excluded.features, "
             "error = excluded.error, analyzed_at = excluded.analyzed_at, "
+            "mbid = COALESCE(excluded.mbid, audio_features.mbid), "
+            "audio_hash = COALESCE(excluded.audio_hash, audio_features.audio_hash), "
+            "keyed = MAX(excluded.keyed, audio_features.keyed), "
             "attempts = CASE WHEN excluded.error IS NULL THEN 0 "
             "WHEN audio_features.error IS NULL THEN 1 ELSE audio_features.attempts + 1 END",
-            (relative, blob, json.dumps(stored, ensure_ascii=False), error, 0 if error is None else 1, self._clock()),
-        )
+            (
+                relative, blob, json.dumps(stored, ensure_ascii=False), error, 0 if error is None else 1,
+                self._clock(), mbid, hashed, int(hashed is not None),
+            ),
+        )  # fmt: skip
         if error is not None:
             row = self._store.query_one("SELECT attempts FROM audio_features WHERE path = ?", (relative,))
             if row and int(row["attempts"]) >= MAX_ATTEMPTS:
@@ -254,17 +424,23 @@ class AnalysisService:
             self._index.built_at = 0.0  # перестроить при следующем запросе (не чаще раза в 10 минут — ниже)
 
     def status(self) -> dict[str, Any]:
-        row = self._store.query_one(
-            "SELECT COUNT(*) AS n, SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors, "
-            "SUM(CASE WHEN error IS NOT NULL AND attempts >= ? THEN 1 ELSE 0 END) AS skipped FROM audio_features",
-            (MAX_ATTEMPTS,),
-        )
+        """Счётчики — только по трекам, которые сейчас есть в библиотеке Navidrome (пул, резерв и старые пути — нет)."""
+        library = set(self._paths.values())
+        analyzed = errors = skipped = 0
+        for r in self._store.query("SELECT path, error, attempts FROM audio_features"):
+            if r["path"] not in library:
+                continue
+            if r["error"] is None:
+                analyzed += 1
+            else:
+                errors += 1
+                skipped += int(int(r["attempts"] or 0) >= MAX_ATTEMPTS)
         return {
             "enabled": bool(self.token),
-            "analyzed": int((row or {}).get("n") or 0) - int((row or {}).get("errors") or 0),
-            "errors": int((row or {}).get("errors") or 0),
-            "skipped": int((row or {}).get("skipped") or 0),
-            "library": len(self._paths),
+            "analyzed": analyzed,
+            "errors": errors,
+            "skipped": skipped,
+            "library": len(library),
             "lastResultAt": self._last_result_at,
         }
 

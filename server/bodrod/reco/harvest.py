@@ -1,6 +1,6 @@
 """Архив Яндекс Музыки для рекомендаций: всё, что пригодится движку кандидатов, пока жива подписка (до 20.11.2026).
 
-По каждому аккаунту (пользователю Navidrome) раз в 10 минут проверяется, каким сборщикам пора работать:
+По каждому аккаунту Яндекса раз в 10 минут проверяется, каким сборщикам пора работать:
 
 | Сборщик | Как часто | Что пишет |
 |---|---|---|
@@ -13,9 +13,12 @@
 | `common` | раз в сутки, с первого аккаунта | рёбра `chart` и `new_release` для всех (`username = '*'`) |
 | `reserve` | каждый проход, пока есть Плюс | предзакачка лучших кандидатов в `_reserve` (до 500 на пользователя) |
 
-Сырые ответы — в `<YANDEX_ARCHIVE_DIR>/<пользователь>/<дата>/<тип>.json`, нормализованное — в таблицы
-`reco.store`. Ошибка доступа отключает только свой сборщик (через 7 дней — новая попытка): то, что Яндекс отдаёт
-без Плюса, собирается и дальше. Разовые проходы (`similar`, `artists`) продолжаются с места обрыва.
+Сырые ответы — в `<YANDEX_ARCHIVE_DIR>/<логин>/<дата>/<тип>.json`, нормализованное — в таблицы `reco.store`
+под логином Яндекса. Резерв и дизлайки (чёрный список) — пользователю приложения, к которому привязан аккаунт
+(`reco/yandex_links.py`); без привязки архив собирается, а предзакачка в резерв ждёт привязки. Предзакачка, не
+закончившаяся за `RESERVE_STALL_MS` (bodrod перезапустили посреди загрузки), снимается и пробуется снова — не больше
+`RESERVE_MAX_ATTEMPTS` раз. Ошибка доступа отключает только свой сборщик (через 7 дней — новая попытка): то, что
+Яндекс отдаёт без Плюса, собирается и дальше. Разовые проходы (`similar`, `artists`) продолжаются с места обрыва.
 """
 
 from __future__ import annotations
@@ -39,8 +42,9 @@ from ..sources.placer import Placer
 from ..sources.yandex import YTrack
 from .keys import track_key
 from .library import LibraryIndex
-from .store import ALL_USERS, DAY_MS, RecoStore
+from .store import ALL_USERS, DAY_MS, RecoStore, candidate_state
 from .yandex_account import AccessDenied, HarvestApi, WaveConfig
+from .yandex_links import YandexLinks
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +55,9 @@ SIMILAR_CHUNK = 150
 ARTISTS_CHUNK = 40
 ARTISTS_REFRESH_MS = 30 * DAY_MS
 DAILY_MS = DAY_MS - 30 * 60 * 1000
+RESERVE_STALL_MS = 3600 * 1000
+RESERVE_MAX_ATTEMPTS = 3
+NOT_LINKED_RESERVE = "Ждёт привязки к пользователю приложения"
 NDIGNORE = ".ndignore"
 
 DIVERSITIES = ("favorite", "discover", "popular")
@@ -86,7 +93,9 @@ class YandexHarvester:
         library: LibraryIndex,
         placer: Placer | None,
         clock: Callable[[], int] = ms,
+        links: YandexLinks | None = None,
     ) -> None:
+        """`accounts` — по логину Яндекса; `links` — чей аккаунт в приложении (без них логин и есть пользователь)."""
         self._store = store
         self._reco = reco
         self._settings = settings
@@ -96,10 +105,23 @@ class YandexHarvester:
         self._clock = clock
         self._wakeup = asyncio.Event()
         self._running: dict[str, str] = {}
+        self._links = links
+        self.relink()
 
     @property
     def usernames(self) -> list[str]:
         return list(self._accounts)
+
+    def owner(self, login: str) -> str | None:
+        """Пользователь приложения, которому идут резерв и дизлайки аккаунта; `None` — не привязан."""
+        return self._links.navidrome_user(login) if self._links is not None else login
+
+    def relink(self) -> None:
+        """Резерв и чёрный список, записанные под логином Яндекса (до привязки), — пользователю приложения."""
+        for login in self._accounts:
+            owner = self.owner(login)
+            if owner and owner != login:
+                self._reco.move_user_data(login, owner)
 
     # region Состояние
 
@@ -123,9 +145,11 @@ class YandexHarvester:
         result = []
         for user in self._accounts:
             state = self._state(user)
+            owner = self.owner(user)
             result.append(
                 {
                     "username": user,
+                    "navidromeUser": owner,
                     "plus": state.get("plus"),
                     "running": self._running.get(user),
                     "collectors": [
@@ -133,7 +157,8 @@ class YandexHarvester:
                             "name": name,
                             "title": COLLECTOR_TITLES[name],
                             "lastAt": state["last"].get(name),
-                            "disabled": (state["disabled"].get(name) or {}).get("reason"),
+                            "disabled": (state["disabled"].get(name) or {}).get("reason")
+                            or (NOT_LINKED_RESERVE if name == "reserve" and owner is None else None),
                             "count": state["counts"].get(name),
                         }
                         for name in COLLECTORS
@@ -141,8 +166,9 @@ class YandexHarvester:
                     ],
                     "likes": self._reco.like_counts(user),
                     "edges": self._reco.edge_counts(user),
-                    "reserve": self._reco.reserve_count(user),
-                    "blocked": self._reco.user_blocked_count(user),
+                    "reserve": self._reco.reserve_count(owner) if owner else 0,
+                    "reserveStates": self.reserve_states(owner) if owner else {},
+                    "blocked": self._reco.user_blocked_count(owner) if owner else 0,
                     "similarDone": len(self._reco.done_ids(user, "similar")),
                     "error": state.get("error"),
                 }
@@ -234,8 +260,9 @@ class YandexHarvester:
         self._archive(user, "dislikes-tracks", raw)
         self._reco.upsert_tracks(disliked)
         self._reco.replace_likes(user, "track", -1, [(t.id, None) for t in disliked])
-        for t in disliked:
-            self._reco.block_user(user, t.artist, t.title, "Дизлайк в Яндекс Музыке")
+        owner = self.owner(user)
+        for t in disliked if owner else []:
+            self._reco.block_user(owner, t.artist, t.title, "Дизлайк в Яндекс Музыке")
         raw, artists = await api.liked_artists()
         self._archive(user, "likes-artists", raw)
         self._reco.upsert_artists([(a, n) for a, n, _ in artists])
@@ -344,11 +371,47 @@ class YandexHarvester:
 
     # region Предзакачка в резерв
 
+    def reserve_states(self, owner: str) -> dict[str, int]:
+        """Резерв пользователя по статусам кандидата (как у остальных источников): скачано, качается, не найдено…"""
+        rows = self._store.query(
+            "SELECT o.status, t.location FROM pool_owners o JOIN pool_tracks t ON t.id = o.track_id "
+            "WHERE o.username = ? AND o.source = 'yandex_archive'",
+            (owner,),
+        )
+        result: dict[str, int] = {}
+        for r in rows:
+            name = candidate_state(r["status"], r["location"])
+            result[name] = result.get(name, 0) + 1
+        return result
+
+    def _release_stalled(self, owner: str) -> None:
+        """Предзакачка, не закончившаяся за час (bodrod перезапустили посреди загрузки), — снова в очередь;
+        после `RESERVE_MAX_ATTEMPTS` попыток — «не найдено»."""
+        before = self._clock() - RESERVE_STALL_MS
+        rows = self._store.query(
+            "SELECT t.id, t.attempts FROM pool_owners o JOIN pool_tracks t ON t.id = o.track_id "
+            "WHERE o.username = ? AND o.status = 'candidate' AND t.location = 'downloading' "
+            "AND COALESCE(t.attempt_at, t.updated_at) < ?",
+            (owner, before),
+        )
+        for r in rows:
+            track_id = int(r["id"])
+            if int(r["attempts"] or 0) >= RESERVE_MAX_ATTEMPTS:
+                self._reco.update_pool_track(track_id, location="failed", message="Зависла загрузка из Яндекса")
+                self._reco.set_owner(track_id, owner, "failed", None)
+            else:
+                self._reco.update_pool_track(track_id, location="gone", message="Загрузка зависла — повторим")
+            log.info("Резерв (%s): зависшая предзакачка %s снята", owner, track_id)
+
     async def _reserve(self, user: str, api: HarvestApi, state: dict[str, Any]) -> int | None:
         if self._placer is None:
             return None
+        owner = self.owner(user)
+        if owner is None:
+            return None
+        self._release_stalled(owner)
         settings = self._settings
-        have = self._reco.reserve_count(user)
+        have = self._reco.reserve_count(owner)
         if have >= settings.reserve_limit:
             return have
         now = self._clock()
@@ -357,7 +420,7 @@ class YandexHarvester:
             state["plusCheckedAt"] = now
         if not state.get("plus"):
             return None
-        picked = await self.reserve_candidates(user, min(settings.reserve_batch, settings.reserve_limit - have))
+        picked = await self.reserve_candidates(user, min(settings.reserve_batch, settings.reserve_limit - have), owner)
         if not picked:
             return have
         root = Path(settings.reserve_path)
@@ -366,19 +429,22 @@ class YandexHarvester:
         placed = 0
         try:
             for track, score in picked:
-                if await self._prefetch(user, api, track, score, root, workdir):
+                if await self._prefetch(owner, api, track, score, root, workdir):
                     placed += 1
         finally:
             await asyncio.to_thread(_remove_empty, workdir)
-        log.info("Архив Яндекса (%s): в резерв положено %s (всего %s)", user, placed, have + placed)
+        log.info("Архив Яндекса (%s → %s): в резерв положено %s (всего %s)", user, owner, placed, have + placed)
         return have + placed
 
-    async def reserve_candidates(self, user: str, limit: int) -> list[tuple[YTrack, int]]:
-        """Лучшие кандидаты по частоте в волне и похожих, которых нет в библиотеке, пуле, резерве и чёрных списках."""
+    async def reserve_candidates(self, user: str, limit: int, owner: str | None = None) -> list[tuple[YTrack, int]]:
+        """Лучшие кандидаты по частоте в волне и похожих, которых нет в библиотеке, пуле, резерве и чёрных списках.
+
+        `user` — логин Яндекса (архив), `owner` — пользователь приложения (его чёрный список).
+        """
         if limit <= 0:
             return []
         snapshot = await self._library.snapshot()
-        blocked = self._reco.user_blocked_keys(user) | _global_blocked(self._store)
+        blocked = self._reco.user_blocked_keys(owner or user) | _global_blocked(self._store)
         taken = self._reco.pool_keys()
         in_pool = self._reco.yandex_ids_in_pool()
         liked = set(self._reco.liked_ids(user))
@@ -410,6 +476,10 @@ class YandexHarvester:
             cover_url=track.cover_url,
             yandex_id=track.id,
             location="downloading",
+        )
+        current = self._reco.pool_track(track_id) or {}
+        self._reco.update_pool_track(
+            track_id, loader="yandex", attempt_at=self._clock(), attempts=int(current.get("attempts") or 0) + 1
         )
         self._reco.set_owner(track_id, user, "candidate", "yandex_archive", float(score))
         try:

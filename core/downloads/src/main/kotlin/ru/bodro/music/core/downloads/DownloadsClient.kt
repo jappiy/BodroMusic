@@ -239,6 +239,10 @@ class DownloadsClient(
 
     suspend fun runHarvest(): HarvestStatus = postEmpty(listOf("api", "v1", "reco", "harvest", "run"))
 
+    /** Привязать аккаунты Яндекса к пользователям приложения: логин Navidrome → логин Яндекса (`null` — отвязать). */
+    suspend fun linkYandex(links: Map<String, String?>): HarvestStatus =
+        send("PUT", listOf("api", "v1", "reco", "harvest", "links"), YandexLinksBody(links))
+
     // endregion
 
     private suspend inline fun <reified B, reified T> send(method: String, path: List<String>, body: B): T {

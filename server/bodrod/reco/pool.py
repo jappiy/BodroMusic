@@ -11,6 +11,10 @@ candidate (в резерве) → queued → downloading → in_pool → promote
   список пользователя на `POOL_REJECT_BLOCK_DAYS` дней;
 - expire: `POOL_EXPIRE_DAYS` без прослушиваний или `POOL_EXPIRE_SHOWN` показов в волне без запуска.
 
+У трека пула хранится, через какой загрузчик (Яндекс / slskd / YouTube / Lidarr) он скачан или пытался скачаться и
+когда была последняя попытка. Заявка без продвижения дольше `POOL_STALL_HOURS` (и не ждущая плановой паузы источника)
+считается зависшей: отменяется и ставится снова; после `POOL_MAX_ATTEMPTS` попыток трек — «не найдено» (failed).
+
 Promote переносит файл в библиотеку по `LIBRARY_LAYOUT`; старый id трека записывается в `replacements`, так что если
 Navidrome выдаст файлу новый id, приложение перенесёт лайк на него (как после чистки дублей). Файл удаляется, только
 когда трек не держит ни один владелец (другой пользователь или чарт).
@@ -96,6 +100,8 @@ class PoolService:
         self.engine_refill: Callable[[str, int], Any] | None = None
         """Разбудить воркер заявок после постановки в очередь."""
         self.wake_worker: Callable[[], None] = lambda: None
+        """Отменить зависшую заявку в воркере (остановить загрузку в источнике)."""
+        self.cancel_request: Callable[[Any], Any] | None = None
         """Анализ звучания (задача 5): фильтр пула по близости к вкусу пользователя."""
         self.analysis: Any = None
         store.executescript(SCHEMA)
@@ -400,19 +406,26 @@ class PoolService:
             duration_ms=duration_ms,
             cover_url=cover_url,
         )
-        self._reco.update_pool_track(track_id, request_id=request.id, location="queued", message=None)
+        self._reco.update_pool_track(
+            track_id, request_id=request.id, location="queued", message=None, attempts=1, progress_sig=None,
+            progress_at=self._clock(),
+        )  # fmt: skip
         self._reco.set_owner(track_id, username, "queued", source, score)
         self.wake_worker()
         return True
 
     async def _sync_requests(self) -> None:
-        """Заявки пула: скачано — трек в пуле; не нашли — failed."""
+        """Заявки пула: скачано — трек в пуле; не нашли — failed; зависла — повтор или failed."""
         rows = self._store.query(
             "SELECT * FROM pool_tracks WHERE location IN ('queued', 'downloading') AND request_id IS NOT NULL"
         )
         for track in rows:
             request = self._store.get(track["request_id"])
             track_id = int(track["id"])
+            if request is not None:
+                self._track_progress(track, request)
+                if await self._stalled(track, request):
+                    continue
             if request is None or request.status.value in ("failed", "cancelled"):
                 reason = (request.message if request else None) or "Заявка пропала"
                 self._reco.update_pool_track(track_id, location="failed", message=reason)
@@ -446,6 +459,69 @@ class PoolService:
                     "('queued', 'downloading')",
                     (self._clock(), track_id),
                 )
+
+    def _track_progress(self, track: dict[str, Any], request: Any) -> None:
+        """Загрузчик, время последней попытки и снимок продвижения заявки (для поиска зависших)."""
+        now = self._clock()
+        fields: dict[str, Any] = {}
+        ok = [a for a in request.attempts if a.get("result") == "ok"]
+        loader = request.source or (ok or request.attempts or [{}])[-1].get("source")
+        if loader and loader != track.get("loader"):
+            fields["loader"] = loader
+        sig = f"{request.status.value}|{request.chain_index}|{request.progress}|{len(request.attempts)}"
+        if sig != track.get("progress_sig"):
+            fields.update(progress_sig=sig, progress_at=now)
+            if request.status.value != "queued":
+                last = max((int(a.get("at") or 0) for a in request.attempts), default=0)
+                fields["attempt_at"] = max(last, now) if last else now
+        if fields:
+            self._reco.update_pool_track(int(track["id"]), **fields)
+            track.update(fields)
+
+    async def _stalled(self, track: dict[str, Any], request: Any) -> bool:
+        """Заявка не продвигается дольше `POOL_STALL_HOURS` — отменить и поставить снова (или failed)."""
+        s = self._settings
+        if request.status.value in ("queued", "completed", "failed", "cancelled"):
+            return False
+        if request.next_check_at > time.time():
+            return False  # источник ждёт плановой паузы (повтор поиска slskd и т. п.)
+        since = int(track.get("progress_at") or track.get("updated_at") or self._clock())
+        if self._clock() - since < s.pool_stall_hours * 3600 * 1000:
+            return False
+        track_id = int(track["id"])
+        attempts = int(track.get("attempts") or 1)
+        if self.cancel_request is not None:
+            try:
+                await self.cancel_request(request)
+            except Exception as e:  # noqa: BLE001 — заявку всё равно снимаем
+                log.warning("Пул: не удалось отменить зависшую заявку %s: %s", request.id, e)
+        if attempts >= s.pool_max_attempts:
+            message = f"Не скачалось за {attempts} попытки: загрузка зависала"
+            self._reco.update_pool_track(track_id, location="failed", message=message)
+            self._store.execute(
+                "UPDATE pool_owners SET status = 'failed', status_at = ? WHERE track_id = ? AND status IN "
+                "('queued', 'downloading')",
+                (self._clock(), track_id),
+            )
+            log.info("Пул: %s — %s: %s", track["artist"], track["title"], message)
+            return True
+        from ..models import RequestKind
+
+        owners = [o for o in self._reco.owners(track_id) if o["status"] in ("queued", "downloading")]
+        username = request.username
+        fresh, _ = self._store.create(
+            username=username, kind=RequestKind.TRACK, artist=track["artist"], title=track["title"],
+            album=track.get("album"), duration_ms=track.get("duration_ms"), cover_url=track.get("cover_url"),
+        )  # fmt: skip
+        self._reco.update_pool_track(
+            track_id, request_id=fresh.id, location="queued", attempts=attempts + 1, progress_sig=None,
+            progress_at=self._clock(), message=f"Загрузка зависла — попытка {attempts + 1}",
+        )  # fmt: skip
+        for o in owners:
+            self._set_status(track_id, o["username"], "queued")
+        log.info("Пул: заявка %s — %s зависла, попытка %s", track["artist"], track["title"], attempts + 1)
+        self.wake_worker()
+        return True
 
     async def upkeep(self, force_refill: bool = False) -> None:
         async with self._lock:

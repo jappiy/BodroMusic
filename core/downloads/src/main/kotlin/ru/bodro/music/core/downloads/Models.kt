@@ -391,7 +391,11 @@ data class ChartEntry(
     val isReady: Boolean get() = !isPlayable && !isPending && requestStatus == "completed"
 }
 
-/** Источник движка рекомендаций: [weight] — ручной (0..3), [learnedWeight] — выученный по доле promote. */
+/**
+ * Источник движка рекомендаций: [weight] — ручной (0..3), [learnedWeight] — выученный по доле promote.
+ * [available] = false — ошибка конфигурации ([reason]): источник не участвует в подборе, даже если включён.
+ * Счётчики — статусы предложенных треков: в очереди, качается, скачано (резерв или пул), не найдено, в библиотеку, отклонено.
+ */
 @Serializable
 data class EngineSource(
     val name: String,
@@ -402,9 +406,16 @@ data class EngineSource(
     val available: Boolean = true,
     val reason: String? = null,
     val suggested: Int = 0,
+    val queued: Int = 0,
+    val downloading: Int = 0,
+    val downloaded: Int = 0,
+    val notFound: Int = 0,
     val promoted: Int = 0,
     val rejected: Int = 0,
-)
+) {
+    /** Переключатель выглядит включённым, только если источник включён и настроен. */
+    val active: Boolean get() = enabled && available
+}
 
 /** Признаки звучания трека (анализ на сервере). */
 @Serializable
@@ -450,16 +461,19 @@ data class HarvestCollector(
     val count: Int? = null,
 )
 
-/** Архив Яндекса по аккаунту (пользователь Navidrome). */
+/** Архив Яндекса по аккаунту: [username] — логин Яндекса, [navidromeUser] — к кому привязан (`null` — ни к кому). */
 @Serializable
 data class HarvestAccount(
     val username: String,
+    val navidromeUser: String? = null,
     val plus: Boolean? = null,
     val running: String? = null,
     val collectors: List<HarvestCollector> = emptyList(),
     val likes: Map<String, Int> = emptyMap(),
     val edges: Map<String, Int> = emptyMap(),
     val reserve: Int = 0,
+    /** Резерв по статусам кандидата: queued, downloading, downloaded, notFound, promoted, rejected. */
+    val reserveStates: Map<String, Int> = emptyMap(),
     val blocked: Int = 0,
     val similarDone: Int = 0,
     val error: String? = null,
@@ -474,6 +488,9 @@ internal data class EngineUpdateBody(
     val weights: Map<String, Float>? = null,
     val newArtistShare: Float? = null,
 )
+
+@Serializable
+internal data class YandexLinksBody(val links: Map<String, String?>)
 
 @Serializable
 internal data class FeedbackBody(val events: List<FeedbackEvent>)

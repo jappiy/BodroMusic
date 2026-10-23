@@ -1,7 +1,8 @@
 """Токены Яндекс Музыки: чей токен использовать и в каком он состоянии.
 
-Токены пользователей — `/secrets/yandex_accounts/<пользователь Navidrome>` (или `YANDEX_ACCOUNTS`), общий —
-`YANDEX_MUSIC_TOKEN`. Правило одно на весь bodrod (`YandexTokens.resolve`):
+Токены аккаунтов — `/secrets/yandex_accounts/<логин Яндекса>` (или `YANDEX_ACCOUNTS`), общий — `YANDEX_MUSIC_TOKEN`.
+Какой аккаунт у пользователя Navidrome — `reco/yandex_links.py` (`YANDEX_USERS`; без привязки — файл с именем
+пользователя). Правило одно на весь bodrod (`YandexTokens.resolve`):
 - загрузки — токен пользователя, который поставил заявку (для заявок пула `pool:<user>` — владелец пула),
   иначе общий; фоновые задачи (чарты, «метки» Lidarr, выгрузка) — токен владельца задачи, иначе общий;
 - сбор данных аккаунта (лайки, история — `reco/harvest.py`) — только токен самого пользователя (`fallback=False`).
@@ -81,8 +82,11 @@ class YandexTokens:
         api_factory: Callable[[str | None], YandexApi],
         check_interval_s: int = 24 * 3600,
         clock: Callable[[], float] = time.time,
+        link: Callable[[str], str | None] = lambda user: user,
     ) -> None:
+        """`user_tokens` — аккаунт Яндекса → токен; `link` — пользователь Navidrome → аккаунт (`None` — не привязан)."""
         self._users = {u: t for u, t in user_tokens.items() if t}
+        self.link = link
         self._global = global_token or None
         self._factory = api_factory
         self._check_interval_s = check_interval_s
@@ -102,7 +106,11 @@ class YandexTokens:
 
     @property
     def users(self) -> list[str]:
+        """Аккаунты Яндекса с токеном."""
         return sorted(self._users)
+
+    def account_token(self, account: str) -> str | None:
+        return self._users.get(account)
 
     @property
     def has_global(self) -> bool:
@@ -115,8 +123,9 @@ class YandexTokens:
     def resolve(self, user: str | None, fallback: bool = True) -> TokenRef | None:
         """Токен пользователя, затем (если `fallback`) общий. `None` — токена нет."""
         owner = request_owner(user)
-        if owner and owner in self._users:
-            return TokenRef(self._users[owner], "user", owner)
+        account = self.link(owner) if owner else None
+        if owner and account in self._users:
+            return TokenRef(self._users[account], "user", owner)
         if fallback and self._global:
             return TokenRef(self._global, "global")
         return None
