@@ -1,9 +1,11 @@
 package ru.bodro.music
 
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
@@ -39,6 +41,10 @@ class PlaybackUiTest {
 
     @Test
     fun openAlbumPlayTrackAndReact() {
+        // Блок «Моей волны» занимает почти весь первый экран — подборки ниже, к ним нужно прокрутить.
+        compose.waitUntil(15_000) {
+            runCatching { compose.onNodeWithTag("home-list").performScrollToNode(hasTestTag("album-al-1")) }.isSuccess
+        }
         compose.waitForTag("album-al-1")
         compose.onAllNodesWithTag("album-al-1")[0].performClick()
         compose.waitForTag("album-screen")

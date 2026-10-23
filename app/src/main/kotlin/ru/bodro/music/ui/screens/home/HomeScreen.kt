@@ -61,7 +61,7 @@ fun HomeScreen(
     var waveSettings by rememberSaveable { mutableStateOf(false) }
 
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize().testTag("home-screen")) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.fillMaxSize().testTag("home-list"), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "wave") {
                 WaveHome(
                     player = player,
