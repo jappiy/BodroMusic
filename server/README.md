@@ -380,13 +380,23 @@ Navidrome (раз в час) плюс 15 минут.
 
 **Статистика запуска** — всегда все ключи: `songs`, `short_found`, `short_removed`, `short_skipped`,
 `duplicates_removed`, `albums_merged`, `artists_merged`, `tags_fixed`, `tags_problems`, `covers_added`,
-`covers_missing`, `mismatches`, `quarantine_purged`, `attention` (= `short_skipped` + `tags_problems` +
-`covers_missing` + `mismatches`).
+`covers_missing`, `mismatches`, `quarantine_purged`, `open_<причина>` и `attention` (= сумма `open_*`).
+Причины не исправленного (0.16.0): `short_version` (короткий, но не обрезок), `tags_unreadable`, `tags_not_found`,
+`cover_not_found`, `lidarr_cover_not_found`, `mismatch`. В `open_*` считается и то, что уже было в отчёте
+раньше и повторно туда не пишется, — пока проблема не исправлена.
+
+**Сводка** (`GET /api/v1/maintenance/summary`, 0.16.0) — то, что показывает приложение: исправлено по типам
+(из статистики последнего запуска), не исправлено по причинам и всё, что сейчас лежит в карантине (списком, с id для
+возврата). Подробный журнал действий по-прежнему отдаёт `GET /api/v1/maintenance/actions`.
 
 После изменений запускается сканирование Navidrome.
 
-**Lidarr.** Если задан `LIDARR_MUSIC_DIR`, файлы из папок исполнителей Lidarr не переносятся и не убираются
-(иначе Lidarr скачал бы их снова) — только в отчёт. Если Lidarr недоступен, запуск откладывается.
+**Lidarr.** Если задан `LIDARR_MUSIC_DIR`, в папках исполнителей Lidarr файлы не переносятся и не убираются
+(иначе Lidarr скачал бы их снова), теги не меняются. Разрешено одно (0.16.0): папке альбома без обложки добавляется
+`cover.jpg` из Cover Art Archive по MBID релиза — из тегов файла (`musicbrainz_albumid`,
+`musicbrainz_releasegroupid`), из базы Navidrome (`mbz_album_id`), иначе из Lidarr (отслеживаемый релиз альбома,
+затем группа релизов). Пропуски по правилу «папка Lidarr» — не проблема: в отчёт, «требует внимания» и сводку не
+попадают. Если Lidarr недоступен, запуск откладывается.
 
 **Карантин.** Убранное перемещается в `QUARANTINE_DIR/<номер запуска>/<путь>` (в папке лежит `.ndignore`,
 Navidrome её не сканирует) и удаляется через `QUARANTINE_DAYS` дней.

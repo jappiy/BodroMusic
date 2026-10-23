@@ -1,7 +1,5 @@
 package ru.bodro.music.ui.screens.settings
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,22 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Label
-import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.AutoFixHigh
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.PeopleAlt
-import androidx.compose.material.icons.rounded.ReportProblem
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -39,8 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -59,13 +45,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.bodro.music.R
-import ru.bodro.music.core.downloads.MaintenanceAction
+import ru.bodro.music.core.downloads.MaintenanceCount
 import ru.bodro.music.core.downloads.MaintenanceRun
 import ru.bodro.music.core.downloads.MaintenanceStatus
+import ru.bodro.music.core.downloads.MaintenanceSummary
+import ru.bodro.music.core.downloads.QuarantineItem
 import ru.bodro.music.data.downloads.DownloadsRepository
 import ru.bodro.music.ui.app.LocalAppActions
 import ru.bodro.music.ui.components.BodroTopBar
-import ru.bodro.music.ui.components.EmptyState
 import ru.bodro.music.ui.components.ErrorState
 import ru.bodro.music.ui.components.LoadingState
 import ru.bodro.music.ui.util.UiError
@@ -73,22 +60,17 @@ import ru.bodro.music.ui.util.formatTime
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
-/** Виды записей отчёта (как их называет bodrod). `null` — все, `attention` — только «требует внимания». */
-val MaintenanceKinds = listOf(null, "attention", "duplicate", "album", "artist_merge", "short", "tags", "cover", "mismatch")
-
 data class MaintenanceUi(
     val loading: Boolean = true,
     val status: MaintenanceStatus? = null,
-    val kind: String? = null,
-    val total: Int = 0,
-    val actions: List<MaintenanceAction> = emptyList(),
+    val summary: MaintenanceSummary = MaintenanceSummary(),
     val starting: Boolean = false,
     val error: UiError? = null,
 )
 
 /**
- * «Обслуживание библиотеки» (только администраторы): отчёт регламента bodrod — что исправлено
- * (теги, обложки, дубли, альбомы, короткие файлы) и что только найдено; запуск вручную; возврат из карантина.
+ * «Обслуживание библиотеки» (только администраторы): сводка последнего запуска регламента bodrod — сколько
+ * исправлено (по типам) и сколько не исправлено (по причинам); списком — только карантин с возвратом; запуск вручную.
  */
 @HiltViewModel
 class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsRepository) : ViewModel() {
@@ -107,11 +89,6 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
         }
     }
 
-    fun setKind(kind: String?) {
-        _state.update { it.copy(kind = kind) }
-        load()
-    }
-
     fun runNow(onError: (Throwable) -> Unit) {
         _state.update { it.copy(starting = true) }
         viewModelScope.launch {
@@ -121,10 +98,9 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
         }
     }
 
-    fun restore(action: MaintenanceAction, onDone: (Throwable?) -> Unit) {
-        val id = action.quarantineId ?: return
+    fun restore(item: QuarantineItem, onDone: (Throwable?) -> Unit) {
         viewModelScope.launch {
-            val result = runCatching { downloads.restoreFromQuarantine(id) }
+            val result = runCatching { downloads.restoreFromQuarantine(item.id) }
             onDone(result.exceptionOrNull())
             runCatching { reload() }
         }
@@ -132,8 +108,8 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
 
     private suspend fun reload() {
         val status = downloads.maintenanceStatus()
-        val page = downloads.maintenanceActions(runId = null, kind = _state.value.kind, limit = PAGE, offset = 0)
-        _state.update { it.copy(loading = false, status = status, total = page.total, actions = page.items, error = null) }
+        val summary = downloads.maintenanceSummary()
+        _state.update { it.copy(loading = false, status = status, summary = summary, error = null) }
         if (status.running) pollWhileRunning()
     }
 
@@ -153,7 +129,6 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
     }
 
     private companion object {
-        const val PAGE = 300
         const val POLL_MS = 3_000L
     }
 }
@@ -163,11 +138,12 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
     val context = LocalContext.current
-    var pending by remember { mutableStateOf<MaintenanceAction?>(null) }
+    var pending by remember { mutableStateOf<QuarantineItem?>(null) }
 
     Scaffold(topBar = { BodroTopBar(stringResource(R.string.maintenance_title), onBack) }) { padding ->
         val error = state.error
         val status = state.status
+        val summary = state.summary
         when {
             state.loading -> LoadingState(Modifier.padding(padding))
             error != null && status == null -> ErrorState(error, onRetry = viewModel::load, modifier = Modifier.padding(padding))
@@ -177,46 +153,46 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
                         viewModel.runNow { e -> actions.showMessage(e.toUiError().text(context)) }
                     }
                 }
-                item(key = "kinds") {
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        MaintenanceKinds.forEach { kind ->
-                            FilterChip(
-                                selected = state.kind == kind,
-                                onClick = { viewModel.setKind(kind) },
-                                label = { Text(kindLabel(kind)) },
-                            )
-                        }
+                summary.run?.let { run ->
+                    item(key = "fixed") {
+                        Counts(
+                            stringResource(if (run.dryRun) R.string.maintenance_fixed_planned else R.string.maintenance_fixed),
+                            summary.fixed,
+                            stringResource(R.string.maintenance_fixed_none),
+                            tag = "fixed",
+                        )
                     }
-                }
-                if (state.actions.isEmpty()) {
-                    item(key = "empty") {
-                        EmptyState(
-                            stringResource(R.string.maintenance_empty),
-                            stringResource(R.string.maintenance_empty_hint),
-                            modifier = Modifier.height(320.dp),
-                            icon = Icons.Rounded.AutoFixHigh,
+                    item(key = "unresolved") {
+                        Counts(
+                            stringResource(R.string.maintenance_unresolved),
+                            summary.unresolved,
+                            stringResource(R.string.maintenance_unresolved_none),
+                            tag = "unresolved",
                         )
                     }
                 }
-                items(state.actions, key = { it.id }) { action ->
-                    ActionRow(action, onRestore = { pending = action })
+                item(key = "quarantine-header") {
+                    Column {
+                        SectionTitle(stringResource(R.string.maintenance_quarantine, summary.quarantine.size, status.quarantineDays))
+                        if (summary.quarantine.isEmpty()) Hint(stringResource(R.string.maintenance_quarantine_empty))
+                    }
+                }
+                items(summary.quarantine, key = { it.id }) { item ->
+                    QuarantineRow(item, onRestore = { pending = item })
                 }
             }
         }
     }
 
-    pending?.let { action ->
+    pending?.let { item ->
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text(stringResource(R.string.maintenance_restore_title)) },
-            text = { Text(stringResource(R.string.maintenance_restore_text, action.path.orEmpty())) },
+            text = { Text(stringResource(R.string.maintenance_restore_text, item.path)) },
             confirmButton = {
                 TextButton(onClick = {
                     pending = null
-                    viewModel.restore(action) { e ->
+                    viewModel.restore(item) { e ->
                         actions.showMessage(e?.toUiError()?.text(context) ?: context.getString(R.string.maintenance_restored))
                     }
                 }) { Text(stringResource(R.string.maintenance_restore)) }
@@ -242,8 +218,12 @@ private fun Summary(status: MaintenanceStatus, starting: Boolean, onRun: () -> U
                 style = MaterialTheme.typography.titleSmall,
             )
             last?.let { run ->
-                statsLine(run)?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                run.stats["songs"]?.let {
+                    Text(
+                        stringResource(R.string.maintenance_songs, it),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 run.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
@@ -290,105 +270,65 @@ private fun runLine(run: MaintenanceRun): String {
 }
 
 @Composable
-private fun statsLine(run: MaintenanceRun): String? {
-    // В пробном режиме ничего не сделано — «будет убрано», а не «убрано».
-    val labels = if (run.dryRun) {
-        listOf(
-            "duplicates_removed" to R.string.maintenance_plan_duplicates,
-            "albums_merged" to R.string.maintenance_plan_albums,
-            "artists_merged" to R.string.maintenance_plan_artists,
-            "short_removed" to R.string.maintenance_plan_short,
-            "tags_fixed" to R.string.maintenance_plan_tags,
-            "covers_added" to R.string.maintenance_plan_covers,
-        )
-    } else {
-        listOf(
-            "duplicates_removed" to R.string.maintenance_stat_duplicates,
-            "albums_merged" to R.string.maintenance_stat_albums,
-            "artists_merged" to R.string.maintenance_stat_artists,
-            "short_removed" to R.string.maintenance_stat_short,
-            "tags_fixed" to R.string.maintenance_stat_tags,
-            "covers_added" to R.string.maintenance_stat_covers,
-        )
-    }
-    val parts = labels.mapNotNull { (key, label) -> run.stats[key]?.takeIf { it > 0 }?.let { stringResource(label, it) } }
-    // «Требует внимания» (`attention`): не найдены теги и обложки, пропущенные короткие, чужие релизы.
-    // bodrod 0.4.0 этого ключа не писал и считал `short_found` только по пропущенным.
-    val found = run.stats["attention"]
-        ?: listOf("short_found", "tags_problems", "covers_missing").sumOf { run.stats[it] ?: 0 }
-    val all = parts + listOfNotNull(found.takeIf { it > 0 }?.let { stringResource(R.string.maintenance_stat_found, it) })
-    val songs = run.stats["songs"]
-    return when {
-        all.isNotEmpty() -> all.joinToString(" · ")
-        songs != null -> stringResource(R.string.maintenance_stat_clean, songs)
-        else -> null
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+/** Блок сводки: заголовок и строки «подпись — число» (подписи присылает сервер); пусто — [empty]. */
+@Composable
+private fun Counts(title: String, counts: List<MaintenanceCount>, empty: String, tag: String) {
+    Column(Modifier.testTag("maintenance-$tag")) {
+        SectionTitle(title)
+        if (counts.isEmpty()) Hint(empty)
+        counts.forEach { count ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(count.title.ifBlank { count.key }, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Spacer(Modifier.size(12.dp))
+                Text(count.count.toString(), style = MaterialTheme.typography.titleSmall)
+            }
+        }
     }
 }
 
 @Composable
-private fun ActionRow(action: MaintenanceAction, onRestore: () -> Unit) {
+private fun QuarantineRow(item: QuarantineItem, onRestore: () -> Unit) {
     ListItem(
-        leadingContent = {
-            Icon(
-                kindIcon(action.kind),
-                contentDescription = kindLabel(action.kind),
-                tint = when {
-                    action.applied -> MaterialTheme.colorScheme.primary
-                    action.planned -> MaterialTheme.colorScheme.secondary
-                    else -> MaterialTheme.colorScheme.tertiary
-                },
-            )
-        },
-        headlineContent = { Text(action.title ?: action.album ?: action.path.orEmpty(), maxLines = 2) },
+        headlineContent = { Text(item.title ?: item.album ?: item.path, maxLines = 2) },
         supportingContent = {
             Column {
-                val who = listOfNotNull(action.artist, action.album?.takeIf { action.title != null }).joinToString(" · ")
+                val who = listOfNotNull(item.artist, item.album?.takeIf { item.title != null }).joinToString(" · ")
                 if (who.isNotBlank()) Text(who, maxLines = 1)
-                Text(action.details, style = MaterialTheme.typography.bodySmall)
+                Text(item.reason, style = MaterialTheme.typography.bodySmall)
                 Text(
-                    listOfNotNull(formatTime(action.createdAt, "dd.MM HH:mm"), action.path).joinToString(" · "),
+                    stringResource(R.string.maintenance_quarantine_until, formatTime(item.expiresAt, "dd.MM"), item.path),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                 )
             }
         },
-        trailingContent = if (action.restorable) {
-            {
-                TextButton(onClick = onRestore, modifier = Modifier.testTag("restore-${action.id}")) {
-                    Text(stringResource(R.string.maintenance_restore))
-                }
+        trailingContent = {
+            TextButton(onClick = onRestore, modifier = Modifier.testTag("restore-${item.id}")) {
+                Text(stringResource(R.string.maintenance_restore))
             }
-        } else {
-            null
         },
-        modifier = Modifier.testTag("maintenance-action-${action.id}"),
+        modifier = Modifier.testTag("quarantine-${item.id}"),
     )
-}
-
-@Composable
-private fun kindLabel(kind: String?): String = stringResource(
-    when (kind) {
-        null -> R.string.maintenance_kind_all
-        "attention" -> R.string.maintenance_kind_attention
-        "duplicate" -> R.string.maintenance_kind_duplicate
-        "album" -> R.string.maintenance_kind_album
-        "artist_merge" -> R.string.maintenance_kind_artist_merge
-        "mismatch" -> R.string.maintenance_kind_mismatch
-        "short" -> R.string.maintenance_kind_short
-        "tags" -> R.string.maintenance_kind_tags
-        "cover" -> R.string.maintenance_kind_cover
-        else -> R.string.maintenance_kind_all
-    },
-)
-
-private fun kindIcon(kind: String): ImageVector = when (kind) {
-    "duplicate" -> Icons.Rounded.ContentCopy
-    "album" -> Icons.Rounded.Album
-    "artist_merge" -> Icons.Rounded.PeopleAlt
-    "mismatch" -> Icons.Rounded.ReportProblem
-    "short" -> Icons.Rounded.Timer
-    "tags" -> Icons.AutoMirrored.Rounded.Label
-    "cover" -> Icons.Rounded.Image
-    else -> Icons.Rounded.AutoFixHigh
 }

@@ -22,7 +22,11 @@
 
 Пробный режим (`MAINTENANCE_DRY_RUN`) ничего не меняет и ничего не запоминает: два пробных запуска подряд дают
 одинаковый отчёт. Отметки «не найдено» хранят версию набора источников и сбрасываются при его смене.
-Файлы из папок Lidarr (если задан `LIDARR_MUSIC_DIR`) не переносятся и не убираются: Lidarr скачал бы их снова.
+Папки Lidarr (если задан `LIDARR_MUSIC_DIR`): файлы не переносятся и не убираются (Lidarr скачал бы их снова),
+теги не меняются. Разрешено одно — `cover.jpg` в папку альбома без обложки из Cover Art Archive по MBID релиза
+(теги файла, база Navidrome, затем Lidarr). Пропуски по этому правилу — не проблема: в отчёт и сводку не попадают.
+Не исправленное считается по причинам (`open_<причина>`, `REASONS`) — вместе с уже известным с прошлых запусков,
+хотя в отчёт оно повторно не пишется.
 Убранное лежит в карантине `QUARANTINE_DIR` `QUARANTINE_DAYS` дней, его можно вернуть из приложения.
 Чтобы лайки не терялись, bodrod запоминает, какой файл занял место убранного (`replacements`): приложение
 переносит лайк на оставшуюся копию (`POST /api/v1/library/check`).
@@ -49,6 +53,7 @@ from .clients.navidrome import NavidromeClient
 from .config import Settings
 from .db import Store, now_ms
 from .metadata.lookup import MATCH_THRESHOLD, SOURCE_NAMES, LookupMatch, LookupProvider, chain_version
+from .models import MaintenanceCount, MaintenanceRunOut, MaintenanceSummary, QuarantineItemOut
 from .navidrome_db import NavidromeDb, NdSong
 from .placement import embed_cover, read_embedded_cover
 from .text import main_artist, normalize, same_artist, similarity_any
@@ -62,6 +67,25 @@ KIND_ARTIST = "artist_merge"
 KIND_TAGS = "tags"
 KIND_COVER = "cover"
 KIND_MISMATCH = "mismatch"
+
+REASONS = {
+    "short_version": "Короткие файлы, не похожие на обрезок (другая версия, интро, интервью)",
+    "tags_unreadable": "Файл не читается — возможно, повреждён",
+    "tags_not_found": "Нет тегов, надёжного совпадения в источниках нет",
+    "cover_not_found": "Нет обложки, в источниках не найдена",
+    "lidarr_cover_not_found": "Папка Lidarr без обложки: нет MBID релиза или обложки в Cover Art Archive",
+    "mismatch": "Чужой релиз в папке исполнителя",
+}
+"""Почему не исправлено: код → заголовок для сводки в приложении."""
+FIXED = {
+    "duplicates_removed": "Дубли треков",
+    "short_removed": "Обрезанные файлы",
+    "albums_merged": "Альбомы, собранные в одну папку",
+    "artists_merged": "Объединение исполнителя",
+    "tags_fixed": "Дописаны теги",
+    "covers_added": "Добавлены обложки",
+}
+"""Что исправлено: ключ статистики → заголовок для сводки."""
 
 STAT_KEYS = (
     "songs",
@@ -78,9 +102,9 @@ STAT_KEYS = (
     "mismatches",
     "quarantine_purged",
     "attention",
+    *(f"open_{code}" for code in REASONS),
 )
-"""Ключи статистики запуска: в каждом запуске все, включая нулевые."""
-ATTENTION_STATS = ("short_skipped", "tags_problems", "covers_missing", "mismatches")
+"""Ключи статистики запуска: в каждом запуске все, включая нулевые. `attention` — сумма `open_*`."""
 
 LOSSLESS = {"flac", "alac", "wav", "ape", "wv", "aiff", "aif", "dsf"}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
@@ -207,6 +231,8 @@ class RunContext:
     """Папки, где треки из разных альбомов (россыпь), даже если они не называются «Треки»."""
     mixed_folders: set[Path] = field(default_factory=set)
     cover_cache: dict[tuple[str, str], Any] = field(default_factory=dict)
+    """id исполнителя Lidarr → его файлы (`/trackfile`), чтобы найти альбом папки без MBID в тегах."""
+    lidarr_files: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 CoverFetcher = Callable[[str], Awaitable[tuple[bytes, str] | None]]
@@ -237,6 +263,7 @@ class MaintenanceService:
         self.cover_chain = cover_chain
         self.tag_chain = [p for p in tag_chain if p.tags]
         self._fetch_cover = cover_fetcher
+        self._lidarr_artists: dict[Path, int] = {}
         self._lock = lock or asyncio.Lock()
         self._task: asyncio.Task[Any] | None = None
         self.running = False
@@ -303,14 +330,14 @@ class MaintenanceService:
                 await self._albums(ctx, files)
                 self._mismatches(ctx, files)
                 await self._tags_and_covers(ctx, files)
-                ctx.stats["attention"] = sum(ctx.stats[k] for k in ATTENTION_STATS)
+                ctx.stats["attention"] = _open_total(ctx)
                 if ctx.changed and not ctx.dry_run:
                     await self._scan()
                 self._store.finish_run(run.id, "completed", dict(ctx.stats))
                 log.info("Обслуживание библиотеки: готово, %s", dict(ctx.stats))
             except Exception as e:
                 log.exception("Обслуживание библиотеки: ошибка")
-                ctx.stats["attention"] = sum(ctx.stats[k] for k in ATTENTION_STATS)
+                ctx.stats["attention"] = _open_total(ctx)
                 self._store.finish_run(run.id, "failed", dict(ctx.stats), str(e))
                 if ctx.changed and not ctx.dry_run:
                     await self._scan()
@@ -361,12 +388,12 @@ class MaintenanceService:
             artists = await self._lidarr.artists()
         except Exception as e:  # noqa: BLE001 — без Lidarr не трогаем ничего, что может быть его
             raise MaintenanceError(f"Lidarr недоступен, обслуживание отложено: {e}") from e
-        dirs = []
+        self._lidarr_artists = {}
         for artist in artists:
             local = _remap(artist.get("path") or "", self._settings.lidarr_music_dir, self._settings.music_dir)
             if local:
-                dirs.append(Path(local))
-        return dirs
+                self._lidarr_artists[Path(local)] = int(artist.get("id") or -1)
+        return list(self._lidarr_artists)
 
     def _in_quarantine(self, path: Path) -> bool:
         return path.is_relative_to(self.quarantine_root)
@@ -478,10 +505,11 @@ class MaintenanceService:
                 continue
             reason, auto = found
             kept_file = True
-            if auto and f.pinned:
-                reason, auto = f"{reason}. Файл из папки Lidarr — не трогаем", False
+            if f.pinned:
+                kept.append(f)  # папка Lidarr: не трогаем и не считаем проблемой
+                continue
             if not auto:
-                if self._report_once(ctx, f"short:{f.local}", _signature(f.local)):
+                if self._report_once(ctx, f"short:{f.local}", _signature(f.local), "short_version"):
                     ctx.stats["short_found"] += 1
                     ctx.stats["short_skipped"] += 1
                     self._action(ctx, KIND_SHORT, False, reason, f)
@@ -764,7 +792,7 @@ class MaintenanceService:
             ]
             if len(foreign) * 2 <= len(known):
                 continue
-            if not self._report_once(ctx, f"mismatch:{folder}", f"{len(items)}:{len(foreign)}"):
+            if not self._report_once(ctx, f"mismatch:{folder}", f"{len(items)}:{len(foreign)}", "mismatch"):
                 continue
             counts = Counter(artist for _, artist in foreign)
             names = ", ".join(f"«{a}»" for a, _ in counts.most_common(3))
@@ -787,14 +815,16 @@ class MaintenanceService:
 
     async def _tags_and_covers(self, ctx: RunContext, files: list[LibraryFile]) -> None:
         for f in files:
-            if _tag_problem(f.song) is not None and f.local.exists():
+            if _tag_problem(f.song) is not None and not f.pinned and f.local.exists():
                 await self._fix_tags(ctx, f)
         folders: dict[Path, list[LibraryFile]] = defaultdict(list)
         for f in files:
             if f.local.exists():
                 folders[f.folder].append(f)
         for folder, items in folders.items():
-            if self._loose_folder(ctx, folder):
+            if items[0].pinned:
+                await self._fix_lidarr_cover(ctx, folder, items)
+            elif self._loose_folder(ctx, folder):
                 for f in items:
                     await self._fix_file_cover(ctx, f, items)
             else:
@@ -803,11 +833,11 @@ class MaintenanceService:
     async def _fix_tags(self, ctx: RunContext, f: LibraryFile) -> None:
         key = f"tags:{f.local}"
         signature = _signature(f.local)
-        if self._recently_checked(key, signature) or self._recently_checked(key, f"{signature}|{self.tag_version}"):
+        if self._known(ctx, key, signature) or self._known(ctx, key, f"{signature}|{self.tag_version}"):
             return
         current = await asyncio.to_thread(read_tags, f.local)
         if current is None:
-            self._mark_checked(ctx, key, signature)
+            self._mark_checked(ctx, key, signature, "tags_unreadable")
             ctx.stats["tags_problems"] += 1
             self._action(ctx, KIND_TAGS, False, "Не удалось прочитать файл — возможно, он повреждён", f)
             return
@@ -817,16 +847,11 @@ class MaintenanceService:
             return
         guess = self._guess(f, current)
         names = ", ".join(TAG_NAMES[k] for k in missing)
-        if f.pinned:
-            self._mark_checked(ctx, key, signature)
-            ctx.stats["tags_problems"] += 1
-            self._action(ctx, KIND_TAGS, False, f"Нет тегов ({names}). Папка Lidarr — не трогаем", f)
-            return
         match = await self._lookup(
             ctx, self.tag_chain, guess["artist"], guess["title"], guess["album"], f.song.duration_s
         )
         if match is None:
-            self._mark_checked(ctx, key, f"{signature}|{self.tag_version}")
+            self._mark_checked(ctx, key, f"{signature}|{self.tag_version}", "tags_not_found")
             ctx.stats["tags_problems"] += 1
             sources = ", ".join(SOURCE_NAMES.get(p.name, p.name) for p in self.tag_chain) or "нет источников"
             self._action(ctx, KIND_TAGS, False, f"Нет тегов ({names}); надёжного совпадения нет ({sources})", f)
@@ -864,7 +889,7 @@ class MaintenanceService:
             return
         key = f"cover:{folder}"
         signature = f"{len(items)}|{self.cover_version}"
-        if self._recently_checked(key, signature):
+        if self._known(ctx, key, signature):
             return
         sample = items[0]
         song = sample.song
@@ -875,15 +900,12 @@ class MaintenanceService:
         title = tags.get("title") or sample.title
 
         def report(details: str) -> None:
-            self._mark_checked(ctx, key, signature)
+            self._mark_checked(ctx, key, signature, "cover_not_found")
             ctx.stats["covers_missing"] += 1
             self._store.add_action(
                 ctx.run_id, KIND_COVER, False, details, artist=artist, album=album, path=self._rel(folder)
             )
 
-        if sample.pinned:
-            report("Нет обложки; папка Lidarr — не трогаем")
-            return
         cover = await self._find_cover(ctx, artist, title, album, song.duration_s, need_album=True)
         if cover is None:
             sources = ", ".join(SOURCE_NAMES.get(p.name, p.name) for p in self.cover_chain) or "нет источников"
@@ -915,18 +937,15 @@ class MaintenanceService:
             return
         key = f"cover:{f.local}"
         signature = f"{_signature(f.local)}|{self.cover_version}"
-        if self._recently_checked(key, signature):
+        if self._known(ctx, key, signature):
             return
         album = f.song.album if f.album not in LOOSE_ALBUMS else None
 
         def report(details: str) -> None:
-            self._mark_checked(ctx, key, signature)
+            self._mark_checked(ctx, key, signature, "cover_not_found")
             ctx.stats["covers_missing"] += 1
             self._action(ctx, KIND_COVER, False, details, f)
 
-        if f.pinned:
-            report("Нет обложки в файле; папка Lidarr — не трогаем")
-            return
         cover = await self._neighbour_cover(f, neighbours) if album else None
         if cover is None:
             cover = await self._find_cover(ctx, f.artist, f.title, album, f.song.duration_s, need_album=False)
@@ -954,6 +973,106 @@ class MaintenanceService:
             ),
             f,
         )
+
+    async def _fix_lidarr_cover(self, ctx: RunContext, folder: Path, items: list[LibraryFile]) -> None:
+        """Папка Lidarr: теги и файлы не меняем, только `cover.jpg` из Cover Art Archive по MBID релиза."""
+        if await asyncio.to_thread(_has_image, folder) or any(f.song.has_cover_art for f in items):
+            return
+        if all(f.song.has_cover_art is None for f in items) and await asyncio.to_thread(
+            has_embedded_cover, items[0].local
+        ):
+            return
+        key = f"cover:{folder}"
+        signature = f"{len(items)}|caa"
+        if self._known(ctx, key, signature):
+            return
+        sample = items[0]
+        artist = sample.song.album_artist or sample.artist
+        album = sample.song.album or folder.name
+
+        def report(details: str) -> None:
+            self._mark_checked(ctx, key, signature, "lidarr_cover_not_found")
+            ctx.stats["covers_missing"] += 1
+            self._store.add_action(
+                ctx.run_id, KIND_COVER, False, details, artist=artist, album=album, path=self._rel(folder)
+            )
+
+        mbids = await self._album_mbids(ctx, folder, items)
+        if not mbids:
+            report("Папка Lidarr без обложки: MBID релиза нет ни в тегах, ни в Lidarr")
+            return
+        if not ctx.dry_run and self._fetch_cover is not None:
+            found: tuple[bytes, str] | None = None
+            for kind, mbid in mbids:
+                try:
+                    found = await self._fetch_cover(f"https://coverartarchive.org/{kind}/{mbid}/front-1200")
+                except Exception as e:  # noqa: BLE001 — 404: у релиза нет обложки, пробуем следующий MBID
+                    log.info("Cover Art Archive: нет обложки %s/%s: %s", kind, mbid, e)
+                    continue
+                if found is not None:
+                    break
+            if found is None:
+                report("Папка Lidarr без обложки: в Cover Art Archive её нет")
+                return
+            image, mime = found
+            name = "cover.png" if mime == "image/png" else "cover.jpg"
+            await asyncio.to_thread((folder / name).write_bytes, image)
+            ctx.changed = True
+        ctx.stats["covers_added"] += 1
+        self._store.add_action(
+            ctx.run_id,
+            KIND_COVER,
+            not ctx.dry_run,
+            _say(
+                ctx,
+                "Добавлена обложка папки Lidarr (Cover Art Archive)",
+                "Будет добавлена обложка папки Lidarr (Cover Art Archive)",
+            ),
+            artist=artist,
+            album=album,
+            path=self._rel(folder),
+            planned=ctx.dry_run,
+        )
+
+    async def _album_mbids(self, ctx: RunContext, folder: Path, items: list[LibraryFile]) -> list[tuple[str, str]]:
+        """MBID для Cover Art Archive: `(release | release-group, id)` из тегов файла, базы Navidrome, затем Lidarr."""
+        result: list[tuple[str, str]] = []
+
+        def add(kind: str, mbid: str | None) -> None:
+            if mbid and (kind, mbid) not in result:
+                result.append((kind, mbid))
+
+        tags = await asyncio.to_thread(read_album_mbids, items[0].local)
+        add("release", tags.get("release"))
+        add("release-group", tags.get("release-group"))
+        for f in items:
+            add("release", f.song.album_mbid)
+        if result or self._lidarr is None:
+            return result
+        artist_id = next((i for d, i in self._lidarr_artists.items() if folder.is_relative_to(d)), -1)
+        if artist_id < 0:
+            return result
+        try:
+            if artist_id not in ctx.lidarr_files:
+                ctx.lidarr_files[artist_id] = await self._lidarr.track_files(artist_id)
+            album_id = next(
+                (t.get("albumId") for t in ctx.lidarr_files[artist_id] if self._lidarr_folder(t) == folder), None
+            )
+            if album_id is None:
+                return result
+            album = await self._lidarr.album(int(album_id))
+        except Exception as e:  # noqa: BLE001 — без Lidarr просто нет MBID
+            log.info("Lidarr: не удалось узнать альбом папки %s: %s", folder, e)
+            return result
+        for release in album.get("releases") or []:
+            if release.get("monitored"):
+                add("release", release.get("foreignReleaseId"))
+        add("release-group", album.get("foreignAlbumId"))
+        return result
+
+    def _lidarr_folder(self, track_file: dict[str, Any]) -> Path | None:
+        local = _remap(track_file.get("path") or "", self._settings.lidarr_music_dir, self._settings.music_dir)
+        return Path(local).parent if local else None
 
     async def _neighbour_cover(self, f: LibraryFile, neighbours: list[LibraryFile]) -> tuple[Any, str] | None:
         """Локальный фолбэк: обложка, вшитая в соседний трек того же альбома."""
@@ -1048,23 +1167,31 @@ class MaintenanceService:
 
     # region Отметки «проверено»
 
-    def _report_once(self, ctx: RunContext, key: str, signature: str) -> bool:
+    def _report_once(self, ctx: RunContext, key: str, signature: str, reason: str) -> bool:
         """Неисправимое не повторяется в отчёте каждую ночь: раз в 30 дней или после изменения файла.
 
         В пробном режиме отметки не пишутся — каждый пробный запуск показывает всё.
         """
-        if self._recently_checked(key, signature):
+        if self._known(ctx, key, signature):
             return False
-        self._mark_checked(ctx, key, signature)
+        self._mark_checked(ctx, key, signature, reason)
         return True
 
-    def _mark_checked(self, ctx: RunContext, key: str, signature: str) -> None:
+    def _mark_checked(self, ctx: RunContext, key: str, signature: str, reason: str | None = None) -> None:
+        """Отметка «проверено»; `reason` — почему не исправлено (считается в сводке как `open_<reason>`)."""
+        if reason:
+            ctx.stats[f"open_{reason}"] += 1
         if not ctx.dry_run:
-            self._store.set_checked(key, signature)
+            self._store.set_checked(key, signature, reason)
 
-    def _recently_checked(self, key: str, signature: str) -> bool:
+    def _known(self, ctx: RunContext, key: str, signature: str) -> bool:
+        """Проверено недавно: в отчёт не пишется, но известная проблема остаётся в сводке."""
         checked = self._store.checked(key)
-        return checked is not None and checked[0] == signature and now_ms() - checked[1] < RECHECK_MS
+        if checked is None or checked[0] != signature or now_ms() - checked[1] >= RECHECK_MS:
+            return False
+        if checked[2]:
+            ctx.stats[f"open_{checked[2]}"] += 1
+        return True
 
     # endregion
 
@@ -1115,6 +1242,52 @@ class MaintenanceService:
             self._store.mark_restored(entry_id)
         log.info("Из карантина возвращён %s", entry.original_path)
         await self._scan()
+
+    def summary(self) -> MaintenanceSummary:
+        """Сводка для приложения: последний запуск в цифрах и всё, что сейчас в карантине."""
+        runs = self._store.list_runs(1)
+        run = runs[0] if runs else None
+        fixed: list[MaintenanceCount] = []
+        unresolved: list[MaintenanceCount] = []
+        if run is not None:
+            fixed = [
+                MaintenanceCount(key=key, title=title, count=run.stats[key])
+                for key, title in FIXED.items()
+                if run.stats.get(key)
+            ]
+            if any(k.startswith("open_") for k in run.stats):
+                counts = {code: run.stats.get(f"open_{code}", 0) for code in REASONS}
+            else:  # запуск bodrod до 0.16.0: причин нет, считаем находки по видам
+                found = self._store.open_findings(run.id)
+                counts = {
+                    "short_version": found.get(KIND_SHORT, 0),
+                    "tags_not_found": found.get(KIND_TAGS, 0),
+                    "cover_not_found": found.get(KIND_COVER, 0),
+                    "mismatch": found.get(KIND_MISMATCH, 0),
+                }
+            unresolved = [MaintenanceCount(key=code, title=REASONS[code], count=n) for code, n in counts.items() if n]
+        keep_ms = self._settings.quarantine_days * 24 * 3600 * 1000
+        quarantine = [
+            QuarantineItemOut(
+                id=entry.id,
+                path=self._rel(Path(entry.original_path)),
+                reason=entry.reason,
+                kind=action.kind if action else None,
+                artist=action.artist if action else None,
+                title=action.title if action else None,
+                album=action.album if action else None,
+                size=entry.size,
+                created_at=entry.created_at,
+                expires_at=entry.created_at + keep_ms,
+            )
+            for entry, action in self._store.active_quarantine()
+        ]
+        return MaintenanceSummary(
+            run=MaintenanceRunOut(**run.__dict__) if run else None,
+            fixed=fixed,
+            unresolved=unresolved,
+            quarantine=quarantine,
+        )
 
     def _purge_quarantine(self, ctx: RunContext) -> None:
         if ctx.dry_run:
@@ -1198,6 +1371,10 @@ def _dir_name(name: str) -> str:
     return normalize(name, strip_extras=False)
 
 
+def _open_total(ctx: RunContext) -> int:
+    return sum(ctx.stats[f"open_{code}"] for code in REASONS)
+
+
 def _say(ctx: RunContext, done: str, planned: str) -> str:
     """Формулировка действия: в пробном режиме — «будет сделано»."""
     return planned if ctx.dry_run else done
@@ -1277,6 +1454,25 @@ def write_missing_tags(path: Path, values: dict[str, str]) -> None:
     for key, value in values.items():
         audio[key] = [value]
     audio.save()
+
+
+def read_album_mbids(path: Path) -> dict[str, str]:
+    """MBID релиза и группы релизов из тегов (Picard, beets, Lidarr): `{"release": …, "release-group": …}`."""
+    try:
+        import mutagen
+
+        audio = mutagen.File(path, easy=True)
+    except Exception:  # noqa: BLE001 — битый файл
+        return {}
+    if audio is None or audio.tags is None:
+        return {}
+    result = {}
+    for kind, tag in (("release", "musicbrainz_albumid"), ("release-group", "musicbrainz_releasegroupid")):
+        with contextlib.suppress(Exception):
+            value = str((audio.tags.get(tag) or [""])[0]).strip()
+            if value:
+                result[kind] = value
+    return result
 
 
 def has_embedded_cover(path: Path) -> bool:

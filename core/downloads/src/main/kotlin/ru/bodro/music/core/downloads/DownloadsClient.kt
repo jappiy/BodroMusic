@@ -132,15 +132,8 @@ class DownloadsClient(
 
     suspend fun maintenanceStatus(): MaintenanceStatus = get(listOf("api", "v1", "maintenance"))
 
-    suspend fun maintenanceActions(runId: Long?, kind: String?, limit: Int = 200, offset: Int = 0): MaintenanceActionsPage = get(
-        listOf("api", "v1", "maintenance", "actions"),
-        listOfNotNull(
-            runId?.let { "runId" to it.toString() },
-            kind?.let { "kind" to it },
-            "limit" to limit.toString(),
-            "offset" to offset.toString(),
-        ),
-    )
+    /** Сводка последнего запуска и карантин (bodrod 0.16.0+). */
+    suspend fun maintenanceSummary(): MaintenanceSummary = get(listOf("api", "v1", "maintenance", "summary"))
 
     suspend fun maintenanceRuns(limit: Int = 20): List<MaintenanceRun> =
         get(listOf("api", "v1", "maintenance", "runs"), listOf("limit" to limit.toString()))

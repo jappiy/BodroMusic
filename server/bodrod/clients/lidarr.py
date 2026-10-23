@@ -216,6 +216,9 @@ class LidarrClient:
     async def delete_track_file(self, track_file_id: int) -> None:
         await self._request("DELETE", f"/trackfile/{track_file_id}")
 
+    async def album(self, album_id: int) -> dict[str, Any]:
+        return await self._request("GET", f"/album/{album_id}") or {}
+
     async def album_file_count(self, album_id: int) -> int:
         album = await self._request("GET", f"/album/{album_id}") or {}
         return int((album.get("statistics") or {}).get("trackFileCount") or 0)

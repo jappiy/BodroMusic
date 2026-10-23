@@ -236,29 +236,35 @@ data class MaintenanceStatus(
     val lastRun: MaintenanceRun? = null,
 )
 
-/** Что сделал (или нашёл) регламент. [kind]: short / duplicate / album / artist_merge / tags / cover / mismatch. */
+/** Строка сводки обслуживания: [key] — ключ статистики или код причины, [title] — подпись от сервера. */
 @Serializable
-data class MaintenanceAction(
+data class MaintenanceCount(val key: String, val title: String = "", val count: Int = 0)
+
+/** Файл в карантине (можно вернуть по [id]). [path] — откуда убран, относительно папки музыки. */
+@Serializable
+data class QuarantineItem(
     val id: Long,
-    val runId: Long,
-    val kind: String,
-    /** `true` — исправлено; `false` — только найдено или запланировано пробным запуском ([planned]). */
-    val applied: Boolean,
-    /** Пробный запуск: исправление было бы сделано, но файлы не менялись. */
-    val planned: Boolean = false,
+    val path: String = "",
+    val reason: String = "",
+    /** Вид действия, которое убрало файл: duplicate / short. */
+    val kind: String? = null,
     val artist: String? = null,
     val title: String? = null,
     val album: String? = null,
-    val path: String? = null,
-    val details: String = "",
+    val size: Long? = null,
     val createdAt: Long = 0,
-    val quarantineId: Long? = null,
-    /** Файл в карантине, его можно вернуть. */
-    val restorable: Boolean = false,
+    /** Когда файл удалится из карантина насовсем. */
+    val expiresAt: Long = 0,
 )
 
+/** Сводка последнего запуска: исправлено по типам, не исправлено по причинам и всё, что сейчас в карантине. */
 @Serializable
-data class MaintenanceActionsPage(val total: Int = 0, val items: List<MaintenanceAction> = emptyList())
+data class MaintenanceSummary(
+    val run: MaintenanceRun? = null,
+    val fixed: List<MaintenanceCount> = emptyList(),
+    val unresolved: List<MaintenanceCount> = emptyList(),
+    val quarantine: List<QuarantineItem> = emptyList(),
+)
 
 /** Пользователь Navidrome для вкладок «Не нравятся …» (служебные учётки сервер не отдаёт). */
 @Serializable

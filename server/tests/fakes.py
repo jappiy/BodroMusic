@@ -64,6 +64,7 @@ class FakeWorld:
     lidarr_albums: list[dict[str, Any]] = field(default_factory=list)
     lidarr_wanted: list[dict[str, Any]] = field(default_factory=list)
     lidarr_monitored_albums: list[int] = field(default_factory=list)
+    lidarr_track_files: list[dict[str, Any]] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
 
     def client(self) -> httpx.AsyncClient:
@@ -200,6 +201,9 @@ class FakeWorld:
             album_id = int(path.rsplit("/", 1)[-1])
             album = next((a for a in self.lidarr_albums if a["id"] == album_id), None)
             return httpx.Response(200, json=album) if album else httpx.Response(404, json={"message": "NotFound"})
+        if path == "/trackfile" and request.method == "GET":
+            artist_id = int(request.url.params["artistId"])
+            return httpx.Response(200, json=[t for t in self.lidarr_track_files if t["artistId"] == artist_id])
         if path == "/wanted/missing":
             return httpx.Response(200, json={"page": 1, "records": self.lidarr_wanted})
         if path == "/rootfolder":

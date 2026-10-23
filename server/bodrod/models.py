@@ -252,6 +252,40 @@ class MaintenanceActionsPage(ApiModel):
     items: list[MaintenanceActionOut]
 
 
+class MaintenanceCount(ApiModel):
+    """Строка сводки: `key` — ключ статистики или код причины, `title` — подпись."""
+
+    key: str
+    title: str
+    count: int
+
+
+class QuarantineItemOut(ApiModel):
+    """Файл в карантине: его можно вернуть (`POST /maintenance/quarantine/{id}/restore`)."""
+
+    id: int
+    """Путь относительно папки музыки — откуда убран."""
+    path: str
+    reason: str
+    kind: str | None = None
+    artist: str | None = None
+    title: str | None = None
+    album: str | None = None
+    size: int | None = None
+    created_at: int
+    """Когда файл удалится из карантина насовсем."""
+    expires_at: int
+
+
+class MaintenanceSummary(ApiModel):
+    """Сводка последнего запуска: исправлено по типам, карантин (списком), не исправлено по причинам."""
+
+    run: MaintenanceRunOut | None = None
+    fixed: list[MaintenanceCount] = Field(default_factory=list)
+    unresolved: list[MaintenanceCount] = Field(default_factory=list)
+    quarantine: list[QuarantineItemOut] = Field(default_factory=list)
+
+
 class SourceOut(ApiModel):
     """Источник загрузки. `state`: `ok` — работает, `disabled` — выключен вручную, `unavailable` — не может работать."""
 

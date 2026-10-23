@@ -283,6 +283,8 @@ queued ─► (уже в библиотеке? → completed)
 Развёртывание bodrod 0.2.x (сессия 2026-10-16) — [`docs/history/002-bodrod-deploy.md`](history/002-bodrod-deploy.md).
 bodrod 0.4.0 (регламент обслуживания библиотеки) — [`docs/history/005-maintenance-artist-playback.md`](history/005-maintenance-artist-playback.md).
 bodrod 0.5.0 (исправления регламента и заявок, пароль из `/secrets`) — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
+bodrod 0.16.0 (сводка обслуживания, `cover.jpg` в папках Lidarr из Cover Art Archive; ставится по `docs/DEPLOY.md`,
+база не менялась) — [`docs/history/019-maintenance-summary.md`](history/019-maintenance-summary.md).
 
 ---
 

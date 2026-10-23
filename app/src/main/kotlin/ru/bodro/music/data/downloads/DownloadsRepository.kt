@@ -49,8 +49,8 @@ import ru.bodro.music.core.downloads.FeedbackEvent
 import ru.bodro.music.core.downloads.FeedbackResult
 import ru.bodro.music.core.downloads.HarvestStatus
 import ru.bodro.music.core.downloads.LibraryCheck
-import ru.bodro.music.core.downloads.MaintenanceActionsPage
 import ru.bodro.music.core.downloads.MaintenanceStatus
+import ru.bodro.music.core.downloads.MaintenanceSummary
 import ru.bodro.music.core.downloads.PoolHidden
 import ru.bodro.music.core.downloads.PoolList
 import ru.bodro.music.core.downloads.RequestStatus
@@ -161,8 +161,7 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun maintenanceStatus(): MaintenanceStatus = client.maintenanceStatus()
 
-    suspend fun maintenanceActions(runId: Long?, kind: String?, limit: Int, offset: Int): MaintenanceActionsPage =
-        client.maintenanceActions(runId, kind, limit, offset)
+    suspend fun maintenanceSummary(): MaintenanceSummary = client.maintenanceSummary()
 
     suspend fun runMaintenance() = client.runMaintenance()
 

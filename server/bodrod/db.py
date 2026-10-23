@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS replacements (
 CREATE TABLE IF NOT EXISTS maintenance_checked (
     key TEXT PRIMARY KEY,
     signature TEXT NOT NULL,
-    checked_at INTEGER NOT NULL
+    checked_at INTEGER NOT NULL,
+    reason TEXT
 );
 CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
@@ -146,6 +147,8 @@ DRY_RUN_SUFFIX = " (пробный запуск — ничего не измен
 ATTENTION = "attention"
 """Фильтр отчёта «требует внимания»: не исправлено и нужно посмотреть человеку."""
 ATTENTION_KINDS = ("tags", "cover", "short", "mismatch")
+LIDARR_SKIP = "%Lidarr — не трогаем%"
+"""Так bodrod до 0.16.0 писал пропуски в папках Lidarr: это не проблема, во «Требует внимания» не показываются."""
 
 
 def now_ms() -> int:
@@ -296,6 +299,9 @@ class Store:
         ):
             if column not in request_columns:
                 self._conn.execute(f"ALTER TABLE requests ADD COLUMN {column} {ddl}")
+        checked_columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(maintenance_checked)")}
+        if "reason" not in checked_columns:
+            self._conn.execute("ALTER TABLE maintenance_checked ADD COLUMN reason TEXT")
         if version < 2:
             # Заявки, начатые до цепочки источников, продолжают со своим источником (slskd или Lidarr).
             for kind, source in (("track", "slskd"), ("artist", "lidarr")):
@@ -648,8 +654,11 @@ class Store:
             where.append("a.run_id = ?")
             params.append(run_id)
         if kind == ATTENTION:
-            where.append(f"a.applied = 0 AND a.planned = 0 AND a.kind IN ({','.join('?' for _ in ATTENTION_KINDS)})")
-            params.extend(ATTENTION_KINDS)
+            where.append(
+                f"a.applied = 0 AND a.planned = 0 AND a.kind IN ({','.join('?' for _ in ATTENTION_KINDS)}) "
+                "AND a.details NOT LIKE ?"
+            )
+            params.extend((*ATTENTION_KINDS, LIDARR_SKIP))
         elif kind:
             where.append("a.kind = ?")
             params.append(kind)
@@ -695,6 +704,35 @@ class Store:
             ).fetchall()
         return [QuarantineEntry(**dict(r)) for r in rows]
 
+    def active_quarantine(self) -> list[tuple[QuarantineEntry, MaintenanceAction | None]]:
+        """Всё, что сейчас лежит в карантине (не возвращено и не удалено), с действием, которое туда убрало."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM quarantine WHERE restored_at IS NULL AND purged_at IS NULL ORDER BY id DESC"
+            ).fetchall()
+            actions = {
+                r["quarantine_id"]: r
+                for r in self._conn.execute(
+                    "SELECT a.*, 1 AS restorable FROM maintenance_actions a "
+                    "JOIN quarantine q ON q.id = a.quarantine_id "
+                    "WHERE q.restored_at IS NULL AND q.purged_at IS NULL"
+                )
+            }
+        return [
+            (QuarantineEntry(**dict(r)), _action_from_row(actions[r["id"]]) if r["id"] in actions else None)
+            for r in rows
+        ]
+
+    def open_findings(self, run_id: int) -> dict[str, int]:
+        """Не исправленное запуском по видам (`kind` → число) — для запусков без счётчиков причин (до bodrod 0.16.0)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT kind, COUNT(*) AS n FROM maintenance_actions "
+                "WHERE run_id = ? AND applied = 0 AND planned = 0 AND details NOT LIKE ? GROUP BY kind",
+                (run_id, LIDARR_SKIP),
+            ).fetchall()
+        return {r["kind"]: r["n"] for r in rows}
+
     def add_replacement(self, song_id: str, kept_path: str, quarantine_id: int | None) -> None:
         """Трек `song_id` убран как дубль или перенесён: его место занял файл `kept_path` (путь Navidrome)."""
         with self._lock:
@@ -717,20 +755,21 @@ class Store:
                     result[r["song_id"]] = r["kept_path"]
         return result
 
-    def checked(self, key: str) -> tuple[str, int] | None:
-        """Подпись и время последней проверки файла или папки, для которых не нашлось исправления."""
+    def checked(self, key: str) -> tuple[str, int, str | None] | None:
+        """Подпись, время последней проверки и причина (что не исправлено) для файла или папки."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT signature, checked_at FROM maintenance_checked WHERE key = ?", (key,)
+                "SELECT signature, checked_at, reason FROM maintenance_checked WHERE key = ?", (key,)
             ).fetchone()
-        return (row["signature"], row["checked_at"]) if row else None
+        return (row["signature"], row["checked_at"], row["reason"]) if row else None
 
-    def set_checked(self, key: str, signature: str) -> None:
+    def set_checked(self, key: str, signature: str, reason: str | None = None) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO maintenance_checked (key, signature, checked_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET signature = excluded.signature, checked_at = excluded.checked_at",
-                (key, signature, now_ms()),
+                "INSERT INTO maintenance_checked (key, signature, checked_at, reason) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET signature = excluded.signature, checked_at = excluded.checked_at, "
+                "reason = excluded.reason",
+                (key, signature, now_ms(), reason),
             )
 
     def clear_checked(self) -> int:

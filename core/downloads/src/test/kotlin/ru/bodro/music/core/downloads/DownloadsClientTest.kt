@@ -174,8 +174,11 @@ class DownloadsClientTest {
         )
         server.enqueue(
             json(
-                """{"total":1,"items":[{"id":9,"runId":3,"kind":"duplicate","applied":true,"title":"Песня",
-                "details":"Дубль","createdAt":1,"quarantineId":4,"restorable":true}]}""",
+                """{"run":{"id":3,"trigger":"schedule","status":"completed","stats":{}},
+                "fixed":[{"key":"duplicates_removed","title":"Дубли треков","count":2}],
+                "unresolved":[{"key":"cover_not_found","title":"Нет обложки","count":5}],
+                "quarantine":[{"id":4,"path":"A/b.mp3","reason":"Дубль","kind":"duplicate","title":"Песня",
+                "createdAt":1,"expiresAt":2}]}""",
             ),
         )
         server.enqueue(MockResponse.Builder().code(202).build())
@@ -193,9 +196,11 @@ class DownloadsClientTest {
 
         assertEquals(2, client().maintenanceStatus().lastRun?.stats?.get("duplicates_removed"))
         server.takeRequest()
-        val actions = client().maintenanceActions(runId = 3, kind = "duplicate")
-        assertTrue(actions.items.single().restorable)
-        assertEquals("3", server.takeRequest().url.queryParameter("runId"))
+        val summary = client().maintenanceSummary()
+        assertEquals(2, summary.fixed.single().count)
+        assertEquals("cover_not_found", summary.unresolved.single().key)
+        assertEquals(4L, summary.quarantine.single().id)
+        assertEquals("/bodrod/api/v1/maintenance/summary", server.takeRequest().url.encodedPath)
 
         client().runMaintenance()
         assertEquals("POST", server.takeRequest().method)

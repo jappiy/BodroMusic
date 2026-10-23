@@ -241,9 +241,81 @@ def test_lidarr_files_untouched(tmp_path):
     world = catalog_world()
     world.lidarr_artists = [{"id": 1, "path": "/volume2/music/library/Кто-то"}]
     services, music, _, _ = make(world, tmp_path, lidarr_music_dir="/volume2/music")
-    asyncio.run(services.maintenance.run("manual"))
+    run = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
     assert (music / "library/Кто-то/Singles/Кто-то - Обрезан.mp3").exists()
-    assert kinds(services)[("short", "Обрезан")] is False
+    # Пропуск по правилу «папка Lidarr» — не проблема: ни в отчёте, ни во «Требует внимания», ни в сводке.
+    assert ("short", "Обрезан") not in kinds(services) and ("short", "Мини") not in kinds(services)
+    _, actions = services.store.list_actions(None, None, 500, 0)
+    assert not any("Lidarr" in a.details for a in actions)
+    assert run.stats["open_short_version"] == 0
+    assert all(item.key != "short_version" for item in services.maintenance.summary().unresolved)
+
+
+def test_lidarr_folder_gets_cover_from_cover_art_archive(tmp_path):
+    world = catalog_world()
+    world.lidarr_artists = [{"id": 1, "path": "/volume2/music/library/Кто-то"}]
+    world.lidarr_track_files = [
+        {"id": 5, "artistId": 1, "albumId": 9, "path": "/volume2/music/library/Кто-то/Singles/Кто-то - Мини.mp3"}
+    ]
+    world.lidarr_albums = [
+        {
+            "id": 9,
+            "artistId": 1,
+            "foreignAlbumId": "rg-1",
+            "releases": [
+                {"foreignReleaseId": "rel-0", "monitored": False},
+                {"foreignReleaseId": "rel-1", "monitored": True},
+            ],
+        }
+    ]
+    services, music, db, covers = make(world, tmp_path, lidarr_music_dir="/volume2/music")
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE media_file SET has_cover_art = 0 WHERE id IN ('t1', 't2')")
+    conn.commit()
+    conn.close()
+    before = (music / "library/Кто-то/Singles/Кто-то - Мини.mp3").read_bytes()
+    run = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
+    folder = music / "library/Кто-то/Singles"
+    assert (folder / "cover.jpg").read_bytes() == b"\xff\xd8jpeg"
+    assert "https://coverartarchive.org/release/rel-1/front-1200" in covers
+    assert not any("rel-0" in url or "rg-1" in url for url in covers)  # первый же MBID подошёл
+    assert (folder / "Кто-то - Мини.mp3").read_bytes() == before  # файлы и теги не тронуты
+    assert kinds(services)[("cover", "Singles")] is True
+    assert run.stats["covers_added"] == 2  # и обычная папка «Неизвестно/Альбом»
+
+    # Нет обложки в Cover Art Archive — причина в сводке; повторно в отчёт не пишется, но в сводке остаётся.
+    (folder / "cover.jpg").unlink()
+
+    async def missing(url: str):
+        raise RuntimeError("404")
+
+    services.maintenance._fetch_cover = missing
+    second = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
+    assert second.stats["open_lidarr_cover_not_found"] == 1
+    third = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
+    assert third.stats["open_lidarr_cover_not_found"] == 1
+    _, actions = services.store.list_actions(third.id, None, 500, 0)
+    assert not any(a.kind == "cover" for a in actions)
+
+
+def test_summary_counts_and_quarantine(tmp_path):
+    services, music, _, _ = make(catalog_world(), tmp_path)
+    asyncio.run(services.maintenance.run("manual"))
+    with TestClient(create_app(services, run_worker=False)) as client:
+        summary = client.get("/api/v1/maintenance/summary", headers=auth()).json()
+    fixed = {c["key"]: c["count"] for c in summary["fixed"]}
+    assert fixed["duplicates_removed"] == 1 and fixed["short_removed"] == 1 and fixed["tags_fixed"] == 1
+    assert {c["key"]: c["count"] for c in summary["unresolved"]} == {"short_version": 1}
+    paths = {q["path"]: q for q in summary["quarantine"]}
+    assert set(paths) == {"library/Артист/Singles/Артист - Песня.mp3", "library/Кто-то/Singles/Кто-то - Обрезан.mp3"}
+    item = paths["library/Кто-то/Singles/Кто-то - Обрезан.mp3"]
+    assert item["kind"] == "short" and item["title"] == "Обрезан" and item["expiresAt"] > item["createdAt"]
+
+    # Второй запуск: известное «короткое» в отчёт не пишется, но в сводке остаётся; вернули — ушло из карантина.
+    second = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
+    assert second.stats["open_short_version"] == 1 and second.stats["attention"] == 1
+    asyncio.run(services.maintenance.restore(item["id"]))
+    assert len(services.maintenance.summary().quarantine) == 1
 
 
 def test_api_restore_and_library_check(tmp_path):

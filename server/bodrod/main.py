@@ -63,6 +63,7 @@ from .models import (
     MaintenanceActionsPage,
     MaintenanceRunOut,
     MaintenanceStatus,
+    MaintenanceSummary,
     PoolHidden,
     PoolItemOut,
     PoolOut,
@@ -643,6 +644,10 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     ) -> MaintenanceActionsPage:
         total, items = svc.store.list_actions(run_id, kind, limit, offset)
         return MaintenanceActionsPage(total=total, items=[action_out(a) for a in items])
+
+    @app.get("/api/v1/maintenance/summary", response_model=MaintenanceSummary, response_model_by_alias=True)
+    async def maintenance_summary(maintenance: Maintenance, svc: Svc) -> MaintenanceSummary:
+        return maintenance.summary()
 
     @app.post("/api/v1/maintenance/run", status_code=202, response_class=Response)
     async def maintenance_run(maintenance: Maintenance, user: User) -> Response:
