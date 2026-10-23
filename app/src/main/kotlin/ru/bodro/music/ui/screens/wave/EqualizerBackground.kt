@@ -1,5 +1,6 @@
 package ru.bodro.music.ui.screens.wave
 
+import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -47,8 +49,13 @@ fun EqualizerBackground(accent: Color, base: Color, animate: Boolean, modifier: 
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val lifecycleState by lifecycle.currentStateAsState()
-    val running = animate && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-    if (animate) {
+    // Системная «Отключить анимацию» (и автотесты) — статичный кадр, как у остальных анимаций Compose.
+    val context = LocalContext.current
+    val systemAnimations = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+    }
+    val running = animate && systemAnimations && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    if (animate && systemAnimations) {
         LifecycleResumeEffect(Unit) {
             AudioSpectrum.acquire()
             onPauseOrDispose { AudioSpectrum.release() }
