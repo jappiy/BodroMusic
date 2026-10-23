@@ -3,6 +3,9 @@
 Аудио декодирует системный ffmpeg (`decode.py`), Essentia получает готовые массивы — её загрузчики не используются.
 Модели (некоммерческая лицензия CC BY-NC-SA 4.0 — для домашнего сервера подходит) лежат в `MODELS_DIR`; Dockerfile
 скачивает их при сборке образа. Имена входов/выходов графов берутся из json-метаданных моделей.
+
+Необязательные модели (`OPTIONAL_MODELS`: acoustic / electronic, анализатор 0.3.0) загружаются, только если их файлы
+есть: в старой базе образа их нет, тогда признаки не пишутся, а bodrod выводит их из жанров discogs.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from . import __version__ as ANALYZER_VERSION
 from .decode import SAMPLE_RATE, decode
 
 EMBEDDING_MODEL = "discogs-effnet-bs64-1"
@@ -26,6 +30,11 @@ BINARY_MODELS = {
     "mood_relaxed-discogs-effnet-1": ("relaxed", "relaxed"),
     "danceability-discogs-effnet-1": ("danceability", "danceable"),
     "voice_instrumental-discogs-effnet-1": ("voice", "voice"),
+}
+"""Необязательные классификаторы: нет файлов модели — признак не считается."""
+OPTIONAL_MODELS = {
+    "mood_acoustic-discogs-effnet-1": ("acoustic", "acoustic"),
+    "mood_electronic-discogs-effnet-1": ("electronic", "electronic"),
 }
 TOP_GENRES = 5
 
@@ -56,6 +65,13 @@ class EssentiaExtractor:
         self._genre = self._head(GENRE_MODEL, meta, "serving_default_model_Placeholder", "PartitionedCall:0")
         self._binary = {}
         for name, (feature, positive) in BINARY_MODELS.items():
+            meta = self._meta(name)
+            classes = meta.get("classes") or []
+            index = classes.index(positive) if positive in classes else 0
+            self._binary[feature] = (self._head(name, meta, "model/Placeholder", "model/Softmax"), index)
+        for name, (feature, positive) in OPTIONAL_MODELS.items():
+            if not (os.path.exists(self._path(name, ".pb")) and os.path.exists(self._path(name, ".json"))):
+                continue
             meta = self._meta(name)
             classes = meta.get("classes") or []
             index = classes.index(positive) if positive in classes else 0
@@ -103,6 +119,7 @@ class EssentiaExtractor:
         bpm, *_ = es.RhythmExtractor2013(method="multifeature")(audio44)
         key, scale, strength = es.KeyExtractor()(audio44)
         loudness = es.LoudnessEBUR128(sampleRate=SAMPLE_RATE)(stereo)[2] if decoded.channels > 1 else None
+        rms = float(np.sqrt(np.mean(np.square(audio44, dtype=np.float64)))) if len(audio44) else 0.0
         features.update(
             {
                 "bpm": round(float(bpm), 2),
@@ -110,6 +127,8 @@ class EssentiaExtractor:
                 "scale": scale,
                 "keyStrength": round(float(strength), 3),
                 "loudness": round(float(loudness), 2) if loudness is not None else None,
+                "rmsDb": round(20 * float(np.log10(rms)), 2) if rms > 0 else None,
+                "analyzerVersion": ANALYZER_VERSION,
                 "duration": round(decoded.duration if decoded.duration else len(audio44) / SAMPLE_RATE, 1),
             }
         )

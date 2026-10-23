@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 DISLIKE_RATING = 1
 _OPTIONAL_COLUMNS = (
     "album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id", "tags",
-    "mbz_recording_id", "mbz_album_id",
+    "mbz_recording_id", "mbz_album_id", "genre", "year", "created_at",
 )  # fmt: skip
 
 
@@ -54,6 +54,10 @@ class NdSong:
     mbid: str | None = None
     """MusicBrainz Release ID альбома (обложка папки Lidarr из Cover Art Archive)."""
     album_mbid: str | None = None
+    genre: str | None = None
+    year: int | None = None
+    """Когда трек появился в библиотеке (строка даты Navidrome) — режим «Новое», приоритет анализа новых."""
+    created_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -329,6 +333,9 @@ def _song(r: sqlite3.Row) -> NdSong:
         isrc=_isrc(r["tags"]),
         mbid=r["mbz_recording_id"] or None,
         album_mbid=r["mbz_album_id"] or None,
+        genre=r["genre"] or None,
+        year=int(r["year"]) if r["year"] else None,
+        created_at=str(r["created_at"]) if r["created_at"] else None,
     )
 
 

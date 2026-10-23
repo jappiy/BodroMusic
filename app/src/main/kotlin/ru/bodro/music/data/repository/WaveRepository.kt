@@ -3,8 +3,12 @@ package ru.bodro.music.data.repository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bodro.music.core.domain.wave.LocalWaveSource
@@ -17,6 +21,10 @@ import ru.bodro.music.core.domain.wave.WavePreset
 import ru.bodro.music.core.domain.wave.WaveProfile
 import ru.bodro.music.core.domain.wave.WaveProfileBuilder
 import ru.bodro.music.core.domain.wave.WaveRequest
+import ru.bodro.music.core.downloads.WaveModeInfo
+import ru.bodro.music.core.downloads.WaveNextRequest
+import ru.bodro.music.core.downloads.WaveReport
+import ru.bodro.music.core.downloads.WaveSessionEvent
 import ru.bodro.music.core.model.AlbumListType
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
@@ -25,6 +33,7 @@ import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.core.subsonic.SubsonicClient
 import ru.bodro.music.data.account.ConnectionManager
+import ru.bodro.music.data.downloads.DownloadsRepository
 import ru.bodro.music.data.log.LogRepository
 import ru.bodro.music.data.log.PlayerEvent
 import ru.bodro.music.data.reco.PoolRepository
@@ -73,7 +82,10 @@ class SubsonicWaveLibrary(
     }
 }
 
-/** «Моя волна» и миксы: профиль пользователя + [WaveEngine]. */
+/** Ответ сервера о режиме: сколько треков подходит и не мало ли их. */
+data class WaveCoverage(val mode: String, val matched: Int, val lowCoverage: Boolean)
+
+/** «Моя волна» и миксы: подбор на сервере (bodrod 0.19.0+), иначе профиль пользователя + [WaveEngine]. */
 @Singleton
 class WaveRepository @Inject constructor(
     private val client: SubsonicClient,
@@ -85,10 +97,16 @@ class WaveRepository @Inject constructor(
     private val log: LogRepository,
     private val pool: PoolRepository,
     private val sound: SoundRepository,
+    private val downloads: DownloadsRepository,
     private val clock: Clock,
 ) {
     private val random = Random(clock.now())
     private val mutex = Mutex()
+    private var serverWave: Pair<Long, Boolean>? = null
+    private val _coverage = MutableStateFlow<WaveCoverage?>(null)
+
+    /** Сколько треков под текущий режим (по ответу bodrod); `lowCoverage` — предложить докачать похожее. */
+    val coverage: StateFlow<WaveCoverage?> = _coverage.asStateFlow()
     private val engine = WaveEngine(
         sources = listOf(LocalWaveSource(SubsonicWaveLibrary(client, library, reactions) { random })),
         discoveryShare = { settings.current.waveDiscoveryShare.toDouble() },
@@ -109,6 +127,7 @@ class WaveRepository @Inject constructor(
         queue: List<Song>,
         batchSize: Int = WaveEngine.BATCH_SIZE,
     ): List<Song> = mutex.withLock {
+        serverBatch(settings, currentSong, queue, batchSize)?.let { return@withLock it }
         val resolved = resolveDecade(settings)
         val profile = profile()
         // Дизлайкнутые прямо сейчас (ещё не в Room) тоже исключаем.
@@ -134,6 +153,90 @@ class WaveRepository @Inject constructor(
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
         batch
     }
+
+    /** Подбирает ли волну bodrod (0.19.0+, режимы и темпоритм). Ответ запоминается на учётку. */
+    private suspend fun serverSupported(): Boolean {
+        val accountId = connection.activeAccountId ?: return false
+        serverWave?.takeIf { it.first == accountId }?.let { return it.second }
+        if (!downloads.isConfigured) return false
+        val value = runCatching { downloads.info().wave }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+        value?.let { serverWave = accountId to it }
+        return value == true
+    }
+
+    /**
+     * Порция с сервера: «Моя волна» по всей медиатеке и режимы с главной. Миксы, волна по артисту, треку, жанру и
+     * эпохе — локальный движок. Сервер недоступен или вернул пусто — тоже локальный движок (`null`).
+     */
+    private suspend fun serverBatch(settings: WaveSettings, currentSong: Song?, queue: List<Song>, batchSize: Int): List<Song>? {
+        val localPreset = WavePreset.of(settings.preset)
+        val local = settings.mode in LOCAL_MODES ||
+            settings.genre != null ||
+            settings.decade != null ||
+            (settings.seed != WaveSeed.Everything && settings.seed != WaveSeed.Collection)
+        if (local || !serverSupported()) return null
+        val current = this.settings.current
+        val request = WaveNextRequest(
+            mode = settings.preset ?: "default",
+            mood = (localPreset?.mood ?: current.waveMood).takeIf { it != WaveMood.Any }?.name?.lowercase(),
+            lang = current.waveLanguage.ifBlank { null },
+            character = (localPreset?.character ?: current.waveCharacter).name.lowercase(),
+            currentId = currentSong?.id,
+            recent = queue.map { it.id }.takeLast(MAX_RECENT),
+            session = sessionEvents(queue),
+            count = batchSize,
+        )
+        val answer = runCatching { downloads.waveNext(request) }
+            .onFailure { if (it is CancellationException) throw it }
+            .onFailure { log.event(PlayerEvent.Wave, "Волна на сервере недоступна: ${it.message} — подбор на телефоне") }
+            .getOrNull() ?: return null
+        _coverage.value = WaveCoverage(request.mode, answer.matched, answer.lowCoverage)
+        val state = reactions.state.value
+        val songs = SubsonicWaveLibrary(client, library, reactions) { random }.songs(answer.songIds)
+            .filter { state.of(it) != Reaction.Disliked }
+        if (songs.isEmpty()) return null
+        val poolIds = pool.visibility.value.songIds
+        songs.filter { it.id in poolIds }.forEach { pool.track(it, "shown", "wave") }
+        log.event(PlayerEvent.Wave, "Волна на сервере (${request.mode}): +${songs.size} треков, под режим ${answer.matched}")
+        return songs
+    }
+
+    /** Реакции сессии для сервера: лайк, дизлайк, пропуск в первые 30 с, дослушал — по трекам текущей очереди. */
+    private suspend fun sessionEvents(queue: List<Song>): List<WaveSessionEvent> {
+        val ids = queue.map { it.id }.takeLast(MAX_RECENT).toSet()
+        if (ids.isEmpty()) return emptyList()
+        val state = reactions.state.value
+        val plays = history.items(clock.now() - SESSION_WINDOW_MS).filter { it.songId in ids }.associateBy { it.songId }
+        return queue.filter { it.id in ids }.mapNotNull { song ->
+            when {
+                state.of(song) == Reaction.Disliked -> WaveSessionEvent(song.id, "dislike")
+                state.of(song) == Reaction.Liked && plays.containsKey(song.id) -> WaveSessionEvent(song.id, "like")
+                plays[song.id]?.skippedEarly == true -> WaveSessionEvent(song.id, "skip")
+                plays.containsKey(song.id) -> WaveSessionEvent(song.id, "complete")
+                else -> null
+            }
+        }
+    }
+
+    /** Режимы с сервера для главной (статические с числом треков и «В стиле X», «Новый релиз X»); `null` — нет. */
+    suspend fun serverModes(): List<WaveModeInfo>? =
+        if (serverSupported()) {
+            runCatching {
+                downloads.waveModes()
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+        } else {
+            null
+        }
+
+    /** Отчёт об анализе и режимах (`null` — сервер не подбирает волну). */
+    suspend fun report(): WaveReport? =
+        if (serverSupported()) {
+            runCatching {
+                downloads.waveReport()
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+        } else {
+            null
+        }
 
     /** «Моя волна» по всей медиатеке: подмешать треки пула «На пробу» по характеру волны (показ — событие для bodrod). */
     private suspend fun withPool(
@@ -185,6 +288,9 @@ class WaveRepository @Inject constructor(
     val activeAccountId: Long? get() = connection.activeAccountId
 
     private companion object {
+        const val MAX_RECENT = 200
+        const val SESSION_WINDOW_MS = 12L * 60 * 60 * 1000
+        val LOCAL_MODES = setOf(WaveMode.TrackMix, WaveMode.AlbumMix, WaveMode.DecadeMix)
         const val MOOD_OVERSAMPLE = 3
         const val HISTORY_WINDOW_MS = 120L * 24 * 60 * 60 * 1000
     }

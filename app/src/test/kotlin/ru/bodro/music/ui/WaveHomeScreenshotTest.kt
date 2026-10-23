@@ -23,6 +23,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
 import ru.bodro.music.core.downloads.ArtistFacts
+import ru.bodro.music.core.downloads.WaveModeInfo
 import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
@@ -37,6 +38,7 @@ import ru.bodro.music.ui.app.Navigator
 import ru.bodro.music.ui.app.SongMenuContext
 import ru.bodro.music.ui.components.LocalCoverArtUrls
 import ru.bodro.music.ui.screens.home.WaveHome
+import ru.bodro.music.ui.screens.home.rememberModeCards
 import ru.bodro.music.ui.theme.BodroTheme
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.theme.PlayerColors
@@ -57,6 +59,13 @@ class WaveHomeScreenshotTest {
         positionMs = 120_000,
         durationMs = 280_000,
         source = QueueSource.WaveSource(WaveSettings()),
+    )
+    private val modes = listOf(
+        WaveModeInfo("energetic", "Бодрое", count = 812),
+        WaveModeInfo("calm", "Спокойное", count = 640),
+        WaveModeInfo("loud", "Пошумим", count = 121),
+        WaveModeInfo("artist:Кино", "В стиле: Кино", dynamic = true),
+        WaveModeInfo("release:al1", "Новый релиз: ЛСП", subtitle = "Альбом", dynamic = true),
     )
     private val facts = ArtistFacts(fact = "Кино — советская рок-группа, основанная в 1981 году.", tags = listOf("russian rock"))
 
@@ -94,10 +103,11 @@ class WaveHomeScreenshotTest {
                                 player = player,
                                 settings = settings.copy(backgroundAnimation = false),
                                 facts = facts,
+                                modes = rememberModeCards(modes),
                                 onTogglePlay = {},
                                 onNext = {},
                                 onPrevious = {},
-                                onSelectPreset = {},
+                                onSelectMode = {},
                                 onOpenSettings = {},
                                 onOpenSearch = {},
                             )

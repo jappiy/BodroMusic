@@ -78,6 +78,9 @@ from .models import (
     SourcesOut,
     SourcesUpdate,
     TrackCandidate,
+    WaveModeOut,
+    WaveNextOut,
+    WaveNextRequest,
     YandexLinksUpdate,
 )
 from .navidrome_db import NavidromeDb, NdSong
@@ -95,6 +98,7 @@ from .reco.harvest import YandexHarvester
 from .reco.library import LibraryIndex
 from .reco.pool import PoolService
 from .reco.store import RecoStore
+from .reco.wave import WaveService
 from .reco.yandex_account import YandexAccountApi
 from .reco.yandex_links import YandexLinks
 from .sources.base import KIND_NAMES, DirectSource
@@ -136,6 +140,7 @@ class Services:
     analysis: AnalysisService | None = None
     yandex_links: YandexLinks | None = None
     facts: ArtistFacts | None = None
+    wave: WaveService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -333,6 +338,9 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         analysis=analysis,
         yandex_links=yandex_links,
         facts=ArtistFacts(lastfm),
+        wave=WaveService(store, navidrome_db, analysis, pool_prefix, settings.wave_modes_file, lastfm)
+        if navidrome_db is not None and settings.wave_enabled
+        else None,
     )
 
 
@@ -444,6 +452,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             sources=svc.cleanup is not None,
             pool=svc.pool is not None,
             analysis=svc.analysis is not None,
+            wave=svc.wave is not None,
         )
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse, response_model_by_alias=True)
@@ -466,6 +475,31 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         user: User, svc: Svc, name: Annotated[str, Query(min_length=1, max_length=200)]
     ) -> ArtistPopular:
         return await svc.discover.artist_popular(name, user)
+
+    def require_wave(svc: Services) -> WaveService:
+        if svc.wave is None:
+            raise HTTPException(409, "Подбор волны не настроен: нужен NAVIDROME_DB")
+        return svc.wave
+
+    @app.post("/api/v1/wave/next", response_model=WaveNextOut, response_model_by_alias=True)
+    async def wave_next(user: User, svc: Svc, body: WaveNextRequest) -> WaveNextOut:
+        """Порция «Моей волны»: режим, темпоритм, реакции сессии."""
+        result = await require_wave(svc).next_batch(user.username, body.model_dump())
+        return WaveNextOut(
+            song_ids=result["songIds"],
+            matched=result["matched"],
+            low_coverage=result["lowCoverage"],
+            mode=result["mode"],
+        )
+
+    @app.get("/api/v1/wave/modes", response_model=list[WaveModeOut], response_model_by_alias=True)
+    async def wave_modes(user: User, svc: Svc) -> list[WaveModeOut]:
+        return [WaveModeOut(**m) for m in await require_wave(svc).modes_for(user.username)]
+
+    @app.get("/api/v1/wave/report")
+    async def wave_report(user: User, svc: Svc) -> dict[str, Any]:
+        """Какие признаки считаются, сколько треков проанализировано, сколько попадает в каждый режим."""
+        return await require_wave(svc).report()
 
     @app.get("/api/v1/artists/facts", response_model=ArtistFactsOut, response_model_by_alias=True)
     async def artist_facts(

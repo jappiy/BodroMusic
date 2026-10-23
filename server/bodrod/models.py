@@ -138,6 +138,8 @@ class ServiceInfo(ApiModel):
     pool: bool = False
     """Анализ звучания: признаки треков и «Похожие по звучанию» (bodrod 0.12.0+)."""
     analysis: bool = False
+    """Подбор «Моей волны» на сервере: режимы и темпоритм (bodrod 0.19.0+)."""
+    wave: bool = False
 
 
 class CleanupUser(ApiModel):
@@ -357,6 +359,43 @@ class ExportPlaylistOut(ApiModel):
     missing: int = 0
     """Кто запускал выгрузку (чей это Яндекс)."""
     owner: str | None = None
+
+
+class WaveSessionEvent(ApiModel):
+    id: str
+    """like / dislike / skip (пропуск в первые 30 с) / complete."""
+    event: str
+
+
+class WaveNextRequest(ApiModel):
+    """Запрос порции волны: режим (`energetic`, `artist:<имя>`, `release:<id альбома>`…) и настройки волны."""
+
+    mode: str = "default"
+    mood: str | None = None
+    lang: str | None = None
+    """favorites / mix / discover / popular."""
+    character: str | None = None
+    current_id: str | None = None
+    recent: list[str] = Field(default_factory=list, max_length=500)
+    session: list[WaveSessionEvent] = Field(default_factory=list, max_length=500)
+    count: int = Field(default=20, ge=1, le=50)
+
+
+class WaveNextOut(ApiModel):
+    song_ids: list[str] = Field(default_factory=list)
+    """Сколько треков библиотеки подходит под режим (без ослабления правил)."""
+    matched: int = 0
+    """Треков под режим мало — стоит предложить докачать похожее."""
+    low_coverage: bool = False
+    mode: str = "default"
+
+
+class WaveModeOut(ApiModel):
+    id: str
+    title: str
+    subtitle: str | None = None
+    count: int | None = None
+    dynamic: bool = False
 
 
 class ArtistFactsOut(ApiModel):

@@ -42,6 +42,9 @@
    robocopy C:\Projects\BodroMusic\analyzer \\192.168.1.113\docker\bodrod\src\analyzer /MIR /XD tests __pycache__ .pytest_cache .ruff_cache .venv
    ```
 
+   Анализатор 0.3.0+: перед копированием один раз скачать дополнительные модели в `analyzer\models`
+   (`powershell -File C:\Projects\BodroMusic\analyzer\fetch-models.ps1`) — `Dockerfile.nas` кладёт их в образ.
+
    Если менялся только `server/`, вторую команду можно пропустить.
 2. Container Manager → Проект → `bodrod` → «Действие → Остановить».
 3. «Действие → Создать» — пересобирает `:local` из папки (секунды) и поднимает контейнеры. В терминале должно быть `Exit Code: 0`.

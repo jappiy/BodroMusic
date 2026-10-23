@@ -65,6 +65,13 @@ class DownloadsClient(
     /** Популярные треки исполнителя из каталога (Яндекс Музыка, запасные — Deezer и Last.fm) с отметкой «есть в библиотеке». */
     suspend fun artistPopular(name: String): ArtistPopular = get(listOf("api", "v1", "artists", "popular"), listOf("name" to name))
 
+    /** Порция «Моей волны», собранная на сервере (bodrod 0.19.0+). */
+    suspend fun waveNext(request: WaveNextRequest): WaveNext = post(listOf("api", "v1", "wave", "next"), request)
+
+    suspend fun waveModes(): List<WaveModeInfo> = get(listOf("api", "v1", "wave", "modes"))
+
+    suspend fun waveReport(): WaveReport = get(listOf("api", "v1", "wave", "report"))
+
     /** Факт о треке или исполнителе для главной (bodrod 0.18.0+). */
     suspend fun artistFacts(artist: String, title: String?): ArtistFacts =
         get(listOf("api", "v1", "artists", "facts"), listOfNotNull("artist" to artist, title?.let { "title" to it }))

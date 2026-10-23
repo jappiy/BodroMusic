@@ -8,7 +8,9 @@
 - `MUSIC_DIR` — папка музыки внутри контейнера (пути заданий — относительно неё), по умолчанию `/music`;
 - `MODELS_DIR` — модели Essentia (в образе — `/models`);
 - `BATCH` — сколько заданий брать за раз (10), `IDLE_S` — пауза, когда заданий нет (300);
-- `TRACK_TIMEOUT_S` — предел анализа одного трека (600), после него дочерний процесс убивается.
+- `TRACK_TIMEOUT_S` — предел анализа одного трека (600), после него дочерний процесс убивается;
+- `TRACK_PAUSE_S` — пауза после каждого трека (2 с): анализ всей библиотеки идёт фоном и не занимает процессор
+  NAS подряд. Вместе с `nice -n 19` и `TF_NUM_INTRAOP_THREADS` (2 потока) — ограничение нагрузки.
 """
 
 from __future__ import annotations
@@ -67,6 +69,7 @@ class Worker:
         batch: int = 10,
         idle_s: float = 300,
         sleep: Callable[[float], None] = time.sleep,
+        pause_s: float = 0.0,
     ) -> None:
         self._http = http
         self._base = base_url.rstrip("/")
@@ -76,6 +79,7 @@ class Worker:
         self._batch = batch
         self._idle_s = idle_s
         self._sleep = sleep
+        self._pause_s = pause_s
 
     def jobs(self) -> list[str]:
         response = self._http.get(
@@ -120,6 +124,8 @@ class Worker:
                     raise
                 except Exception:  # noqa: BLE001
                     log.exception("%s — не удалось отправить статус failed", relative)
+            if self._pause_s > 0:
+                self._sleep(self._pause_s)
         return len(jobs)
 
     def run_forever(self) -> None:
@@ -152,6 +158,7 @@ def main() -> None:
         extractor,
         batch=int(_env("BATCH", "10") or 10),
         idle_s=float(_env("IDLE_S", "300") or 300),
+        pause_s=float(_env("TRACK_PAUSE_S", "2") or 2),
     )
     log.info("Анализатор запущен: %s", base)
     worker.run_forever()

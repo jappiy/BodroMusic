@@ -21,3 +21,7 @@ __pycache__/
 .ruff_cache/
 server/bodrod-data/
 /dist/
+
+# Модели Essentia для сборки анализатора на NAS (скачиваются fetch-models.ps1)
+analyzer/models/*.pb
+analyzer/models/*.json

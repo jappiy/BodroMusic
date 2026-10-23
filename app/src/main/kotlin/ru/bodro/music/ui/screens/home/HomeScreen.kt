@@ -56,6 +56,10 @@ fun HomeScreen(
     val player by viewModel.player.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val facts by viewModel.facts.collectAsStateWithLifecycle()
+    val serverModes by viewModel.modes.collectAsStateWithLifecycle()
+    val coverage by viewModel.coverage.collectAsStateWithLifecycle()
+    val modeCards = rememberModeCards(serverModes)
+    val findMoreStarted = stringResource(R.string.wave_find_more_started)
     val actions = LocalAppActions.current
     val navigator = LocalNavigator.current
     var waveSettings by rememberSaveable { mutableStateOf(false) }
@@ -67,12 +71,15 @@ fun HomeScreen(
                     player = player,
                     settings = settings,
                     facts = facts,
+                    modes = modeCards,
                     onTogglePlay = viewModel::togglePlay,
                     onNext = viewModel::next,
                     onPrevious = viewModel::previous,
-                    onSelectPreset = viewModel::setPreset,
+                    onSelectMode = viewModel::setMode,
                     onOpenSettings = { waveSettings = true },
                     onOpenSearch = onOpenSearch,
+                    lowCoverage = coverage?.let { it.lowCoverage && it.mode == settings.waveModeId } == true,
+                    onFindMore = { viewModel.findMore { ok -> if (ok) actions.showMessage(findMoreStarted) } },
                 )
             }
             carousel("charts", { stringResource(R.string.home_charts) }, charts, null, { it.id }) { chart ->
@@ -139,6 +146,7 @@ fun HomeScreen(
             settings,
             onCharacter = viewModel::setCharacter,
             onMood = viewModel::setMood,
+            onLanguage = viewModel::setLanguage,
             onDismiss = { waveSettings = false },
         )
     }

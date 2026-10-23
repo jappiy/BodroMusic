@@ -148,6 +148,8 @@ data class ServiceInfo(
     val pool: Boolean = false,
     /** Анализ звучания: настроение волны, «Похожие по звучанию» (bodrod 0.12.0+). */
     val analysis: Boolean = false,
+    /** Подбор «Моей волны» на сервере: режимы по звучанию и темпоритм (bodrod 0.19.0+). */
+    val wave: Boolean = false,
 )
 
 /** Источник загрузки. [state]: `ok` — работает, `disabled` — выключен, `unavailable` — не может работать ([reason]). */
@@ -197,6 +199,52 @@ data class ExportStatus(
 /** Артист из «Мне нравится» в Яндексе: [selected] — брать дискографию целиком. */
 @Serializable
 data class ExportArtist(val id: String, val name: String, val liked: Int = 0, val selected: Boolean = false)
+
+/** Событие сессии волны для подбора следующей порции: like / dislike / skip (в первые 30 с) / complete. */
+@Serializable
+data class WaveSessionEvent(val id: String, val event: String)
+
+/** Запрос порции волны у bodrod: режим (`energetic`, `artist:<имя>`, `release:<id альбома>`…) и настройки волны. */
+@Serializable
+data class WaveNextRequest(
+    val mode: String = "default",
+    val mood: String? = null,
+    val lang: String? = null,
+    val character: String? = null,
+    val currentId: String? = null,
+    val recent: List<String> = emptyList(),
+    val session: List<WaveSessionEvent> = emptyList(),
+    val count: Int = 20,
+)
+
+/** Порция волны: id песен Navidrome по порядку; [lowCoverage] — под режим мало треков. */
+@Serializable
+data class WaveNext(
+    val songIds: List<String> = emptyList(),
+    val matched: Int = 0,
+    val lowCoverage: Boolean = false,
+    val mode: String = "default",
+)
+
+/** Режим волны для главной: [count] — сколько треков подходит; [dynamic] — «В стиле X», «Новый релиз X». */
+@Serializable
+data class WaveModeInfo(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    val count: Int? = null,
+    val dynamic: Boolean = false,
+)
+
+/** Отчёт об анализе: сколько проанализировано, у скольких есть каждый признак, сколько треков в каждом режиме. */
+@Serializable
+data class WaveReport(
+    val library: Int = 0,
+    val analyzed: Int = 0,
+    val features: Map<String, Int> = emptyMap(),
+    val languages: Map<String, Int> = emptyMap(),
+    val modes: Map<String, Int> = emptyMap(),
+)
 
 /** Факт о треке или исполнителе (Last.fm) для главной: одна фраза и теги; пусто — строка не показывается. */
 @Serializable

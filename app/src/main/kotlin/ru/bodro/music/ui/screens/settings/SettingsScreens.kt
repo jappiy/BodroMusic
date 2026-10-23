@@ -62,9 +62,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
@@ -73,6 +81,7 @@ import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.components.BodroTopBar
+import ru.bodro.music.ui.components.LoadState
 import ru.bodro.music.ui.util.formatBytes
 
 @Composable
@@ -377,10 +386,11 @@ private fun waveMoodLabel(mood: WaveMood): Int = when (mood) {
     WaveMood.Sad -> R.string.wave_mood_sad
 }
 
-private fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
+fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
     WaveCharacter.Favorites -> R.string.wave_character_favorites
     WaveCharacter.Mix -> R.string.wave_character_mix
     WaveCharacter.Discover -> R.string.wave_character_discover
+    WaveCharacter.Popular -> R.string.wave_character_popular
 }
 
 @Composable
@@ -452,6 +462,67 @@ fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVi
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            WaveReportSection()
+        }
+    }
+}
+
+/** Отчёт bodrod (0.19.0+): сколько треков проанализировано, какие признаки есть и сколько треков в каждом режиме. */
+@HiltViewModel
+class WaveReportViewModel @Inject constructor(private val wave: ru.bodro.music.data.repository.WaveRepository) : ViewModel() {
+    private val _report = MutableStateFlow<LoadState<ru.bodro.music.core.downloads.WaveReport?>>(LoadState.Loading)
+    val report: StateFlow<LoadState<ru.bodro.music.core.downloads.WaveReport?>> = _report.asStateFlow()
+
+    init {
+        viewModelScope.launch { _report.value = LoadState.Content(wave.report()) }
+    }
+}
+
+@Composable
+private fun WaveReportSection(viewModel: WaveReportViewModel = hiltViewModel()) {
+    val state by viewModel.report.collectAsStateWithLifecycle()
+    val report = (state as? LoadState.Content)?.data
+    Text(stringResource(R.string.wave_report_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 32.dp))
+    val small = MaterialTheme.typography.bodySmall
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    when {
+        state is LoadState.Loading -> Unit
+        report == null -> Text(stringResource(R.string.wave_report_unavailable), style = small, color = muted)
+        else -> {
+            Text(
+                stringResource(R.string.wave_report_analyzed, report.analyzed, report.library),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                stringResource(
+                    R.string.wave_report_features,
+                    report.features.entries.joinToString {
+                        "${it.key} ${it.value}"
+                    },
+                ),
+                style = small,
+                color = muted,
+            )
+            Text(
+                stringResource(
+                    R.string.wave_report_modes,
+                    report.modes.entries.joinToString {
+                        "${it.key} ${it.value}"
+                    },
+                ),
+                style = small,
+                color = muted,
+            )
+            Text(
+                stringResource(
+                    R.string.wave_report_languages,
+                    report.languages.entries.joinToString {
+                        "${it.key} ${it.value}"
+                    },
+                ),
+                style = small,
+                color = muted,
+            )
         }
     }
 }

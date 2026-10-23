@@ -16,13 +16,16 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
-import ru.bodro.music.core.domain.wave.WavePreset
 import ru.bodro.music.core.downloads.ArtistFacts
 import ru.bodro.music.core.downloads.Chart
+import ru.bodro.music.core.downloads.WaveModeInfo
+import ru.bodro.music.data.downloads.DownloadsRepository
 import ru.bodro.music.data.reco.ChartsRepository
 import ru.bodro.music.data.reco.FactsRepository
 import ru.bodro.music.data.repository.HomeData
 import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.data.repository.WaveCoverage
+import ru.bodro.music.data.repository.WaveRepository
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.playback.PlayerConnection
@@ -37,7 +40,17 @@ class HomeViewModel @Inject constructor(
     private val charts: ChartsRepository,
     private val settingsRepository: SettingsRepository,
     facts: FactsRepository,
+    private val wave: WaveRepository,
+    private val downloads: DownloadsRepository,
 ) : ViewModel() {
+    private val _modes = MutableStateFlow<List<WaveModeInfo>?>(null)
+
+    /** Режимы волны с сервера (`null` — сервер волну не подбирает, режимы — с телефона). */
+    val modes: StateFlow<List<WaveModeInfo>?> = _modes.asStateFlow()
+
+    /** Сколько треков под текущий режим по ответу сервера. */
+    val coverage: StateFlow<WaveCoverage?> = wave.coverage
+
     private val _charts = MutableStateFlow<List<Chart>>(emptyList())
 
     /** Чарты bodrod для раздела под «Моей волной». */
@@ -70,6 +83,7 @@ class HomeViewModel @Inject constructor(
 
     private fun loadCharts() {
         viewModelScope.launch { _charts.value = charts.home() }
+        viewModelScope.launch { _modes.value = wave.serverModes() }
     }
 
     fun load() {
@@ -100,8 +114,17 @@ class HomeViewModel @Inject constructor(
     fun previous() = connection.previous()
 
     /** Выбранный режим волны (свой у каждой учётки); `null` — обычная «Моя волна». */
-    fun setPreset(preset: WavePreset?) {
-        viewModelScope.launch { settingsRepository.update { it.copy(waveModeId = preset?.id.orEmpty()) } }
+    fun setMode(id: String?) {
+        viewModelScope.launch { settingsRepository.update { it.copy(waveModeId = id.orEmpty()) } }
+    }
+
+    fun setLanguage(code: String) {
+        viewModelScope.launch { settingsRepository.update { it.copy(waveLanguage = code) } }
+    }
+
+    /** Под режим мало треков: движок рекомендаций подбирает и докачивает похожее в пул «На пробу». */
+    fun findMore(onDone: (Boolean) -> Unit) {
+        viewModelScope.launch { onDone(runCatching { downloads.refillPool() }.isSuccess) }
     }
 
     fun setCharacter(character: WaveCharacter) {

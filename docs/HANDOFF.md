@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-23 (задания 020–022: персональные плейлисты, адаптивная вёрстка, новая главная «Моя волна» — этапы 1–3 из 5 большого задания; этапы 4–5 — задания 023–024). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-23 (задания 020–023: персональные плейлисты, адаптивная вёрстка, новая главная «Моя волна», режимы волны на сервере — этапы 1–4 из 5 большого задания; этап 5 — задание 024). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,17 +64,23 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.24.0** (`versionCode 25`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.18.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-  Воркер анализа звучания: **0.2.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer:0016967`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.24.0
-  (`BodroMusic-0.24.0.apk` — release с R8; `BodroMusic-0.24.0-debug.apk` — debug, ставится рядом).
+- Текущая версия приложения: **0.25.0** (`versionCode 26`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.19.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+  Воркер анализа звучания: **0.3.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer:0016967`).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.25.0
+  (`BodroMusic-0.25.0.apk` — release с R8; `BodroMusic-0.25.0-debug.apk` — debug, ставится рядом).
 - Установка bodrod и анализатора на NAS — только по [`docs/DEPLOY.md`](DEPLOY.md): образ `bodrod:local` собирается
   на NAS из скопированной папки, теги GHCR в YAML не пишутся.
 - ТЗ рекомендательной системы и чартов (пять задач): [`docs/reco/`](reco/README.md).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
+
+**Задание 023** (app 0.25.0 / bodrod 0.19.0 / анализатор 0.3.0, релиз v0.25.0) — этап 4 из 5: волну подбирает
+bodrod (`reco/wave.py`, `POST /wave/next`): режимы по признакам (`reco/traits.py`, пороги — `WAVE_MODES_FILE`),
+темпоритм (BPM ±10 %, энергия, Camelot), исполнитель не чаще раза в 4, трек — раз в 3 дня, реакции сессии,
+`lowCoverage`; карточки `/wave/modes` (в т. ч. «В стиле X», «Новый релиз X»), отчёт `/wave/report`. Анализатор:
+acoustic / electronic, RMS, пауза между треками. Числа отчёта по реальной библиотеке не получены.
 
 **Задание 022** (app 0.24.0 / bodrod 0.18.0, релиз v0.24.0) — этап 3 из 5: главная «Моя волна» (`WaveHome`):
 имя исполнителя с автоподбором размера, свайп — трек, «таблетка» с прогрессом, факт Last.fm (`/artists/facts`),
@@ -152,7 +158,7 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   `app` 31 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 11 — цикл воркера без Essentia, NaN/inf → null, ошибка трека не останавливает пачку;
   дочерний процесс (краш, зависание, перезапуск); декодирование ffmpeg (3 теста, без ffmpeg пропускаются — идут в CI).
-- Сервер (`server/tests`, pytest): **180** (задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+- Сервер (`server/tests`, pytest): **188** (задание 023 — `test_wave.py`; задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
   `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
@@ -200,6 +206,9 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   «Поделиться» = `updatePlaylist(public)`; порядок — `createPlaylist(playlistId, songId…)` (замена состава).
   Импорт из файлов Navidrome отдаёт первому админу — поэтому выгрузка Яндекса пишет `.m3u8` только с
   `EXPORT_WRITE_M3U=true`, а по умолчанию приложение создаёт плейлисты из `GET /yandex/export/playlists`.
+- **Волна на сервере** (bodrod 0.19.0): приложение шлёт режим, настроение, язык, характер, последние 200 треков
+  и реакции сессии; без `info.wave` или при ошибке — локальный `WaveEngine`. Миксы и волны по артисту/треку/жанру/
+  эпохе — всегда локально. Режим — `WaveSettings.preset` (id режима сервера или `WavePreset`).
 - **Спектр для фона** (0.24.0): `SpectrumAudioProcessor` в `DefaultAudioSink` (`SpectrumRenderersFactory`) →
   `AudioSpectrum.frames`; анализ только при подписчике (`acquire/release`), иначе пропускает PCM без расчёта.
 - **Снимки экранов** в unit-тестах: Robolectric `GraphicsMode.NATIVE` + `ComponentActivity.setContent` +
@@ -317,7 +326,9 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Задание 022: поставить bodrod 0.18.0 по `docs/DEPLOY.md` (факты Last.fm на главной; нужен `LASTFM_API_KEY`).
+0. Задание 023: bodrod 0.19.0 и анализатор 0.3.0 по `docs/DEPLOY.md` (модели — `analyzer/fetch-models.ps1`),
+   затем переписать числа отчёта «Анализ звучания и режимы» в [023](history/023-wave-modes.md).
+   Задание 022: поставить bodrod 0.18.0 по `docs/DEPLOY.md` (факты Last.fm на главной; нужен `LASTFM_API_KEY`).
    Задание 020: поставить bodrod 0.17.0 по `docs/DEPLOY.md`; под админом открыть «Настройки → Плейлисты на
    сервере» и решить по списку «Проверить владельца» ([020](history/020-personal-playlists.md)).
    Задание 019: поставить bodrod 0.16.0 по `docs/DEPLOY.md` (robocopy `server` → «Остановить» → «Создать»), запустить
@@ -402,6 +413,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 020 | 2026-10-23 | Этап 1/5: персональные плейлисты («Мои» / «Общие», «Поделиться», «Сохранить себе», порядок), волна и чарты по учётке, отчёт о владельцах плейлистов, плейлисты Яндекса в учётку пользователя | app 0.22.0, bodrod 0.17.0 | [020-personal-playlists.md](history/020-personal-playlists.md) |
 | 021 | 2026-10-23 | Этап 2/5: адаптивная вёрстка — плеер в две колонки в ландшафте, обложка по высоте, прокрутка вместо обрезки, без пересоздания активити при повороте и складывании, отступы под вырез | app 0.23.0 | [021-adaptive-layout.md](history/021-adaptive-layout.md) |
 | 022 | 2026-10-23 | Этап 3/5: новая главная «Моя волна» — исполнитель, свайп треков, «таблетка» с прогрессом, факт Last.fm, карусель режимов, эквалайзер в цветах обложки по спектру плеера | app 0.24.0, bodrod 0.18.0 | [022-wave-home.md](history/022-wave-home.md) |
+| 023 | 2026-10-23 | Этап 4/5: режимы волны и темпоритм на сервере, признаки трека (acoustic/electronic, язык, Camelot), отчёт об анализе | app 0.25.0, bodrod 0.19.0, анализатор 0.3.0 | [023-wave-modes.md](history/023-wave-modes.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)

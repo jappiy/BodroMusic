@@ -55,6 +55,8 @@ data class AppSettings(
     val backgroundAnimation: Boolean = true,
     /** Выбранный режим волны на главной (id режима, пусто — «Моя волна»). Свой у каждой учётки. */
     val waveModeId: String = "",
+    /** Язык волны: `ru`, `en`, `none` (без слов) или пусто — любой. Свой у каждой учётки. */
+    val waveLanguage: String = "",
     val activeAccountId: Long? = null,
 ) {
     companion object {
@@ -106,6 +108,7 @@ class SettingsRepository @Inject constructor(
                 prefs[Keys.character.of(owner)] = updated.waveCharacter.name
                 prefs[Keys.mood.of(owner)] = updated.waveMood.name
                 prefs[Keys.waveMode.of(owner)] = updated.waveModeId
+                prefs[Keys.waveLanguage.of(owner)] = updated.waveLanguage
                 prefs[Keys.chartsOrder.of(owner)] = updated.chartsOrder.joinToString(",")
                 prefs[Keys.chartsHidden.of(owner)] = updated.chartsHidden.joinToString(",")
                 prefs[Keys.skipReset.of(owner)] = updated.skipStatsResetAt
@@ -135,6 +138,7 @@ class SettingsRepository @Inject constructor(
             waveCharacter = enumOr(perAccount(Keys.character), WaveCharacter.Mix),
             waveMood = enumOr(perAccount(Keys.mood), WaveMood.Any),
             waveModeId = this[Keys.waveMode.of(account)].orEmpty(),
+            waveLanguage = this[Keys.waveLanguage.of(account)].orEmpty(),
             chartsOrder = perAccount(Keys.chartsOrder)?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
             chartsHidden = perAccount(Keys.chartsHidden)?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty(),
             skipStatsResetAt = perAccount(Keys.skipReset) ?: 0,
@@ -164,6 +168,7 @@ class SettingsRepository @Inject constructor(
         val activeAccount = longPreferencesKey("active_account")
         val backgroundAnimation = booleanPreferencesKey("background_animation")
         val waveMode = PerAccount(stringPreferencesKey("wave_mode"), ::stringPreferencesKey)
+        val waveLanguage = PerAccount(stringPreferencesKey("wave_language"), ::stringPreferencesKey)
 
         /** Настройка учётки: ключ `wave_mood@12`; без учётки — общий ключ [base]. */
         class PerAccount<T>(val base: Preferences.Key<T>, private val make: (String) -> Preferences.Key<T>) {

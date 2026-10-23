@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUTF8=1 \
     LANG=C.UTF-8 \
     TF_CPP_MIN_LOG_LEVEL=2 \
+    TF_NUM_INTRAOP_THREADS=2 \
+    TF_NUM_INTEROP_THREADS=1 \
+    OMP_NUM_THREADS=2 \
     MODELS_DIR=/models \
     MUSIC_DIR=/music
 
@@ -28,7 +31,9 @@ RUN mkdir -p /models && cd /models \
                    mood_aggressive/mood_aggressive-discogs-effnet-1 \
                    mood_relaxed/mood_relaxed-discogs-effnet-1 \
                    danceability/danceability-discogs-effnet-1 \
-                   voice_instrumental/voice_instrumental-discogs-effnet-1; do \
+                   voice_instrumental/voice_instrumental-discogs-effnet-1 \
+                   mood_acoustic/mood_acoustic-discogs-effnet-1 \
+                   mood_electronic/mood_electronic-discogs-effnet-1; do \
          curl -fsSLO ${MODELS_URL}/classification-heads/${head}.pb \
          && curl -fsSLO ${MODELS_URL}/classification-heads/${head}.json; \
        done

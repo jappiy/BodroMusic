@@ -27,6 +27,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,13 @@ def energy_of(features: dict[str, Any]) -> float | None:
         tempo,
     ]
     return round(sum(parts) / len(parts), 4)
+
+
+def _added_ts(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00").split(".")[0]).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def kmeans(points: np.ndarray, k: int, iterations: int = 25, seed: int = 7) -> np.ndarray:
@@ -142,6 +150,8 @@ class AnalysisService:
         """Путь → MBID (треки библиотеки); путь → (MBID, хэш) — вычисленные ключи."""
         self._mbids: dict[str, str] = {}
         self._identity: dict[str, tuple[str | None, str | None]] = {}
+        """Путь → когда трек появился в библиотеке (для приоритета новых)."""
+        self._added: dict[str, float] = {}
         """Ключи старых записей вычислены: до этого библиотека не выдаётся воркеру (иначе перенос не найдётся)."""
         self._maintained = False
         store.executescript(SCHEMA)
@@ -180,6 +190,7 @@ class AnalysisService:
         def build() -> dict[str, str]:
             result = {}
             mbids = {}
+            added: dict[str, float] = {}
             for song in self._db.iter_songs():
                 local = _remap(song.path, self._settings.navidrome_music_dir, self._settings.music_dir)
                 rel = self._relative(local) if local else None
@@ -187,7 +198,10 @@ class AnalysisService:
                     result[song.id] = rel
                     if song.mbid:
                         mbids[rel] = song.mbid
+                    if song.created_at:
+                        added[rel] = _added_ts(song.created_at)
             self._mbids = mbids
+            self._added = added
             return result
 
         return await asyncio.to_thread(build)
@@ -382,7 +396,8 @@ class AnalysisService:
             if len(jobs) >= limit:
                 break
         if len(jobs) < limit and self._maintained:
-            for rel in list(self._paths.values()):
+            # Новые треки библиотеки — первыми (только что импортированные анализируются сразу).
+            for rel in sorted(self._paths.values(), key=lambda p: -self._added.get(p, 0.0)):
                 if wanted(rel) and rel not in jobs and await fresh(rel):
                     jobs.append(rel)
                     if len(jobs) >= limit:
@@ -482,6 +497,23 @@ class AnalysisService:
             ):
                 result[wanted[r["path"]]] = json.loads(r["features"] or "{}")
         return result
+
+    async def all_features(self) -> dict[str, dict[str, Any]]:
+        """Признаки всех проанализированных треков библиотеки: id в Navidrome → признаки (для режимов волны)."""
+        await self._ensure_index()
+        by_path = {p: s for s, p in self._paths.items()}
+        result: dict[str, dict[str, Any]] = {}
+        for r in self._store.query("SELECT path, features FROM audio_features WHERE error IS NULL"):
+            song_id = by_path.get(r["path"])
+            if song_id:
+                result[song_id] = json.loads(r["features"] or "{}")
+        return result
+
+    async def vectors_by_id(self, song_ids: list[str]) -> dict[str, np.ndarray]:
+        """Нормированные эмбеддинги треков по id (у непроанализированных — нет записи)."""
+        index = await self._ensure_index()
+        positions = {s: i for i, s in enumerate(index.ids)}
+        return {s: index.matrix[positions[s]] for s in song_ids if s in positions}
 
     async def similar(self, song_id: str, limit: int, exclude: set[str] | None = None) -> list[str]:
         """Ближайшие по звучанию треки библиотеки (косинус эмбеддингов)."""

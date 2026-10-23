@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +83,7 @@ import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.core.domain.wave.WavePreset
 import ru.bodro.music.core.downloads.ArtistFacts
+import ru.bodro.music.core.downloads.WaveModeInfo
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
@@ -92,6 +94,7 @@ import ru.bodro.music.ui.app.LocalNavigator
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.screens.settings.waveCharacterLabel
 import ru.bodro.music.ui.screens.wave.EqualizerBackground
 import ru.bodro.music.ui.theme.BodroCoral
 import ru.bodro.music.ui.theme.BodroOrange
@@ -103,22 +106,83 @@ import ru.bodro.music.ui.theme.WaveTitleStyle
 /** Фигура на карточке режима. */
 enum class ModeShape { Circle, Blob, Triangle, Squircle, Rings, Diamond }
 
-/** Карточка режима волны: подпись, цвета градиента и фигура. */
-data class ModeCard(val preset: WavePreset, @StringRes val title: Int, val colors: List<Color>, val shape: ModeShape)
+/** Карточка режима волны: id режима, подпись, число треков, цвета градиента и фигура, настройки запуска. */
+data class ModeCard(
+    val id: String,
+    val title: String,
+    val colors: List<Color>,
+    val shape: ModeShape,
+    val subtitle: String? = null,
+    val count: Int? = null,
+) {
+    /** Миксы и пресеты с телефона — по [WavePreset]; режимы сервера — `preset` = id режима. */
+    val settings: WaveSettings get() = WavePreset.of(id)?.settings() ?: WaveSettings(preset = id)
+}
 
-/** Режимы на главной (ориентир — «Моя волна» Яндекса). Порядок — как в карусели. */
-val ModeCards = listOf(
-    ModeCard(WavePreset.Energetic, R.string.wave_mood_energetic, listOf(BodroYellow, BodroOrange), ModeShape.Triangle),
-    ModeCard(WavePreset.Calm, R.string.wave_mood_calm, listOf(Color(0xFF5EC8E5), Color(0xFF3A66D6)), ModeShape.Circle),
-    ModeCard(WavePreset.Happy, R.string.wave_mood_happy, listOf(Color(0xFFFFD84D), BodroCoral), ModeShape.Blob),
-    ModeCard(WavePreset.Sad, R.string.wave_mood_sad, listOf(Color(0xFF6C7BA8), Color(0xFF2E3550)), ModeShape.Rings),
-    ModeCard(WavePreset.Discover, R.string.wave_mode_discover, listOf(BodroViolet, Color(0xFF00C2A8)), ModeShape.Diamond),
-    ModeCard(WavePreset.Favorites, R.string.wave_mode_favorites, listOf(BodroCoral, Color(0xFFB0286B)), ModeShape.Blob),
-    ModeCard(WavePreset.Popular, R.string.wave_mode_popular, listOf(BodroOrange, BodroViolet), ModeShape.Squircle),
-    ModeCard(WavePreset.TrackMix, R.string.mix_tracks, listOf(Color(0xFF43D17A), Color(0xFF1F7A8C)), ModeShape.Circle),
-    ModeCard(WavePreset.AlbumMix, R.string.mix_albums, listOf(Color(0xFFFF8FB1), BodroViolet), ModeShape.Squircle),
-    ModeCard(WavePreset.DecadeMix, R.string.mix_decade, listOf(Color(0xFFE0B36A), Color(0xFF8A5A2B)), ModeShape.Rings),
+/** Вид карточки по id режима: цвета и фигура (ориентир — «Моя волна» Яндекса). */
+private val ModeVisuals: Map<String, Pair<List<Color>, ModeShape>> = mapOf(
+    "energetic" to (listOf(BodroYellow, BodroOrange) to ModeShape.Triangle),
+    "calm" to (listOf(Color(0xFF5EC8E5), Color(0xFF3A66D6)) to ModeShape.Circle),
+    "happy" to (listOf(Color(0xFFFFD84D), BodroCoral) to ModeShape.Blob),
+    "sad" to (listOf(Color(0xFF6C7BA8), Color(0xFF2E3550)) to ModeShape.Rings),
+    "loud" to (listOf(Color(0xFFFF3D3D), Color(0xFF7A0019)) to ModeShape.Triangle),
+    "discover" to (listOf(BodroViolet, Color(0xFF00C2A8)) to ModeShape.Diamond),
+    "favorites" to (listOf(BodroCoral, Color(0xFFB0286B)) to ModeShape.Blob),
+    "popular" to (listOf(BodroOrange, BodroViolet) to ModeShape.Squircle),
+    "new" to (listOf(Color(0xFF7CF29C), Color(0xFF00A3FF)) to ModeShape.Diamond),
+    "instrumental" to (listOf(Color(0xFFB8C6FF), Color(0xFF5B5FC7)) to ModeShape.Rings),
+    "ru" to (listOf(Color(0xFFFFFFFF), Color(0xFF1C5BD9), Color(0xFFE53935)) to ModeShape.Squircle),
+    "en" to (listOf(Color(0xFF1C3FAA), Color(0xFFE53935)) to ModeShape.Circle),
+    "track_mix" to (listOf(Color(0xFF43D17A), Color(0xFF1F7A8C)) to ModeShape.Circle),
+    "album_mix" to (listOf(Color(0xFFFF8FB1), BodroViolet) to ModeShape.Squircle),
+    "decade_mix" to (listOf(Color(0xFFE0B36A), Color(0xFF8A5A2B)) to ModeShape.Rings),
 )
+
+private val DynamicPalettes = listOf(
+    listOf(Color(0xFFFF9A62), Color(0xFFB5179E)),
+    listOf(Color(0xFF4CC9F0), Color(0xFF4361EE)),
+    listOf(Color(0xFFF9C74F), Color(0xFF43AA8B)),
+    listOf(Color(0xFFF72585), Color(0xFF7209B7)),
+)
+
+private fun visualOf(id: String): Pair<List<Color>, ModeShape> = ModeVisuals[id]
+    ?: (
+        DynamicPalettes[(id.hashCode() and Int.MAX_VALUE) % DynamicPalettes.size] to
+            if (id.startsWith("release:")) ModeShape.Squircle else ModeShape.Blob
+        )
+
+/** Миксы считаются на телефоне — их карточки есть всегда. */
+@Composable
+private fun mixCards(): List<ModeCard> = listOf(
+    WavePreset.TrackMix to R.string.mix_tracks,
+    WavePreset.AlbumMix to R.string.mix_albums,
+    WavePreset.DecadeMix to R.string.mix_decade,
+).map { (preset, title) -> visualOf(preset.id).let { (colors, shape) -> ModeCard(preset.id, stringResource(title), colors, shape) } }
+
+/**
+ * Карточки режимов: с сервера (bodrod 0.19.0+: число треков под режим, «В стиле X», «Новый релиз X») или, без него,
+ * режимы, которые телефон собирает сам. Миксы — в конце.
+ */
+@Composable
+fun rememberModeCards(server: List<WaveModeInfo>?): List<ModeCard> {
+    val mixes = mixCards()
+    val local = listOf(
+        WavePreset.Energetic to R.string.wave_mood_energetic,
+        WavePreset.Calm to R.string.wave_mood_calm,
+        WavePreset.Happy to R.string.wave_mood_happy,
+        WavePreset.Sad to R.string.wave_mood_sad,
+        WavePreset.Discover to R.string.wave_mode_discover,
+        WavePreset.Favorites to R.string.wave_mode_favorites,
+        WavePreset.Popular to R.string.wave_mode_popular,
+    ).map { (preset, title) -> visualOf(preset.id).let { (colors, shape) -> ModeCard(preset.id, stringResource(title), colors, shape) } }
+    return remember(server, mixes, local) {
+        val fromServer = server?.map { mode ->
+            val (colors, shape) = visualOf(mode.id)
+            ModeCard(mode.id, mode.title, colors, shape, subtitle = mode.subtitle, count = mode.count)
+        }
+        (fromServer ?: local) + mixes
+    }
+}
 
 /**
  * Главная «Моя волна» (сверху вниз): строка с настройками волны, заголовком или чипом режима и поиском; крупное имя
@@ -130,17 +194,23 @@ fun WaveHome(
     player: PlayerUiState,
     settings: AppSettings,
     facts: ArtistFacts?,
+    modes: List<ModeCard>,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onSelectPreset: (WavePreset?) -> Unit,
+    onSelectMode: (String?) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
+    lowCoverage: Boolean = false,
+    onFindMore: () -> Unit = {},
 ) {
     val actions = LocalAppActions.current
     val colors = LocalPlayerColors.current
     val wavePlaying = player.source.isWave && player.hasMedia
-    val preset = WavePreset.of(settings.waveModeId.ifBlank { null })
+    val active = settings.waveModeId.ifBlank { null }?.let { id ->
+        modes.firstOrNull { it.id == id }
+            ?: ModeCard(id, id, emptyList(), ModeShape.Circle)
+    }
     val configuration = LocalConfiguration.current
     // Широкое окно (ландшафт, разложенный боком): блок по высоте экрана, исполнитель слева, управление справа.
     val wide = configuration.screenWidthDp > configuration.screenHeightDp && configuration.screenWidthDp >= WIDE_MIN
@@ -149,9 +219,9 @@ fun WaveHome(
     } else {
         (configuration.screenHeightDp * HERO_SHARE).dp.coerceIn(HERO_MIN, HERO_MAX)
     }
-    val start: (WavePreset?) -> Unit = { chosen ->
-        onSelectPreset(chosen)
-        actions.startWave(chosen?.settings() ?: WaveSettings())
+    val start: (ModeCard?) -> Unit = { chosen ->
+        onSelectMode(chosen?.id)
+        actions.startWave(chosen?.settings ?: WaveSettings())
     }
 
     Box(Modifier.fillMaxWidth().heightIn(min = height).testTag("wave-home")) {
@@ -166,26 +236,26 @@ fun WaveHome(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             // Сброс режима: волна играет — сразу «Моя волна» без режима; не играет — только снять режим.
-            val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectPreset(null) }
-            WaveTopRow(preset, onOpenSettings, onReset = reset, onOpenSearch)
+            val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectMode(null) }
+            WaveTopRow(active, onOpenSettings, onReset = reset, onOpenSearch)
             if (wavePlaying && player.currentSong != null) {
                 NowPlayingBlock(player, player.currentSong, onTogglePlay, onNext, onPrevious, facts, wide)
             } else {
-                StartBlock(loading = player.waveLoading, onStart = { start(preset) })
+                StartBlock(loading = player.waveLoading, onStart = { start(active) })
             }
-            ModeCarousel(active = preset, onPick = { chosen -> if (chosen == null) reset() else start(chosen) })
+            if (lowCoverage && wavePlaying && active != null) LowCoverageHint(onFindMore)
+            ModeCarousel(modes, active = active, onPick = { chosen -> if (chosen == null) reset() else start(chosen) })
         }
     }
 }
 
 @Composable
-private fun WaveTopRow(preset: WavePreset?, onOpenSettings: () -> Unit, onReset: () -> Unit, onOpenSearch: () -> Unit) {
+private fun WaveTopRow(card: ModeCard?, onOpenSettings: () -> Unit, onReset: () -> Unit, onOpenSearch: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onOpenSettings, modifier = Modifier.testTag("wave-settings")) {
             Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.wave_settings), tint = Color.White)
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            val card = ModeCards.firstOrNull { it.preset == preset }
             if (card == null) {
                 Text(stringResource(R.string.wave_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
             } else {
@@ -198,7 +268,13 @@ private fun WaveTopRow(preset: WavePreset?, onOpenSettings: () -> Unit, onReset:
                         .testTag("wave-mode-chip"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(stringResource(card.title), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    Text(
+                        card.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Spacer(Modifier.size(6.dp))
                     Icon(
                         Icons.Rounded.Close,
@@ -404,9 +480,32 @@ private fun FactLine(facts: ArtistFacts) {
     )
 }
 
+/** Под режим мало треков в библиотеке: предложить подобрать и докачать похожее (пул «На пробу»). */
+@Composable
+private fun LowCoverageHint(onFindMore: () -> Unit) {
+    Row(
+        Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 12.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.12f))
+            .clickable(onClick = onFindMore)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .testTag("wave-low-coverage"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.wave_low_coverage),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            modifier = Modifier.weight(1f),
+        )
+        Text(stringResource(R.string.wave_find_more), style = MaterialTheme.typography.labelLarge, color = BodroYellow)
+    }
+}
+
 /** Карусель режимов. При выбранном режиме первая карточка — «Назад к привычному». */
 @Composable
-private fun ModeCarousel(active: WavePreset?, onPick: (WavePreset?) -> Unit) {
+private fun ModeCarousel(cards: List<ModeCard>, active: ModeCard?, onPick: (ModeCard?) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -416,6 +515,7 @@ private fun ModeCarousel(active: WavePreset?, onPick: (WavePreset?) -> Unit) {
             item(key = "back") {
                 ModeCardView(
                     stringResource(R.string.wave_back_to_usual),
+                    null,
                     listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.12f)),
                     ModeShape.Rings,
                     selected = false,
@@ -423,22 +523,25 @@ private fun ModeCarousel(active: WavePreset?, onPick: (WavePreset?) -> Unit) {
                 ) { onPick(null) }
             }
         }
-        items(ModeCards, key = { it.preset.id }) { card ->
-            ModeCardView(
-                stringResource(card.title),
-                card.colors,
-                card.shape,
-                selected = card.preset == active,
-                tag = "wave-mode-${card.preset.id}",
-            ) {
-                onPick(card.preset)
+        items(cards, key = { it.id }) { card ->
+            val caption = card.subtitle ?: card.count?.let { pluralStringResource(R.plurals.tracks, it, it) }
+            ModeCardView(card.title, caption, card.colors, card.shape, selected = card.id == active?.id, tag = "wave-mode-${card.id}") {
+                onPick(card)
             }
         }
     }
 }
 
 @Composable
-private fun ModeCardView(title: String, colors: List<Color>, shape: ModeShape, selected: Boolean, tag: String, onClick: () -> Unit) {
+private fun ModeCardView(
+    title: String,
+    caption: String?,
+    colors: List<Color>,
+    shape: ModeShape,
+    selected: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+) {
     Column(
         Modifier
             .width(CARD_WIDTH.dp)
@@ -450,9 +553,30 @@ private fun ModeCardView(title: String, colors: List<Color>, shape: ModeShape, s
             .padding(10.dp)
             .testTag(tag),
     ) {
-        Canvas(Modifier.fillMaxWidth().height(CARD_WIDTH.dp - 36.dp)) { drawModeShape(shape, colors) }
-        Spacer(Modifier.height(8.dp))
-        Text(title, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Canvas(Modifier.fillMaxWidth().height(CARD_WIDTH.dp - 44.dp)) { drawModeShape(shape, colors) }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+            maxLines = if (caption ==
+                null
+            ) {
+                2
+            } else {
+                1
+            },
+            overflow = TextOverflow.Ellipsis,
+        )
+        caption?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -504,7 +628,13 @@ private fun DrawScope.drawModeShape(shape: ModeShape, colors: List<Color>) {
 /** Настройки волны (кнопка слева сверху): характер и настроение — сочетаются с режимом. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun WaveSettingsSheet(settings: AppSettings, onCharacter: (WaveCharacter) -> Unit, onMood: (WaveMood) -> Unit, onDismiss: () -> Unit) {
+fun WaveSettingsSheet(
+    settings: AppSettings,
+    onCharacter: (WaveCharacter) -> Unit,
+    onMood: (WaveMood) -> Unit,
+    onLanguage: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
             Text(stringResource(R.string.wave_settings), style = MaterialTheme.typography.titleLarge)
@@ -515,17 +645,7 @@ fun WaveSettingsSheet(settings: AppSettings, onCharacter: (WaveCharacter) -> Uni
                     FilterChip(
                         selected = settings.waveCharacter == character,
                         onClick = { onCharacter(character) },
-                        label = {
-                            Text(
-                                stringResource(
-                                    when (character) {
-                                        WaveCharacter.Favorites -> R.string.wave_character_favorites
-                                        WaveCharacter.Mix -> R.string.wave_character_mix
-                                        WaveCharacter.Discover -> R.string.wave_character_discover
-                                    },
-                                ),
-                            )
-                        },
+                        label = { Text(stringResource(waveCharacterLabel(character))) },
                     )
                 }
             }
@@ -537,6 +657,21 @@ fun WaveSettingsSheet(settings: AppSettings, onCharacter: (WaveCharacter) -> Uni
                         onMood(mood)
                     }, label = { Text(stringResource(moodLabel(mood))) })
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.wave_language), style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "" to R.string.wave_language_any,
+                    "ru" to R.string.wave_language_ru,
+                    "en" to R.string.wave_language_en,
+                    "none" to R.string.wave_language_none,
+                )
+                    .forEach { (code, label) ->
+                        FilterChip(selected = settings.waveLanguage == code, onClick = {
+                            onLanguage(code)
+                        }, label = { Text(stringResource(label)) })
+                    }
             }
             Text(
                 stringResource(R.string.wave_settings_hint),

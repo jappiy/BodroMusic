@@ -8,4 +8,8 @@ RUN tr -d '\r' < /tmp/requirements.txt > /tmp/req.new && tr -d '\r' < /app/requi
     && { cmp -s /tmp/req.new /tmp/req.old || { echo "requirements.txt изменился: нужна новая база"; exit 1; }; } \
     && rm -rf /app/bodro_analyzer /tmp/requirements.txt /tmp/req.new /tmp/req.old
 COPY bodro_analyzer /app/bodro_analyzer
+# Новые модели (acoustic / electronic, анализатор 0.3.0): в базе 0016967 их нет — кладутся из папки models/
+# (скачать на ПК: analyzer/fetch-models.ps1). Папка может быть пустой — тогда признаки не считаются.
+COPY models/ /models/
+ENV TF_NUM_INTRAOP_THREADS=2 TF_NUM_INTEROP_THREADS=1 OMP_NUM_THREADS=2
 USER analyzer

@@ -192,6 +192,12 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun exportArtists(): List<ExportArtist> = client.exportArtists()
 
+    suspend fun waveNext(request: ru.bodro.music.core.downloads.WaveNextRequest) = client.waveNext(request)
+
+    suspend fun waveModes() = client.waveModes()
+
+    suspend fun waveReport() = client.waveReport()
+
     suspend fun artistFacts(artist: String, title: String?): ru.bodro.music.core.downloads.ArtistFacts =
         client.artistFacts(artist, title)
 

@@ -239,6 +239,10 @@ class Settings:
     charts_download_top: int = 30
     """Анализ звучания (задача 5): токен воркера `analyzer/` и пороги звуковой близости трека пула к вкусу."""
     analyzer_token: str | None = None
+    """Пороги режимов волны (JSON: `{"modes": {...}, "tuning": {...}}`), см. `reco/wave.py`. Пусто — по умолчанию."""
+    wave_modes_file: str | None = None
+    """Подбор волны на сервере (режимы, темпоритм). Выключено — приложение собирает волну само."""
+    wave_enabled: bool = True
     sound_min_match: float = 0.5
     sound_reject_match: float = 0.3
 
@@ -399,6 +403,8 @@ class Settings:
             charts=_list("CHARTS", ()),
             charts_download_top=_int("CHARTS_DOWNLOAD_TOP", 30),
             analyzer_token=_secret("ANALYZER_TOKEN", os.path.join(SECRETS_DIR, "analyzer_token")),
+            wave_modes_file=_opt("WAVE_MODES_FILE"),
+            wave_enabled=_bool("WAVE_ENABLED", True),
             sound_min_match=float(_opt("SOUND_MIN_MATCH") or 0.5),
             sound_reject_match=float(_opt("SOUND_REJECT_MATCH") or 0.3),
         )

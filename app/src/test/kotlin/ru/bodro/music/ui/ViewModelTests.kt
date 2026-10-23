@@ -112,7 +112,10 @@ class ViewModelTests {
         val settingsRepo = mockk<ru.bodro.music.data.settings.SettingsRepository>(relaxed = true) {
             every { settings } returns MutableStateFlow(ru.bodro.music.data.settings.AppSettings())
         }
-        val vm = HomeViewModel(library, player, charts, settingsRepo, mockk(relaxed = true))
+        val wave = mockk<ru.bodro.music.data.repository.WaveRepository>(relaxed = true) {
+            every { coverage } returns MutableStateFlow(null)
+        }
+        val vm = HomeViewModel(library, player, charts, settingsRepo, mockk(relaxed = true), wave, mockk(relaxed = true))
         advanceUntilIdle()
         assertEquals(R.string.error_wrong_credentials, (vm.state.value as LoadState.Error).error.message)
 
