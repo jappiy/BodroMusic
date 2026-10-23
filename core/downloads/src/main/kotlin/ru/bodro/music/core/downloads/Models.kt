@@ -198,6 +198,36 @@ data class ExportStatus(
 @Serializable
 data class ExportArtist(val id: String, val name: String, val liked: Int = 0, val selected: Boolean = false)
 
+/** Плейлист выгрузки из Яндекса: id песен Navidrome по порядку; [missing] — треков ещё нет в библиотеке. */
+@Serializable
+data class ExportPlaylist(val title: String, val songIds: List<String> = emptyList(), val missing: Int = 0, val owner: String? = null)
+
+/** Плейлист сервера в отчёте администратору (из БД Navidrome). */
+@Serializable
+data class AuditPlaylist(
+    val id: String,
+    val name: String,
+    val owner: String? = null,
+    val public: Boolean = false,
+    val songCount: Int = 0,
+    /** Файл, из которого Navidrome импортировал плейлист; `null` — создан через API или веб. */
+    val path: String? = null,
+    val smart: Boolean = false,
+    val createdAt: String? = null,
+    /** no_owner / imported_file / smart_file / yandex_export / explo. */
+    val reasons: List<String> = emptyList(),
+)
+
+/** Чьи плейлисты на сервере и какие стоит проверить ([review]). Ничего не переносится автоматически. */
+@Serializable
+data class PlaylistAudit(
+    val users: List<String> = emptyList(),
+    val admins: List<String> = emptyList(),
+    val byOwner: Map<String, Int> = emptyMap(),
+    val playlists: List<AuditPlaylist> = emptyList(),
+    val review: Int = 0,
+)
+
 /** Популярные треки исполнителя по каталогу; у тех, что есть в библиотеке, заполнен [DiscoverTrack.librarySongId]. */
 @Serializable
 data class ArtistPopular(

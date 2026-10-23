@@ -14,9 +14,13 @@ import kotlinx.coroutines.withContext
 import ru.bodro.music.core.domain.changelog.ChangelogParser
 import ru.bodro.music.core.domain.changelog.ChangelogRelease
 import ru.bodro.music.core.model.Playlist
+import ru.bodro.music.core.model.PlaylistAccess
 import ru.bodro.music.core.model.PlaylistDetails
 import ru.bodro.music.core.model.Song
+import ru.bodro.music.core.subsonic.ApiErrorKind
 import ru.bodro.music.core.subsonic.SubsonicClient
+import ru.bodro.music.core.subsonic.SubsonicError
+import ru.bodro.music.core.subsonic.SubsonicException
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.data.local.BodroDatabase
@@ -52,7 +56,11 @@ class SearchHistoryRepository @Inject constructor(
     }
 }
 
-/** Плейлисты: редактировать можно только свои; чужие публичные — только чтение. */
+/**
+ * Плейлисты принадлежат создателю. Свои — полное редактирование; чужие публичные («Общие») — только чтение
+ * и «Сохранить себе»; чужие приватные (их видит администратор Navidrome) не показываются.
+ * «Поделиться» = сделать публичным (Navidrome не умеет делиться с конкретным пользователем).
+ */
 @Singleton
 class PlaylistRepository @Inject constructor(
     private val client: SubsonicClient,
@@ -60,18 +68,47 @@ class PlaylistRepository @Inject constructor(
     private val reactions: ReactionRepository,
     private val pool: dagger.Lazy<ru.bodro.music.data.reco.PoolRepository>,
 ) {
-    suspend fun playlists(): List<Playlist> = client.getPlaylists()
+    /** Свои и общие (чужие публичные). */
+    suspend fun playlists(): List<Playlist> = client.getPlaylists().filter { access(it) != PlaylistAccess.Hidden }
 
-    suspend fun myPlaylists(): List<Playlist> = playlists().filter { isEditable(it) }
+    suspend fun myPlaylists(): List<Playlist> = client.getPlaylists().filter { access(it) == PlaylistAccess.Own }
 
-    suspend fun playlist(id: String): PlaylistDetails = client.getPlaylist(id).also { reactions.ingest(it.songs) }
+    suspend fun playlist(id: String): PlaylistDetails {
+        val details = client.getPlaylist(id)
+        // Чужой приватный открыт по ссылке (например, администратором) — не показываем.
+        if (access(details.playlist) == PlaylistAccess.Hidden) throw SubsonicException(SubsonicError.Api(ApiErrorKind.NotFound.code, null))
+        reactions.ingest(details.songs)
+        return details
+    }
 
-    fun isEditable(playlist: Playlist): Boolean = playlist.isEditableBy(connection.activeAccount?.username.orEmpty())
+    fun access(playlist: Playlist): PlaylistAccess = playlist.accessFor(connection.activeAccount?.username.orEmpty())
 
+    fun isEditable(playlist: Playlist): Boolean = access(playlist) == PlaylistAccess.Own
+
+    /** Новый плейлист — от текущей учётки и приватный. */
     suspend fun create(name: String, songs: List<Song> = emptyList()): Playlist? =
-        client.createPlaylist(name, songs.map { it.id }).also {
+        client.createPlaylist(name, songs.map { it.id }).also { created ->
+            if (created != null && created.public) client.updatePlaylist(created.id, public = false)
             songs.filter { pool.get().isPoolSong(it.id) }.forEach { pool.get().track(it, "playlisted", "playlist") }
+        }?.copy(public = false)
+
+    /** Плейлист из готового списка id песен (выгрузка Яндекса) — от текущей учётки, приватный. */
+    suspend fun createWithIds(name: String, songIds: List<String>): Playlist? =
+        client.createPlaylist(name, songIds).also { created ->
+            if (created != null && created.public) client.updatePlaylist(created.id, public = false)
         }
+
+    /** «Сохранить себе»: копия чужого общего плейлиста в своей учётке. */
+    suspend fun saveCopy(id: String): Playlist? {
+        val details = client.getPlaylist(id)
+        return create(details.playlist.name, details.songs)
+    }
+
+    /** Поделиться (публичный) / перестать делиться (приватный). */
+    suspend fun setShared(id: String, shared: Boolean) = client.updatePlaylist(id, public = shared)
+
+    /** Новый порядок треков: состав заменяется целиком. */
+    suspend fun reorder(id: String, songs: List<Song>) = client.replacePlaylistSongs(id, songs.map { it.id })
 
     suspend fun rename(id: String, name: String) = client.updatePlaylist(id, name = name)
 

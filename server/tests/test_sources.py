@@ -520,6 +520,8 @@ def test_export_likes_playlists_resume_and_m3u(tmp_path):
     api.playlist_list = [("Дорога", [likes[0], likes[1]])]
     world = FakeWorld(library=[{"id": "nd", "title": "Лайк 2", "artist": "Трофим"}])
     env = Env(tmp_path, api, world=world)
+    # m3u-файлы — только по EXPORT_WRITE_M3U=true (по умолчанию плейлисты создаёт приложение в аккаунте пользователя).
+    env.settings = dataclasses.replace(env.settings, export_write_m3u=True)
     export = YandexExport(env.store, env.settings, env.yandex, env.placer, env.worker, env.navidrome)
 
     async def ticks(n: int, target: YandexExport) -> None:

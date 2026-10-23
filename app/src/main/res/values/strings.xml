@@ -148,6 +148,36 @@
     <string name="playlist_name">Название</string>
     <string name="playlist_owner">Владелец: %1$s</string>
     <string name="playlist_read_only">Чужой плейлист — только просмотр</string>
+    <string name="playlists_mine">Мои</string>
+    <string name="playlists_mine_empty">Своих плейлистов пока нет</string>
+    <string name="playlists_shared">Общие</string>
+    <string name="playlist_public">Общий</string>
+    <string name="playlist_private">Только мой</string>
+    <string name="playlist_share">Поделиться</string>
+    <string name="playlist_unshare">Перестать делиться</string>
+    <string name="playlist_shared_message">Плейлист виден всем пользователям сервера</string>
+    <string name="playlist_unshared_message">Плейлист снова только ваш</string>
+    <string name="playlist_save_copy">Сохранить себе</string>
+    <string name="playlist_saved_copy">Копия сохранена в ваши плейлисты</string>
+    <string name="playlist_action_failed">Не получилось — проверьте связь с сервером</string>
+    <string name="playlist_reorder">Изменить порядок</string>
+    <string name="playlist_move_up">Выше</string>
+    <string name="playlist_move_down">Ниже</string>
+    <string name="action_done">Готово</string>
+    <string name="playlist_audit_title">Плейлисты на сервере</string>
+    <string name="settings_playlist_audit_summary">Чьи плейлисты и какие стоит проверить (администраторам)</string>
+    <string name="playlist_audit_hint">Плейлист принадлежит создателю. Ниже — все плейлисты сервера по владельцам. Приложение ничего не переносит и не удаляет: исправить владельца можно в веб-интерфейсе Navidrome.</string>
+    <string name="playlist_audit_admins">Администраторы: %1$s. Плейлисты из файлов Navidrome отдаёт первому администратору.</string>
+    <string name="playlist_audit_review">Проверить владельца (%1$d)</string>
+    <string name="playlist_audit_fine">Созданы пользователями</string>
+    <string name="playlist_audit_no_owner">Без владельца</string>
+    <string name="playlist_audit_yandex">Выгрузка из Яндекса файлом: владелец — первый администратор, а не хозяин Яндекса</string>
+    <string name="playlist_audit_smart">Умный плейлист из файла .nsp: владелец — первый администратор</string>
+    <string name="playlist_audit_imported">Импортирован из файла .m3u: владелец — первый администратор</string>
+    <string name="playlist_audit_explo">Похоже на подборку Explo: владелец — учётка из настроек Explo</string>
+    <string name="export_playlists_import">Создать плейлисты Яндекса у меня</string>
+    <string name="export_playlists_import_hint">Плейлисты из выгрузки появятся в ваших плейлистах приватными (только скачанные треки). Уже существующие с тем же названием не трогаются.</string>
+    <string name="export_playlists_imported">Создано плейлистов: %1$d, пропущено: %2$d</string>
     <string name="playlist_delete_confirm">Удалить плейлист?</string>
 
     <!-- Поиск -->

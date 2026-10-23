@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-23 (задание 019: сводка обслуживания библиотеки вместо списка, обложки в папках Lidarr из Cover Art Archive). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-23 (задание 020: персональные плейлисты — этап 1 из 5 большого задания; этапы 2–5 — задания 021–024). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -64,17 +64,23 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.21.0** (`versionCode 22`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.16.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
+- Текущая версия приложения: **0.22.0** (`versionCode 23`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.17.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
   Воркер анализа звучания: **0.2.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer:0016967`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.21.0
-  (`BodroMusic-0.21.0.apk` — release с R8; `BodroMusic-0.21.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.22.0
+  (`BodroMusic-0.22.0.apk` — release с R8; `BodroMusic-0.22.0-debug.apk` — debug, ставится рядом).
 - Установка bodrod и анализатора на NAS — только по [`docs/DEPLOY.md`](DEPLOY.md): образ `bodrod:local` собирается
   на NAS из скопированной папки, теги GHCR в YAML не пишутся.
 - ТЗ рекомендательной системы и чартов (пять задач): [`docs/reco/`](reco/README.md).
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
+
+**Задание 020** (app 0.22.0 / bodrod 0.17.0, релиз v0.22.0) — этап 1 из 5: плейлисты личные. Navidrome отдаёт
+администратору в `getPlaylists` и чужие приватные — приложение их скрывает (`Playlist.accessFor`); разделы «Мои» и
+«Общие», «Поделиться» = public, «Сохранить себе», порядок треков. Настройки волны и чартов — по учётке. Отчёт
+«Плейлисты на сервере» (`GET /api/v1/playlists/audit`); выгрузка Яндекса больше не пишет `.m3u8` (владельцем
+становился первый админ) — плейлисты создаются в учётке пользователя. Покрыто тестами, на телефоне не проверено.
 
 **Задание 019** (app 0.21.0 / bodrod 0.16.0, релиз v0.21.0): экран «Обслуживание библиотеки» — сводка цифрами
 (исправлено по типам, не исправлено по причинам), списком только карантин с «Вернуть», чипсы убраны
@@ -131,11 +137,11 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **156** — `core:subsonic` 53, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
+- Unit: **158** — `core:subsonic` 55, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
   `app` 21 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 11 — цикл воркера без Essentia, NaN/inf → null, ошибка трека не останавливает пачку;
   дочерний процесс (краш, зависание, перезапуск); декодирование ffmpeg (3 теста, без ffmpeg пропускаются — идут в CI).
-- Сервер (`server/tests`, pytest): **173** (задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+- Сервер (`server/tests`, pytest): **177** (задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
   `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
@@ -179,6 +185,11 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
 - Повторное нажатие на выбранную вкладку — возврат к корню раздела (`BodroRoot.onTabClick`).
 - «Популярные треки» на экране исполнителя — из Яндекс Музыки через bodrod (`/api/v1/artists/popular`): скачанные
   и нескачанные (с загрузкой). Без bodrod — своя история + `getTopSongs`.
+- **Плейлисты** (0.22.0): владелец — создатель. `PlaylistAccess.Own / Shared / Hidden`; новые — приватные;
+  «Поделиться» = `updatePlaylist(public)`; порядок — `createPlaylist(playlistId, songId…)` (замена состава).
+  Импорт из файлов Navidrome отдаёт первому админу — поэтому выгрузка Яндекса пишет `.m3u8` только с
+  `EXPORT_WRITE_M3U=true`, а по умолчанию приложение создаёт плейлисты из `GET /yandex/export/playlists`.
+- **Настройки учётки в DataStore**: волна и чарты — ключи `<имя>@<accountId>` (`SettingsRepository.Keys.PerAccount`).
 - **Токены Яндекса** (bodrod 0.13.0, `server/bodrod/sources/yandex_tokens.py`, `YandexTokens.resolve`): токен
   пользователя (`/secrets/yandex_accounts/<пользователь>`) → общий `YANDEX_MUSIC_TOKEN`. Заявка качается токеном того,
   кто её поставил (`pool:<user>` → владелец пула), фоновые (чарты, «метки» Lidarr) — общим, выгрузка — токеном
@@ -288,7 +299,9 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
-0. Задание 019: поставить bodrod 0.16.0 по `docs/DEPLOY.md` (robocopy `server` → «Остановить» → «Создать»), запустить
+0. Задание 020: поставить bodrod 0.17.0 по `docs/DEPLOY.md`; под админом открыть «Настройки → Плейлисты на
+   сервере» и решить по списку «Проверить владельца» ([020](history/020-personal-playlists.md)).
+   Задание 019: поставить bodrod 0.16.0 по `docs/DEPLOY.md` (robocopy `server` → «Остановить» → «Создать»), запустить
    обслуживание и проверить на телефоне сводку, карантин и обложки в папках `library/`
    ([019](history/019-maintenance-summary.md)).
    Задание 018: обновить `bodrod` до 0.15.0 (образ `9f5de2f`), задать привязку `YANDEX_USERS` (или в
@@ -367,6 +380,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 017 | 2026-10-20 | Анализатор: декодирование ffmpeg, анализ в дочернем процессе, повтор упавших и исключение после трёх неудач | bodrod 0.14.0, анализатор 0.2.0 | [017-analyzer-isolation.md](history/017-analyzer-isolation.md) |
 | 018 | 2026-10-23 | Рекомендации: привязка архива Яндекса к пользователю, ListenBrainz в шаблонах, серые источники с ошибкой, статусы кандидатов по источникам, зависшие заявки, ключ и счётчик анализа звучания | app 0.20.0, bodrod 0.15.0 | [018-reco-sources-fixes.md](history/018-reco-sources-fixes.md) |
 | 019 | 2026-10-23 | Обслуживание библиотеки: сводка цифрами вместо списка, карантин списком, без чипсов; `cover.jpg` в папках Lidarr из Cover Art Archive; пропуски Lidarr — не проблема | app 0.21.0, bodrod 0.16.0 | [019-maintenance-summary.md](history/019-maintenance-summary.md) |
+| 020 | 2026-10-23 | Этап 1/5: персональные плейлисты («Мои» / «Общие», «Поделиться», «Сохранить себе», порядок), волна и чарты по учётке, отчёт о владельцах плейлистов, плейлисты Яндекса в учётку пользователя | app 0.22.0, bodrod 0.17.0 | [020-personal-playlists.md](history/020-personal-playlists.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)

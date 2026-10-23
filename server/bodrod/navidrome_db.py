@@ -68,6 +68,20 @@ class NdAnnotation:
     starred_at: str | None = None
 
 
+@dataclass(frozen=True)
+class NdPlaylist:
+    id: str
+    name: str
+    owner: str | None
+    public: bool
+    song_count: int
+    """Файл, из которого Navidrome импортировал плейлист (`.m3u`, `.nsp`); `None` — создан через API или веб."""
+    path: str | None
+    """Умный плейлист (правила `.nsp`)."""
+    smart: bool
+    created_at: str | None = None
+
+
 class NavidromeDb:
     def __init__(self, path: str) -> None:
         self._path = path
@@ -101,6 +115,28 @@ class NavidromeDb:
         with self._connect() as conn:
             rows = conn.execute("SELECT id, user_name, is_admin FROM user ORDER BY user_name").fetchall()
         return [NdUser(r["id"], r["user_name"], bool(r["is_admin"])) for r in rows]
+
+    def playlists(self) -> list[NdPlaylist]:
+        """Все плейлисты сервера с владельцем — для отчёта администратору (Subsonic API показывает не всё)."""
+        with self._connect() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(playlist)")}
+            if not cols:
+                return []
+            opt = {c: (f"p.{c}" if c in cols else "NULL") for c in ("path", "rules", "song_count", "created_at")}
+            rows = conn.execute(
+                f"SELECT p.id, p.name, p.public, {opt['path']} AS path, {opt['rules']} AS rules, "
+                f"{opt['song_count']} AS song_count, {opt['created_at']} AS created_at, u.user_name AS owner "
+                f"FROM playlist p LEFT JOIN user u ON u.id = p.owner_id ORDER BY u.user_name, p.name"
+            ).fetchall()
+        return [
+            NdPlaylist(
+                id=r["id"], name=r["name"] or "", owner=r["owner"], public=bool(r["public"]),
+                song_count=int(r["song_count"] or 0), path=r["path"] or None,
+                smart=bool(r["rules"] and str(r["rules"]).strip() not in ("", "null", "{}")),
+                created_at=str(r["created_at"]) if r["created_at"] is not None else None,
+            )
+            for r in rows
+        ]  # fmt: skip
 
     def disliked(self, user_ids: list[str], require_all: bool) -> list[NdSong]:
         """Треки с дизлайком хотя бы одного (`require_all=False`) или всех перечисленных пользователей."""

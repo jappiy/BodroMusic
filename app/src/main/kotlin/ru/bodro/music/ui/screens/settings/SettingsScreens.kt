@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
@@ -85,6 +86,7 @@ fun SettingsScreen(
     onOpenCleanup: () -> Unit,
     onOpenBlocklist: () -> Unit,
     onOpenMaintenance: () -> Unit,
+    onOpenPlaylistAudit: () -> Unit = {},
     onOpenSources: () -> Unit,
     onOpenReco: () -> Unit = {},
     onOpenVersions: () -> Unit,
@@ -166,6 +168,15 @@ fun SettingsScreen(
                 R.string.settings_maintenance_summary,
                 onOpenMaintenance,
                 "settings-maintenance",
+            )
+        }
+        item {
+            SettingsEntry(
+                Icons.AutoMirrored.Rounded.QueueMusic,
+                R.string.playlist_audit_title,
+                R.string.settings_playlist_audit_summary,
+                onOpenPlaylistAudit,
+                "settings-playlist-audit",
             )
         }
         item {

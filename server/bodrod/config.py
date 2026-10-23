@@ -182,6 +182,9 @@ class Settings:
     lidarr_wanted_batch: int = 20
     """Массовая выгрузка из Яндекса: пауза между треками (секунды) — низкий приоритет."""
     export_delay_s: float = 5.0
+    """Писать плейлисты выгрузки файлами `.m3u8` в библиотеку. Navidrome отдаёт такие плейлисты первому
+    администратору, поэтому по умолчанию выключено: пользователь создаёт их в своём аккаунте из приложения."""
+    export_write_m3u: bool = False
 
     """Аккаунты Яндекс Музыки: логин (имя файла токена) → токен."""
     yandex_accounts: dict[str, str] = field(default_factory=dict)
@@ -362,6 +365,7 @@ class Settings:
             lidarr_wanted_retry_days=_int("LIDARR_WANTED_RETRY_DAYS", 7),
             lidarr_wanted_batch=_int("LIDARR_WANTED_BATCH", 20),
             export_delay_s=float(_opt("EXPORT_DELAY_S") or 5.0),
+            export_write_m3u=_bool("EXPORT_WRITE_M3U", False),
             yandex_accounts=yandex_accounts(),
             yandex_users=_pairs("YANDEX_USERS"),
             yandex_archive_dir=_opt("YANDEX_ARCHIVE_DIR"),

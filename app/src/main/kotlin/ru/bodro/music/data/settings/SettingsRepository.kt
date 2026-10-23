@@ -51,6 +51,10 @@ data class AppSettings(
     val chartsHidden: Set<String> = emptySet(),
     /** Пропуски раньше этого момента не учитываются волной («Сбросить статистику пропусков»). */
     val skipStatsResetAt: Long = 0,
+    /** Анимированный фон «Моей волны» (эквалайзер в цветах обложки). */
+    val backgroundAnimation: Boolean = true,
+    /** Выбранный режим волны на главной (id режима, пусто — «Моя волна»). Свой у каждой учётки. */
+    val waveModeId: String = "",
     val activeAccountId: Long? = null,
 ) {
     companion object {
@@ -82,7 +86,8 @@ class SettingsRepository @Inject constructor(
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         store.edit { prefs ->
-            val updated = transform(prefs.toSettings())
+            val before = prefs.toSettings()
+            val updated = transform(before)
             prefs[Keys.theme] = updated.themeMode.name
             prefs[Keys.coverColors] = updated.coverColors
             prefs[Keys.dynamicColor] = updated.dynamicColor
@@ -92,40 +97,55 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.resume] = updated.resumeOnStart
             prefs[Keys.downloadLiked] = updated.downloadLiked
             prefs[Keys.logLevel] = updated.logLevel.name
-            prefs[Keys.discovery] = updated.waveDiscoveryShare
-            prefs[Keys.character] = updated.waveCharacter.name
-            prefs[Keys.mood] = updated.waveMood.name
-            prefs[Keys.chartsOrder] = updated.chartsOrder.joinToString(",")
-            prefs[Keys.chartsHidden] = updated.chartsHidden.joinToString(",")
-            prefs[Keys.skipReset] = updated.skipStatsResetAt
+            prefs[Keys.backgroundAnimation] = updated.backgroundAnimation
+            // Волна и чарты — свои у каждой учётки: пишутся под той учёткой, для которой были прочитаны
+            // (при переключении учётки значения старой не попадают в новую).
+            if (updated.activeAccountId == before.activeAccountId) {
+                val owner = before.activeAccountId
+                prefs[Keys.discovery.of(owner)] = updated.waveDiscoveryShare
+                prefs[Keys.character.of(owner)] = updated.waveCharacter.name
+                prefs[Keys.mood.of(owner)] = updated.waveMood.name
+                prefs[Keys.waveMode.of(owner)] = updated.waveModeId
+                prefs[Keys.chartsOrder.of(owner)] = updated.chartsOrder.joinToString(",")
+                prefs[Keys.chartsHidden.of(owner)] = updated.chartsHidden.joinToString(",")
+                prefs[Keys.skipReset.of(owner)] = updated.skipStatsResetAt
+            }
             val active = updated.activeAccountId
             if (active == null) prefs.remove(Keys.activeAccount) else prefs[Keys.activeAccount] = active
         }
     }
 
-    private fun Preferences.toSettings() = AppSettings(
-        themeMode = enumOr(this[Keys.theme], ThemeMode.System),
-        coverColors = this[Keys.coverColors] ?: true,
-        dynamicColor = this[Keys.dynamicColor] ?: false,
-        quality = enumOr(this[Keys.quality], StreamQuality.Original).let { if (it.isOriginal) it else StreamQuality.Kbps128 },
-        transcodeCodec = enumOr(this[Keys.codec], TranscodeCodec.Mp3),
-        cacheSizeMb = this[Keys.cacheSize] ?: AppSettings.DEFAULT_CACHE_MB,
-        resumeOnStart = this[Keys.resume] ?: true,
-        downloadLiked = this[Keys.downloadLiked] ?: false,
-        logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
-        waveDiscoveryShare = this[Keys.discovery] ?: AppSettings.DEFAULT_DISCOVERY,
-        waveCharacter = enumOr(this[Keys.character], WaveCharacter.Mix),
-        waveMood = enumOr(this[Keys.mood], WaveMood.Any),
-        chartsOrder = this[Keys.chartsOrder]?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
-        chartsHidden = this[Keys.chartsHidden]?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty(),
-        skipStatsResetAt = this[Keys.skipReset] ?: 0,
-        activeAccountId = this[Keys.activeAccount],
-    )
+    private fun Preferences.toSettings(): AppSettings {
+        val account = this[Keys.activeAccount]
+
+        // До 0.22.0 волна была общей для всех учёток: старое значение — запасное для каждой учётки.
+        fun <T> perAccount(key: Keys.PerAccount<T>): T? = this[key.of(account)] ?: this[key.base]
+        return AppSettings(
+            themeMode = enumOr(this[Keys.theme], ThemeMode.System),
+            coverColors = this[Keys.coverColors] ?: true,
+            dynamicColor = this[Keys.dynamicColor] ?: false,
+            quality = enumOr(this[Keys.quality], StreamQuality.Original).let { if (it.isOriginal) it else StreamQuality.Kbps128 },
+            transcodeCodec = enumOr(this[Keys.codec], TranscodeCodec.Mp3),
+            cacheSizeMb = this[Keys.cacheSize] ?: AppSettings.DEFAULT_CACHE_MB,
+            resumeOnStart = this[Keys.resume] ?: true,
+            downloadLiked = this[Keys.downloadLiked] ?: false,
+            logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
+            backgroundAnimation = this[Keys.backgroundAnimation] ?: true,
+            waveDiscoveryShare = perAccount(Keys.discovery) ?: AppSettings.DEFAULT_DISCOVERY,
+            waveCharacter = enumOr(perAccount(Keys.character), WaveCharacter.Mix),
+            waveMood = enumOr(perAccount(Keys.mood), WaveMood.Any),
+            waveModeId = this[Keys.waveMode.of(account)].orEmpty(),
+            chartsOrder = perAccount(Keys.chartsOrder)?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
+            chartsHidden = perAccount(Keys.chartsHidden)?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty(),
+            skipStatsResetAt = perAccount(Keys.skipReset) ?: 0,
+            activeAccountId = account,
+        )
+    }
 
     private inline fun <reified T : Enum<T>> enumOr(value: String?, default: T): T =
         value?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default
 
-    private object Keys {
+    object Keys {
         val theme = stringPreferencesKey("theme")
         val coverColors = booleanPreferencesKey("cover_colors")
         val dynamicColor = booleanPreferencesKey("dynamic_color")
@@ -135,12 +155,19 @@ class SettingsRepository @Inject constructor(
         val resume = booleanPreferencesKey("resume_on_start")
         val downloadLiked = booleanPreferencesKey("download_liked")
         val logLevel = stringPreferencesKey("log_level")
-        val discovery = floatPreferencesKey("wave_discovery")
-        val character = stringPreferencesKey("wave_character")
-        val mood = stringPreferencesKey("wave_mood")
-        val chartsOrder = stringPreferencesKey("charts_order")
-        val chartsHidden = stringPreferencesKey("charts_hidden")
-        val skipReset = longPreferencesKey("skip_stats_reset_at")
+        val discovery = PerAccount(floatPreferencesKey("wave_discovery"), ::floatPreferencesKey)
+        val character = PerAccount(stringPreferencesKey("wave_character"), ::stringPreferencesKey)
+        val mood = PerAccount(stringPreferencesKey("wave_mood"), ::stringPreferencesKey)
+        val chartsOrder = PerAccount(stringPreferencesKey("charts_order"), ::stringPreferencesKey)
+        val chartsHidden = PerAccount(stringPreferencesKey("charts_hidden"), ::stringPreferencesKey)
+        val skipReset = PerAccount(longPreferencesKey("skip_stats_reset_at"), ::longPreferencesKey)
         val activeAccount = longPreferencesKey("active_account")
+        val backgroundAnimation = booleanPreferencesKey("background_animation")
+        val waveMode = PerAccount(stringPreferencesKey("wave_mode"), ::stringPreferencesKey)
+
+        /** Настройка учётки: ключ `wave_mood@12`; без учётки — общий ключ [base]. */
+        class PerAccount<T>(val base: Preferences.Key<T>, private val make: (String) -> Preferences.Key<T>) {
+            fun of(account: Long?): Preferences.Key<T> = if (account == null) base else make("${base.name}@$account")
+        }
     }
 }

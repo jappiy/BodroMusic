@@ -172,6 +172,12 @@ class DownloadsClient(
 
     suspend fun pauseExport(): ExportStatus = postEmpty(listOf("api", "v1", "yandex", "export", "pause"))
 
+    /** Плейлисты выгрузки — приложение создаёт их в аккаунте пользователя. */
+    suspend fun exportPlaylists(): List<ExportPlaylist> = get(listOf("api", "v1", "yandex", "export", "playlists"))
+
+    /** Отчёт администратору: владельцы плейлистов сервера. */
+    suspend fun playlistAudit(): PlaylistAudit = get(listOf("api", "v1", "playlists", "audit"))
+
     suspend fun exportArtists(): List<ExportArtist> = get(listOf("api", "v1", "yandex", "export", "artists"))
 
     suspend fun refreshExportArtists(): List<ExportArtist> = postEmpty(listOf("api", "v1", "yandex", "export", "artists", "refresh"))

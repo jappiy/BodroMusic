@@ -109,7 +109,8 @@ class LibraryRepository @Inject constructor(
         val newest = async { client.getAlbumList2(AlbumListType.Newest, size = 20) }
         val recent = async { client.getAlbumList2(AlbumListType.Recent, size = 20) }
         val artists = async { artists().shuffled().take(20) }
-        val playlists = async { client.getPlaylists() }
+        val me = connection.activeAccount?.username.orEmpty()
+        val playlists = async { client.getPlaylists().filter { it.accessFor(me) != ru.bodro.music.core.model.PlaylistAccess.Hidden } }
         HomeData(
             starredSongs = starred.await().songs.take(30),
             newestAlbums = newest.await().visible(),

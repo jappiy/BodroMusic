@@ -97,7 +97,10 @@ data class SourcesUi(
  * «Яндекс: метаданные», проверка подписки, обновление yt-dlp и массовая выгрузка из Яндекса.
  */
 @HiltViewModel
-class SourcesViewModel @Inject constructor(private val downloads: DownloadsRepository) : ViewModel() {
+class SourcesViewModel @Inject constructor(
+    private val downloads: DownloadsRepository,
+    private val playlists: ru.bodro.music.data.repository.PlaylistRepository,
+) : ViewModel() {
     private val _state = MutableStateFlow(SourcesUi())
     val state: StateFlow<SourcesUi> = _state.asStateFlow()
     private var pollJob: Job? = null
@@ -123,6 +126,29 @@ class SourcesViewModel @Inject constructor(private val downloads: DownloadsRepos
                 if (export.isActive) poll()
             }
             .onFailure { e -> _state.update { it.copy(exportError = e.toUiError()) } }
+    }
+
+    /**
+     * Плейлисты выгрузки Яндекса — в аккаунт текущего пользователя, приватными. Уже существующие (по названию)
+     * не трогаются; плейлисты без скачанных треков пропускаются.
+     */
+    fun importYandexPlaylists(onDone: (created: Int, skipped: Int) -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                val mine = playlists.myPlaylists().map { it.name.trim().lowercase() }.toSet()
+                var created = 0
+                var skipped = 0
+                for (item in downloads.exportPlaylists()) {
+                    if (item.songIds.isEmpty() || item.title.trim().lowercase() in mine) {
+                        skipped++
+                        continue
+                    }
+                    playlists.createWithIds(item.title, item.songIds)
+                    created++
+                }
+                created to skipped
+            }.onSuccess { (created, skipped) -> onDone(created, skipped) }.onFailure(onError)
+        }
     }
 
     private fun poll() {
@@ -255,6 +281,11 @@ fun SourcesScreen(onBack: () -> Unit, onOpenArtists: () -> Unit, viewModel: Sour
                         onStart = { likes, playlists, artists -> viewModel.startExport(likes, playlists, artists, onError) },
                         onPause = { viewModel.pauseExport(onError) },
                         onOpenArtists = onOpenArtists,
+                        onImportPlaylists = {
+                            viewModel.importYandexPlaylists(onDone = { created, skipped ->
+                                actions.showMessage(context.getString(R.string.export_playlists_imported, created, skipped))
+                            }, onError = onError)
+                        },
                     )
                 }
             }
@@ -426,6 +457,7 @@ private fun ExportCard(
     onStart: (likes: Boolean, playlists: Boolean, artists: Boolean) -> Unit,
     onPause: () -> Unit,
     onOpenArtists: () -> Unit,
+    onImportPlaylists: () -> Unit,
 ) {
     val context = LocalContext.current
     var likes by rememberSaveable(export?.likes) { mutableStateOf(export?.likes ?: true) }
@@ -485,6 +517,16 @@ private fun ExportCard(
                 enabled = !export.isActive,
             ) { artists = it }
             TextButton(onClick = onOpenArtists) { Text(stringResource(R.string.export_artists_choose)) }
+            if (!export.isActive) {
+                TextButton(onClick = onImportPlaylists, modifier = Modifier.testTag("export-import-playlists")) {
+                    Text(stringResource(R.string.export_playlists_import))
+                }
+                Text(
+                    stringResource(R.string.export_playlists_import_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (export.isActive) {
                 OutlinedButton(onClick = onPause, modifier = Modifier.testTag("export-pause")) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)

@@ -349,6 +349,39 @@ class ExportStart(ApiModel):
     artists: bool = True
 
 
+class ExportPlaylistOut(ApiModel):
+    """Плейлист Яндекса из выгрузки: id песен Navidrome по порядку; `missing` — треков ещё нет в библиотеке."""
+
+    title: str
+    song_ids: list[str] = Field(default_factory=list)
+    missing: int = 0
+    """Кто запускал выгрузку (чей это Яндекс)."""
+    owner: str | None = None
+
+
+class PlaylistAuditEntry(ApiModel):
+    id: str
+    name: str
+    owner: str | None = None
+    public: bool = False
+    song_count: int = 0
+    """Файл, из которого Navidrome импортировал плейлист; `None` — создан через API или веб."""
+    path: str | None = None
+    smart: bool = False
+    created_at: str | None = None
+    """Почему стоит проверить владельца: no_owner / imported_file / smart_file / yandex_export / explo."""
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PlaylistAudit(ApiModel):
+    users: list[str] = Field(default_factory=list)
+    admins: list[str] = Field(default_factory=list)
+    by_owner: dict[str, int] = Field(default_factory=dict)
+    playlists: list[PlaylistAuditEntry] = Field(default_factory=list)
+    """Сколько плейлистов стоит проверить."""
+    review: int = 0
+
+
 class ExportArtistOut(ApiModel):
     id: str
     name: str

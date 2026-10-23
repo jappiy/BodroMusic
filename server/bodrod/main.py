@@ -51,6 +51,7 @@ from .models import (
     EngineUpdate,
     ExportArtistOut,
     ExportArtistsUpdate,
+    ExportPlaylistOut,
     ExportStart,
     ExportStatus,
     FeedbackBatch,
@@ -64,6 +65,7 @@ from .models import (
     MaintenanceRunOut,
     MaintenanceStatus,
     MaintenanceSummary,
+    PlaylistAudit,
     PoolHidden,
     PoolItemOut,
     PoolOut,
@@ -77,6 +79,7 @@ from .models import (
     YandexLinksUpdate,
 )
 from .navidrome_db import NavidromeDb, NdSong
+from .playlist_audit import build_audit
 from .reco.analysis import AnalysisService
 from .reco.charts import ChartsService, ChartTrack, build_sources
 from .reco.engine import (
@@ -751,6 +754,23 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         except Exception as e:  # noqa: BLE001 — токен, сеть
             raise HTTPException(502, f"Яндекс не отдал «Мне нравится»: {e}") from e
         return artists_out(svc)
+
+    @app.get("/api/v1/yandex/export/playlists", response_model=list[ExportPlaylistOut], response_model_by_alias=True)
+    async def export_playlists(admin: Admin, svc: Svc) -> list[ExportPlaylistOut]:
+        """Плейлисты выгрузки — приложение создаёт их в аккаунте пользователя (а не файлами у первого админа)."""
+        export = require_export(svc)
+        index = svc.library_index
+
+        async def song_by_path(path: str) -> str | None:
+            return await index.song_by_path(path) if index is not None else None
+
+        return [ExportPlaylistOut(**p) for p in await export.playlists(song_by_path)]
+
+    @app.get("/api/v1/playlists/audit", response_model=PlaylistAudit, response_model_by_alias=True)
+    async def playlists_audit(admin: Admin, svc: Svc) -> PlaylistAudit:
+        if svc.navidrome_db is None:
+            raise HTTPException(409, "Не настроено: задайте NAVIDROME_DB")
+        return await asyncio.to_thread(build_audit, svc.navidrome_db)
 
     @app.put("/api/v1/yandex/export/artists", response_model=list[ExportArtistOut], response_model_by_alias=True)
     async def export_select(admin: Admin, svc: Svc, body: ExportArtistsUpdate) -> list[ExportArtistOut]:

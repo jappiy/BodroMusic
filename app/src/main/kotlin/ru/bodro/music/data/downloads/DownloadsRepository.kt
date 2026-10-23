@@ -192,6 +192,10 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun exportArtists(): List<ExportArtist> = client.exportArtists()
 
+    suspend fun exportPlaylists(): List<ru.bodro.music.core.downloads.ExportPlaylist> = client.exportPlaylists()
+
+    suspend fun playlistAudit(): ru.bodro.music.core.downloads.PlaylistAudit = client.playlistAudit()
+
     suspend fun refreshExportArtists(): List<ExportArtist> = client.refreshExportArtists()
 
     suspend fun selectExportArtists(ids: List<String>): List<ExportArtist> = client.selectExportArtists(ids)

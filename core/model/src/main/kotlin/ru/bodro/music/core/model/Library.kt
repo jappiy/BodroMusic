@@ -78,6 +78,27 @@ data class Playlist(
     val changed: String? = null,
 ) {
     fun isEditableBy(username: String): Boolean = owner == null || owner.equals(username, ignoreCase = true)
+
+    /**
+     * Чей плейлист для [username]. Администратор Navidrome в `getPlaylists` получает и чужие приватные плейлисты —
+     * их приложение не показывает ([PlaylistAccess.Hidden]).
+     */
+    fun accessFor(username: String): PlaylistAccess = when {
+        isEditableBy(username) -> PlaylistAccess.Own
+        public -> PlaylistAccess.Shared
+        else -> PlaylistAccess.Hidden
+    }
+}
+
+enum class PlaylistAccess {
+    /** Свой: создавать, переименовывать, менять состав и порядок, делиться, удалять. */
+    Own,
+
+    /** Чужой публичный: только чтение и «Сохранить себе». */
+    Shared,
+
+    /** Чужой приватный (видит только администратор сервера): не показывается. */
+    Hidden,
 }
 
 @Serializable

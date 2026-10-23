@@ -183,15 +183,23 @@ class SubsonicClient(
         listOf("name" to name) + songIds.map { "songId" to it },
     ) { response -> response.decodeChild<PlaylistDto?>("playlist") { null }?.toModel() }
 
+    /** Полностью заменяет состав плейлиста (`createPlaylist` с `playlistId`) — так меняется порядок треков. */
+    suspend fun replacePlaylistSongs(playlistId: String, songIds: List<String>) = call(
+        "createPlaylist",
+        listOf("playlistId" to playlistId) + songIds.map { "songId" to it },
+    ) { }
+
     suspend fun updatePlaylist(
         playlistId: String,
         name: String? = null,
         songIdsToAdd: List<String> = emptyList(),
         songIndexesToRemove: List<Int> = emptyList(),
+        public: Boolean? = null,
     ) {
         val params = buildList {
             add("playlistId" to playlistId)
             name?.let { add("name" to it) }
+            public?.let { add("public" to it.toString()) }
             songIdsToAdd.forEach { add("songIdToAdd" to it) }
             songIndexesToRemove.forEach { add("songIndexToRemove" to it.toString()) }
         }

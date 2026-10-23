@@ -3,8 +3,10 @@
 Отдельная очередь (`export_items`) с низким приоритетом: один трек за раз, пауза `EXPORT_DELAY_S`, уступает
 заявкам из приложения, ждёт, пока Яндекс недоступен (нет Плюса) или выключен. Состояние в БД — после перезапуска
 выгрузка продолжается с того же места. Уже имеющееся (положенное bodrod или найденное в Navidrome) пропускается.
-Список артистов собирается из лайков; кого брать целиком, отмечает администратор. Плейлисты в конце записываются
-файлами `.m3u8` в `<LIBRARY_DIR>/Плейлисты Яндекса/` — Navidrome импортирует их сам.
+Список артистов собирается из лайков; кого брать целиком, отмечает администратор. Плейлисты отдаются приложению
+(`playlists`) списком id песен Navidrome — приложение создаёт их в аккаунте пользователя приватными. Файлы `.m3u8`
+в `<LIBRARY_DIR>/Плейлисты Яндекса/` пишутся только с `EXPORT_WRITE_M3U=true`: Navidrome делает владельцем
+импортированного плейлиста первого администратора, а не того, чей это Яндекс.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import os
 import shutil
 import time
 from collections import Counter
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -253,7 +256,8 @@ class YandexExport:
 
     async def _finish(self) -> None:
         self._current = None
-        await asyncio.to_thread(self._write_playlists)
+        if self._settings.export_write_m3u:
+            await asyncio.to_thread(self._write_playlists)
         await self._scan()
         counts = self._store.export_counts()
         self._set(
@@ -262,6 +266,28 @@ class YandexExport:
             f"не удалось {counts.get('failed', 0)}",
         )
         log.info("Выгрузка из Яндекса завершена: %s", counts)
+
+    async def playlists(self, song_by_path: Callable[[str], Awaitable[str | None]]) -> list[dict[str, Any]]:
+        """Плейлисты выгрузки: название, id песен Navidrome по порядку и сколько треков ещё нет в библиотеке.
+        `owner` — кто запускал выгрузку (чей это Яндекс)."""
+        owner = self._state().get("owner")
+        result: list[dict[str, Any]] = []
+        playlists: dict[str, list[str]] = self._store.get_value(PLAYLISTS_KEY) or {}
+        for title, ids in playlists.items():
+            song_ids: list[str] = []
+            missing = 0
+            for track_id in ids:
+                song_id = None
+                for path in self._store.source_file_paths("yandex", track_id):
+                    song_id = await song_by_path(path)
+                    if song_id:
+                        break
+                if song_id and song_id not in song_ids:
+                    song_ids.append(song_id)
+                elif not song_id:
+                    missing += 1
+            result.append({"title": title, "song_ids": song_ids, "missing": missing, "owner": owner})
+        return result
 
     def _write_playlists(self) -> None:
         library = self._settings.library_dir
