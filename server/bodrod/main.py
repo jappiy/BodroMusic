@@ -28,6 +28,7 @@ from .metadata.facts import ArtistFacts
 from .metadata.lastfm import LastFmClient, LastFmProvider
 from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
+from .metadata.similar import SimilarTracks
 from .models import (
     AnalysisJobs,
     AnalysisResult,
@@ -141,6 +142,7 @@ class Services:
     yandex_links: YandexLinks | None = None
     facts: ArtistFacts | None = None
     wave: WaveService | None = None
+    similar: SimilarTracks | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -341,6 +343,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         wave=WaveService(store, navidrome_db, analysis, pool_prefix, settings.wave_modes_file, lastfm)
         if navidrome_db is not None and settings.wave_enabled
         else None,
+        similar=SimilarTracks(lastfm, library_index.in_library, analysis, navidrome_db),
     )
 
 
@@ -500,6 +503,17 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     async def wave_report(user: User, svc: Svc) -> dict[str, Any]:
         """Какие признаки считаются, сколько треков проанализировано, сколько попадает в каждый режим."""
         return await require_wave(svc).report()
+
+    @app.get("/api/v1/tracks/similar", response_model=list[TrackCandidate], response_model_by_alias=True)
+    async def tracks_similar(
+        user: User,
+        svc: Svc,
+        artist: Annotated[str, Query(min_length=1, max_length=200)],
+        title: Annotated[str, Query(min_length=1, max_length=300)],
+        song_id: Annotated[str | None, Query(alias="songId", max_length=100)] = None,
+    ) -> list[TrackCandidate]:
+        """«Похожие треки» в плеере: Last.fm (с пометкой «есть в библиотеке») и похожие по звучанию."""
+        return await svc.similar.similar(artist, title, song_id) if svc.similar is not None else []
 
     @app.get("/api/v1/artists/facts", response_model=ArtistFactsOut, response_model_by_alias=True)
     async def artist_facts(

@@ -94,6 +94,16 @@
 
     <!-- Волна -->
     <string name="wave_title">Моя волна</string>
+    <string name="player_similar">Похожие треки</string>
+    <string name="player_popular">Популярные треки исполнителя</string>
+    <string name="player_similar_source">Похожее на «%1$s»</string>
+    <string name="player_download_all">Скачать все (%1$d)</string>
+    <string name="player_download_all_queued">В очередь на скачивание: %1$d</string>
+    <string name="player_add_here">Добавить сюда</string>
+    <string name="player_all_playlists">Все плейлисты и новый плейлист</string>
+    <string name="player_artist_card_hint">Исполнитель · все треки и скачивание</string>
+    <string name="player_artist_favorite">В избранное</string>
+    <string name="player_sound">Качество звука</string>
     <string name="wave_settings">Настройки волны</string>
     <string name="wave_settings_hint">Настройки сочетаются с режимом: например, «Незнакомое» + «Спокойное». Применяются к следующим трекам волны.</string>
     <string name="wave_mode_reset">Сбросить режим</string>

@@ -1,7 +1,12 @@
 package ru.bodro.music.ui.screens.player
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,10 +25,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bedtime
@@ -51,6 +57,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +103,7 @@ import ru.bodro.music.ui.app.LocalNavigator
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.util.formatMs
 
@@ -115,8 +124,13 @@ fun FullPlayerScreen(
     sharedScope: SharedTransitionScope,
     visibilityScope: AnimatedVisibilityScope,
     viewModel: PlayerViewModel = hiltViewModel(),
+    extrasViewModel: PlayerExtrasViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val extras by extrasViewModel.extras.collectAsStateWithLifecycle()
+    val requests by extrasViewModel.requests.collectAsStateWithLifecycle()
+    val canDownload by extrasViewModel.canDownload.collectAsStateWithLifecycle()
+    val appSettings by extrasViewModel.settings.collectAsStateWithLifecycle()
     val poolIds by viewModel.poolSongIds.collectAsStateWithLifecycle()
     val song = state.currentSong ?: return
     val actions = LocalAppActions.current
@@ -129,6 +143,36 @@ fun FullPlayerScreen(
     )
     var sheet by rememberSaveable { mutableStateOf(PlayerSheet.None) }
     val collapseOnPull = rememberCollapseOnPull(onCollapse)
+    val navigator = LocalNavigator.current
+    val similarTitle = stringResource(R.string.player_similar_source, song.title)
+    LaunchedEffect(extrasViewModel) { extrasViewModel.messages.collect { actions.showMessage(it) } }
+    val artistLiked = extras.artist?.let { LocalReactions.current.artistLiked(it.id, it.starred) } == true
+    val extrasActions = remember(extrasViewModel, song.id) {
+        PlayerExtrasActions(
+            onOpenArtist = navigator::openArtist,
+            onToggleArtistLike = extrasViewModel::toggleArtistLike,
+            callbacks = DiscoverCallbacks(
+                onDownload = extrasViewModel::download,
+                onDownloadArtist = {},
+                onSelectArtist = {},
+                onPlay = { id -> extrasViewModel.withSong(id) { actions.play(listOf(it), 0, extrasSource(similarTitle)) } },
+                onRetry = {},
+                onShowMore = {},
+            ),
+            onTrackMenu = { track ->
+                val id = track.librarySongId ?: requests[track.key]?.songId
+                if (id != null) extrasViewModel.withSong(id) { actions.showSongMenu(it) }
+            },
+            onDownloadAll = extrasViewModel::downloadAll,
+            onAddTo = { playlist -> extrasViewModel.addTo(playlist, song) },
+            onAllPlaylists = { actions.addToPlaylist(listOf(song)) },
+            onSleepTimer = { sheet = PlayerSheet.Sleep },
+            onQuality = extrasViewModel::setQuality,
+        )
+    }
+    val extrasContent: LazyListScope.() -> Unit = {
+        playerExtras(extras, requests, canDownload, artistLiked, state.sleepTimer != null, appSettings.quality, palette, extrasActions)
+    }
 
     Box(
         Modifier
@@ -146,6 +190,7 @@ fun FullPlayerScreen(
                     onSleep = { sheet = PlayerSheet.Sleep },
                     onWave = { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) },
                     onSongActions = { actions.showSongMenu(song) },
+                    onQueue = { sheet = PlayerSheet.Queue },
                 )
             }
             val cover: @Composable () -> Unit = {
@@ -185,35 +230,40 @@ fun FullPlayerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         cover()
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .nestedScroll(collapseOnPull)
-                                .verticalScroll(rememberScrollState())
-                                .padding(vertical = 8.dp),
-                            verticalArrangement = Arrangement.Center,
-                        ) { controls() }
+                        // Справа — управление и прокручиваемые блоки (похожие, популярные, плейлисты).
+                        LazyColumn(Modifier.weight(1f).fillMaxHeight().nestedScroll(collapseOnPull).testTag("player-scroll")) {
+                            item(key = "controls") { Box(Modifier.padding(vertical = 8.dp)) { controls() } }
+                            extrasContent()
+                        }
                     }
                 }
             } else {
                 val screenHeight = maxHeight
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .nestedScroll(collapseOnPull)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    // Пока всё помещается — блоки распределены по высоте экрана; не помещается — прокрутка.
-                    Column(
-                        Modifier.fillMaxWidth().heightIn(min = screenHeight),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        header()
-                        cover()
-                        Box(Modifier.padding(top = 16.dp, bottom = 12.dp)) { controls() }
+                val list = rememberLazyListState()
+                LazyColumn(Modifier.fillMaxSize().nestedScroll(collapseOnPull).testTag("player-scroll"), state = list) {
+                    // Основной блок — на высоту экрана (блоки распределены по ней); ниже — похожие, популярные, плейлисты.
+                    item(key = "main") {
+                        Column(
+                            Modifier.fillMaxWidth().heightIn(min = screenHeight),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            header()
+                            cover()
+                            Box(Modifier.padding(top = 16.dp, bottom = 12.dp)) { controls() }
+                        }
                     }
+                    extrasContent()
+                }
+                // Основной блок ушёл за экран — внизу мини-плеер.
+                val mainGone by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
+                AnimatedVisibility(
+                    visible = mainGone,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    PlayerMiniBar(state, palette, onTogglePlay = viewModel::togglePlay)
                 }
             }
         }
@@ -305,6 +355,7 @@ private fun PlayerHeader(
     onSleep: () -> Unit,
     onWave: () -> Unit,
     onSongActions: () -> Unit,
+    onQueue: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().height(HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
@@ -320,6 +371,9 @@ private fun PlayerHeader(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
+        IconButton(onClick = onQueue, modifier = Modifier.testTag("player-header-queue")) {
+            Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = stringResource(R.string.player_queue), tint = palette.content)
+        }
         Box {
             IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("player-menu")) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.action_more), tint = palette.content)
@@ -507,6 +561,56 @@ private fun PlayerControls(state: PlayerUiState, palette: PlayerPalette, viewMod
             iconTag = if (liked) "icon-liked" else "icon-not-liked",
         ) { tint, description ->
             Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, contentDescription = description, tint = tint)
+        }
+    }
+}
+
+/** Мини-плеер внизу полноэкранного плеера, когда основной блок прокручен за экран: обложка, название, ♡, пауза. */
+@Composable
+private fun PlayerMiniBar(state: PlayerUiState, palette: PlayerPalette, onTogglePlay: () -> Unit) {
+    val song = state.currentSong ?: return
+    val actions = LocalAppActions.current
+    val liked = LocalReactions.current.of(song) == Reaction.Liked
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .shadow(12.dp, RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .background(palette.background)
+            .padding(8.dp)
+            .testTag("player-mini-bar"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CoverImage(song.coverArt, Modifier.size(44.dp), sizeHint = 88.dp, shape = RoundedCornerShape(10.dp), kind = CoverKind.Song)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(
+                song.title,
+                color = palette.content,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                song.artist.orEmpty(),
+                color = palette.content.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+            )
+        }
+        IconButton(onClick = { actions.toggleLike(song) }) {
+            Icon(
+                if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = stringResource(if (liked) R.string.action_unlike else R.string.action_like),
+                tint = if (liked) LikeRed else palette.content,
+            )
+        }
+        IconButton(onClick = onTogglePlay) {
+            Icon(
+                if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
+                tint = palette.content,
+            )
         }
     }
 }

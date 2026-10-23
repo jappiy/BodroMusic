@@ -192,6 +192,9 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun exportArtists(): List<ExportArtist> = client.exportArtists()
 
+    suspend fun similarTracks(artist: String, title: String, songId: String?): List<DiscoverTrack> =
+        client.similarTracks(artist, title, songId)
+
     suspend fun waveNext(request: ru.bodro.music.core.downloads.WaveNextRequest) = client.waveNext(request)
 
     suspend fun waveModes() = client.waveModes()

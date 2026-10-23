@@ -72,6 +72,12 @@ class DownloadsClient(
 
     suspend fun waveReport(): WaveReport = get(listOf("api", "v1", "wave", "report"))
 
+    /** «Похожие треки» в плеере: Last.fm с пометкой «есть в библиотеке» и похожие по звучанию (bodrod 0.20.0+). */
+    suspend fun similarTracks(artist: String, title: String, songId: String?): List<DiscoverTrack> = get(
+        listOf("api", "v1", "tracks", "similar"),
+        listOfNotNull("artist" to artist, "title" to title, songId?.let { "songId" to it }),
+    )
+
     /** Факт о треке или исполнителе для главной (bodrod 0.18.0+). */
     suspend fun artistFacts(artist: String, title: String?): ArtistFacts =
         get(listOf("api", "v1", "artists", "facts"), listOfNotNull("artist" to artist, title?.let { "title" to it }))

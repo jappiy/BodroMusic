@@ -22,8 +22,12 @@ import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
+import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.downloads.ArtistFacts
+import ru.bodro.music.core.downloads.DiscoverTrack
 import ru.bodro.music.core.downloads.WaveModeInfo
+import ru.bodro.music.core.model.Artist
+import ru.bodro.music.core.model.Playlist
 import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
@@ -39,6 +43,11 @@ import ru.bodro.music.ui.app.SongMenuContext
 import ru.bodro.music.ui.components.LocalCoverArtUrls
 import ru.bodro.music.ui.screens.home.WaveHome
 import ru.bodro.music.ui.screens.home.rememberModeCards
+import ru.bodro.music.ui.screens.player.PlayerExtrasActions
+import ru.bodro.music.ui.screens.player.PlayerExtrasUi
+import ru.bodro.music.ui.screens.player.PlayerPalette
+import ru.bodro.music.ui.screens.player.playerExtras
+import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.theme.BodroTheme
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.theme.PlayerColors
@@ -91,31 +100,57 @@ class WaveHomeScreenshotTest {
     @Test
     fun `unfolded - wave playing`() = shoot("home-unfolded", "w841dp-h764dp-land-xhdpi", playing, AppSettings())
 
-    private fun shoot(name: String, qualifiers: String, player: PlayerUiState, settings: AppSettings) {
-        RuntimeEnvironment.setQualifiers(qualifiers)
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        activity.setContent {
-            Providers {
-                Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    LazyColumn {
-                        item {
-                            WaveHome(
-                                player = player,
-                                settings = settings.copy(backgroundAnimation = false),
-                                facts = facts,
-                                modes = rememberModeCards(modes),
-                                onTogglePlay = {},
-                                onNext = {},
-                                onPrevious = {},
-                                onSelectMode = {},
-                                onOpenSettings = {},
-                                onOpenSearch = {},
-                            )
-                        }
-                    }
+    @Test
+    fun `player extras - similar, popular, playlists`() = render("player-extras", "w411dp-h891dp-port-xxhdpi") {
+        val palette = PlayerPalette(Color(0xFF3B2A6B), Color.White, Color(0xFFFFB627))
+        val similar = listOf(
+            DiscoverTrack("Звезда по имени Солнце", "Кино", source = "lastfm", sourceId = "1", librarySongId = "s2"),
+            DiscoverTrack("Город", "Алиса", source = "lastfm", sourceId = "2"),
+            DiscoverTrack("Выхода нет", "Сплин", source = "lastfm", sourceId = "3"),
+        )
+        val noop = DiscoverCallbacks({}, {}, {}, {}, {}, {})
+        val actions = PlayerExtrasActions({}, { _, _ -> }, noop, {}, {}, {}, {}, {}, {})
+        Surface(Modifier.fillMaxSize(), color = palette.background) {
+            LazyColumn {
+                playerExtras(
+                    PlayerExtrasUi("s1", Artist("a1", "Кино"), similar, similar.take(2), listOf(Playlist("p1", "Дорога"))),
+                    emptyMap(),
+                    canDownload = true,
+                    artistLiked = true,
+                    sleepActive = false,
+                    quality = StreamQuality.Original,
+                    palette = palette,
+                    actions = actions,
+                )
+            }
+        }
+    }
+
+    private fun shoot(name: String, qualifiers: String, player: PlayerUiState, settings: AppSettings) = render(name, qualifiers) {
+        Surface(Modifier.fillMaxSize(), color = Color.Black) {
+            LazyColumn {
+                item {
+                    WaveHome(
+                        player = player,
+                        settings = settings.copy(backgroundAnimation = false),
+                        facts = facts,
+                        modes = rememberModeCards(modes),
+                        onTogglePlay = {},
+                        onNext = {},
+                        onPrevious = {},
+                        onSelectMode = {},
+                        onOpenSettings = {},
+                        onOpenSearch = {},
+                    )
                 }
             }
         }
+    }
+
+    private fun render(name: String, qualifiers: String, content: @Composable () -> Unit) {
+        RuntimeEnvironment.setQualifiers(qualifiers)
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        activity.setContent { Providers(content) }
         shadowOf(Looper.getMainLooper()).idle()
         val root = activity.window.decorView
         assertTrue(root.width > 0 && root.height > 0)
