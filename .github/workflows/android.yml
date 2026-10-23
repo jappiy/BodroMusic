@@ -100,6 +100,18 @@ jobs:
           script: |
             free -m
             ./gradlew connectedDebugAndroidTest --continue --no-daemon -Dorg.gradle.jvmargs=-Xmx2g -Dkotlin.compiler.execution.strategy=in-process
+      - name: Failed tests as annotations
+        # Текст упавших тестов — в аннотации проверки: их видно через публичный API без входа на GitHub.
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          for path in glob.glob("app/build/outputs/androidTest-results/connected/**/*.xml", recursive=True):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for bad in list(case.findall("failure")) + list(case.findall("error")):
+                      text = (bad.text or bad.get("message") or "").strip().replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                      print(f"::error title={case.get('classname')}.{case.get('name')}::{text[:3000]}")
+          PY
       - name: Upload instrumented reports
         if: always()
         uses: actions/upload-artifact@v4
