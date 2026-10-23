@@ -3,8 +3,8 @@
 - **Дата:** 2026-10-23
 - **Версии:** приложение 0.20.0 (`versionCode 21`), bodrod 0.15.0
 - **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.20.0
-- **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:<хеш>` — см. «Что нужно сделать на сервере»
-- **Статус:** реализовано; pytest (171) и сборка APK. На реальном сервере не проверено.
+- **Образ bodrod:** `ghcr.io/jappiy/bodromusic-server:9f5de2f`
+- **Статус:** реализовано; pytest (171), локальная сборка, CI зелёный на `9f5de2f`, релиз v0.20.0. На реальном сервере и телефоне не проверено.
 
 ## Задание
 
@@ -100,7 +100,7 @@
 
 ## Что нужно сделать на сервере
 
-1. Обновить образ `bodrod` до тега этого задания (`docs/INFRA.md`).
+1. Обновить образ `bodrod` до `ghcr.io/jappiy/bodromusic-server:9f5de2f`.
 2. Привязка аккаунтов Яндекса — одно из двух:
    - в `/volume1/docker/bodrod/secrets/env` (его читает entrypoint) добавить
      `export YANDEX_USERS=<логин_navidrome>:jappi,<логин_navidrome_жены>:kalainidi`;
