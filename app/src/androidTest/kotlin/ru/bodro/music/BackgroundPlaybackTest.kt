@@ -98,7 +98,9 @@ class BackgroundPlaybackTest {
         Thread.sleep(2_000)
 
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        compose.waitForTag("mini-player", timeoutMs = 20_000)
+        // На «Главной» мини-плеера нет (волна на весь экран) — ждём восстановленную очередь в самом плеере.
+        compose.waitForTag("home-screen", timeoutMs = 20_000)
+        compose.waitUntil(20_000) { player.state.value.currentSong?.id == "s-2" }
         val restored = player.state.value
         assertTrue("same track: ${restored.currentSong?.id}", restored.currentSong?.id == "s-2")
         assertTrue("position ±2 s: ${restored.positionMs} vs $savedPosition", kotlin.math.abs(restored.positionMs - savedPosition) <= 2_000)

@@ -30,6 +30,10 @@ class LogsAndVersionsTest {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.login(server)
         compose.waitForTag("home-screen")
+        // Подборки библиотеки (запрос getAlbumList2 для журнала) — на вкладке «Чарты», главная — только волна.
+        compose.onNodeWithTag("tab-charts").performClick()
+        compose.waitForTag("charts-tab")
+        compose.waitUntil(15_000) { server.calls("getAlbumList2").isNotEmpty() }
         compose.onNodeWithTag("tab-settings").performClick()
         compose.waitForTag("settings-screen")
     }
