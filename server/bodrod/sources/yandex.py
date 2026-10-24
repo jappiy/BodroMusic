@@ -270,6 +270,16 @@ class YandexMusicApi:
 
         return await self._call(run)
 
+    async def artist_description(self, artist_id: str) -> str | None:
+        """Описание исполнителя (русский текст Яндекс Музыки) — для короткого текста на главной."""
+
+        def run(c: Any) -> str | None:
+            info = c.artists_brief_info(artist_id)
+            description = getattr(getattr(info, "artist", None), "description", None)
+            return getattr(description, "text", None) or None
+
+        return await self._call(run)
+
     async def lyrics(self, track_id: str) -> str | None:
         def run(c: Any) -> str | None:
             lyrics = c.tracks_lyrics(track_id, format_="TEXT")

@@ -246,10 +246,20 @@ data class WaveReport(
     val modes: Map<String, Int> = emptyMap(),
 )
 
-/** Факт о треке или исполнителе (Last.fm) для главной: одна фраза и теги; пусто — строка не показывается. */
+/**
+ * Короткий текст о треке или исполнителе для главной (bodrod 0.21.0+: только русский, законченная фраза).
+ * [variants] — все подходящие фразы от лучшей к запасным: показывается первая, которая помещается целиком.
+ * Старый сервер присылает только [fact] (может быть английским) — его варианты = `[fact]`.
+ */
 @Serializable
-data class ArtistFacts(val fact: String? = null, val tags: List<String> = emptyList(), val source: String? = null) {
-    val isEmpty: Boolean get() = fact.isNullOrBlank() && tags.isEmpty()
+data class ArtistFacts(
+    val fact: String? = null,
+    val variants: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val source: String? = null,
+) {
+    val texts: List<String> get() = variants.ifEmpty { listOfNotNull(fact?.takeIf { it.isNotBlank() }) }
+    val isEmpty: Boolean get() = texts.isEmpty()
 }
 
 /** Плейлист выгрузки из Яндекса: id песен Navidrome по порядку; [missing] — треков ещё нет в библиотеке. */
@@ -341,13 +351,32 @@ data class QuarantineItem(
     val expiresAt: Long = 0,
 )
 
-/** Сводка последнего запуска: исправлено по типам, не исправлено по причинам и всё, что сейчас в карантине. */
+/** Поле тега: было → стало («название», «Ñåêðåò», «Секрет»). */
+@Serializable
+data class TagChange(val field: String = "", val before: String = "", val after: String = "")
+
+/** Исправленная кодировка тегов файла (bodrod 0.21.0+); [id] — для отката. */
+@Serializable
+data class EncodingFix(
+    val id: Long,
+    val path: String = "",
+    val changes: List<TagChange> = emptyList(),
+    val source: String = "",
+    val reverted: Boolean = false,
+)
+
+/**
+ * Сводка последнего запуска: исправлено по типам, не исправлено по причинам и всё, что сейчас в карантине.
+ * [encoding] — исправления кодировки тегов («было → стало»), [encodingManual] — файлы на ручную проверку.
+ */
 @Serializable
 data class MaintenanceSummary(
     val run: MaintenanceRun? = null,
     val fixed: List<MaintenanceCount> = emptyList(),
     val unresolved: List<MaintenanceCount> = emptyList(),
     val quarantine: List<QuarantineItem> = emptyList(),
+    val encoding: List<EncodingFix> = emptyList(),
+    val encodingManual: List<String> = emptyList(),
 )
 
 /** Пользователь Navidrome для вкладок «Не нравятся …» (служебные учётки сервер не отдаёт). */

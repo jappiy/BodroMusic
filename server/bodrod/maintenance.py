@@ -15,6 +15,12 @@
    «Объединение исполнителя»; разные исполнители (Sting и The Police) не склеиваются.
 4. **Чужой релиз** — исполнитель в тегах большинства треков папки не совпадает с папкой исполнителя
    (релиз скачан по совпадению названия). Только отчёт.
+0. **Кодировка тегов** (идёт первой) — русский текст в Windows-1251, прочитанный как Latin-1
+   («Ñåêðåò» → «Секрет»): название, исполнитель, альбом, исполнитель альбома, жанр, композитор (`encoding.py`).
+   Исправленное пишется в файл (MP3 — ID3v2.4 UTF-8, ID3v1 удаляется), исходные значения — в журнал
+   `tag_encoding_fixes` (откат из приложения). Невосстановимое («????», смешанный мусор) — поиск по AcoustID
+   (если есть `fpcalc` и ключ), затем по цепочке `TAG_PROVIDERS` по имени файла и папке; не нашлось — в отчёт
+   «требует ручной проверки».
 5. **Теги и обложки** — у треков без исполнителя, названия или альбома недостающие теги дописываются по цепочке
    источников (`TAG_PROVIDERS`), если совпадение надёжное (оценка ≥ 0,85, длительность ±3 с). Папке альбома без
    обложки добавляется `cover.jpg` (`COVER_PROVIDERS`); в папках россыпи обложка вшивается в каждый файл по альбому
@@ -43,7 +49,7 @@ import shutil
 import time
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -52,8 +58,16 @@ from .clients.lidarr import LidarrClient
 from .clients.navidrome import NavidromeClient
 from .config import Settings
 from .db import Store, now_ms
+from .encoding import FIELD_NAMES, EncodingJournal, acoustid_lookup, read_values, repair_fields, revert, write_values
 from .metadata.lookup import MATCH_THRESHOLD, SOURCE_NAMES, LookupMatch, LookupProvider, chain_version
-from .models import MaintenanceCount, MaintenanceRunOut, MaintenanceSummary, QuarantineItemOut
+from .models import (
+    EncodingFixOut,
+    MaintenanceCount,
+    MaintenanceRunOut,
+    MaintenanceSummary,
+    QuarantineItemOut,
+    TagChangeOut,
+)
 from .navidrome_db import NavidromeDb, NdSong
 from .placement import embed_cover, read_embedded_cover
 from .text import main_artist, normalize, same_artist, similarity_any
@@ -67,6 +81,7 @@ KIND_ARTIST = "artist_merge"
 KIND_TAGS = "tags"
 KIND_COVER = "cover"
 KIND_MISMATCH = "mismatch"
+KIND_ENCODING = "encoding"
 
 REASONS = {
     "short_version": "Короткие файлы, не похожие на обрезок (другая версия, интро, интервью)",
@@ -75,6 +90,7 @@ REASONS = {
     "cover_not_found": "Нет обложки, в источниках не найдена",
     "lidarr_cover_not_found": "Папка Lidarr без обложки: нет MBID релиза или обложки в Cover Art Archive",
     "mismatch": "Чужой релиз в папке исполнителя",
+    "encoding_manual": "Битая кодировка тегов: восстановить не удалось, нужна ручная проверка",
 }
 """Почему не исправлено: код → заголовок для сводки в приложении."""
 FIXED = {
@@ -84,6 +100,7 @@ FIXED = {
     "artists_merged": "Объединение исполнителя",
     "tags_fixed": "Дописаны теги",
     "covers_added": "Добавлены обложки",
+    "encoding_fixed": "Исправлена кодировка тегов",
 }
 """Что исправлено: ключ статистики → заголовок для сводки."""
 
@@ -99,6 +116,7 @@ STAT_KEYS = (
     "tags_problems",
     "covers_added",
     "covers_missing",
+    "encoding_fixed",
     "mismatches",
     "quarantine_purged",
     "attention",
@@ -131,6 +149,8 @@ CONTAINER_DIRS = LOOSE_DIRS | {
 VARIOUS = {"various artists", "various", "va", "сборник", "разные исполнители"}
 
 DUP_DURATION_S = 3.0
+ENCODING_LIST_LIMIT = 300
+"""Сколько исправлений кодировки и файлов на ручную проверку отдаёт сводка."""
 TRUNCATED_SHARE = 0.6
 """Копия короче полной на 40% и больше — кандидат в обрезки."""
 RADIO_SHARE = 0.5
@@ -263,6 +283,7 @@ class MaintenanceService:
         self.cover_chain = cover_chain
         self.tag_chain = [p for p in tag_chain if p.tags]
         self._fetch_cover = cover_fetcher
+        self.encoding_journal = EncodingJournal(store)
         self._lidarr_artists: dict[Path, int] = {}
         self._lock = lock or asyncio.Lock()
         self._task: asyncio.Task[Any] | None = None
@@ -324,6 +345,7 @@ class MaintenanceService:
                 await asyncio.to_thread(self._purge_quarantine, ctx)
                 files = await self._load()
                 ctx.stats["songs"] = len(files)
+                await self._fix_encoding(ctx, files)
                 self._index(ctx, files)
                 files = await self._short_files(ctx, files)
                 files = await self._duplicates(ctx, files)
@@ -811,6 +833,116 @@ class MaintenanceService:
 
     # endregion
 
+    # region Кодировка тегов
+
+    async def _fix_encoding(self, ctx: RunContext, files: list[LibraryFile]) -> None:
+        """Битая кодировка. Идёт первой: дубли и теги дальше сравниваются уже по исправленным названиям."""
+        reverted = self.encoding_journal.reverted_paths()
+        for f in files:
+            if f.pinned or str(f.local) in reverted or not f.local.exists():
+                continue
+            key = f"encoding:{f.local}"
+            signature = _signature(f.local)
+            if self._known(ctx, key, signature):
+                continue
+            values = await asyncio.to_thread(read_values, f.local)
+            if values is None:
+                continue  # не читается — это отчёт шага «Теги и обложки»
+            fixed, manual = repair_fields(values)
+            sources = dict.fromkeys(fixed, "")
+            if manual:
+                found, source = await self._identify(ctx, f, values, manual)
+                fixed.update(found)
+                sources.update(dict.fromkeys(found, source))
+                manual = [k for k in manual if k not in found]
+            if fixed:
+                await self._apply_encoding(ctx, f, values, fixed, sources)
+                signature = _signature(f.local)
+            if manual:
+                shown = "; ".join(f"{FIELD_NAMES[k]}: «{'; '.join(values[k])}»" for k in manual)
+                if self._report_once(ctx, key, signature, "encoding_manual"):
+                    self._action(ctx, KIND_ENCODING, False, f"Битая кодировка, восстановить не удалось ({shown})", f)
+            else:
+                self._mark_checked(ctx, key, signature)
+
+    async def _identify(
+        self, ctx: RunContext, f: LibraryFile, values: dict[str, list[str]], manual: list[str]
+    ) -> tuple[dict[str, list[str]], str]:
+        """Невосстановимые название / исполнитель / альбом: AcoustID, затем цепочка тегов по имени файла и папке."""
+        wanted = [k for k in manual if k in ("title", "artist", "album")]
+        if not wanted:
+            return {}, ""
+        found = await acoustid_lookup(f.local, self._settings.acoustid_api_key or "")
+        source = "AcoustID"
+        if found is None:
+            clean = {k: (values.get(k) or [""])[0] for k in ("artist", "title", "album") if k not in manual}
+            guess = self._guess(f, clean)
+            match = await self._lookup(
+                ctx, self.tag_chain, guess["artist"], guess["title"], guess["album"], f.song.duration_s
+            )
+            if match is None:
+                return {}, ""
+            found = {"artist": match.artist, "title": match.title, "album": match.album or ""}
+            source = match.source_name
+        return {k: [found[k]] for k in wanted if found.get(k)}, source
+
+    async def _apply_encoding(
+        self,
+        ctx: RunContext,
+        f: LibraryFile,
+        before: dict[str, list[str]],
+        fixed: dict[str, list[str]],
+        sources: dict[str, str],
+    ) -> None:
+        """`sources[поле]` — откуда значение: пусто — перекодировка, иначе имя источника (AcoustID, MusicBrainz…)."""
+        if not ctx.dry_run:
+            try:
+                await asyncio.to_thread(write_values, f.local, fixed)
+            except Exception as e:  # noqa: BLE001 — файл только для чтения или формат без поддержки
+                log.warning("Не удалось исправить кодировку тегов %s: %s", f.local, e)
+                return
+            source = ", ".join(sorted({v or "cp1251" for v in sources.values()}))
+            self.encoding_journal.add(ctx.run_id, str(f.local), {k: before.get(k) or [] for k in fixed}, fixed, source)
+            ctx.changed = True
+        song_fields = {"title": "title", "artist": "artist", "album": "album", "albumartist": "album_artist"}
+        updates = {song_fields[k]: v[0] for k, v in fixed.items() if k in song_fields and v}
+        if updates:
+            f.song = replace(f.song, **updates)
+            if not f.untagged:
+                f.title = updates.get("title", f.title)
+                f.artist = updates.get("artist", f.artist)
+        ctx.stats["encoding_fixed"] += 1
+        changes = "; ".join(
+            f"{FIELD_NAMES[k]}: «{'; '.join(before.get(k) or [])}» → «{'; '.join(v)}»"
+            + (f" ({sources[k]})" if sources.get(k) else "")
+            for k, v in fixed.items()
+        )
+        self._action(
+            ctx,
+            KIND_ENCODING,
+            True,
+            _say(ctx, f"Исправлена кодировка тегов — {changes}", f"Будет исправлена кодировка тегов — {changes}"),
+            f,
+        )
+
+    async def revert_encoding(self, fix_id: int) -> None:
+        """Вернуть исходные теги из журнала. Файл больше не исправляется автоматически."""
+        fix = self.encoding_journal.get(fix_id)
+        if fix is None:
+            raise MaintenanceError("Исправление не найдено")
+        if fix.reverted_at is not None:
+            raise MaintenanceError("Исправление уже отменено")
+        async with self._lock:
+            try:
+                await asyncio.to_thread(revert, fix)
+            except FileNotFoundError as e:
+                raise MaintenanceError("Файла больше нет на прежнем месте") from e
+            self.encoding_journal.mark_reverted(fix_id)
+        log.info("Отменено исправление кодировки %s", fix.path)
+        await self._scan()
+
+    # endregion
+
     # region Теги и обложки
 
     async def _tags_and_covers(self, ctx: RunContext, files: list[LibraryFile]) -> None:
@@ -1282,11 +1414,27 @@ class MaintenanceService:
             )
             for entry, action in self._store.active_quarantine()
         ]
+        encoding = [
+            EncodingFixOut(
+                id=fix.id,
+                path=self._rel(Path(fix.path)),
+                changes=[TagChangeOut(field=FIELD_NAMES[k], before=b, after=a) for k, b, a in fix.changes()],
+                source=fix.source,
+                reverted=fix.reverted_at is not None,
+            )
+            for fix in (self.encoding_journal.for_run(run.id) if run else [])[:ENCODING_LIST_LIMIT]
+        ]
+        manual = [
+            self._rel(Path(key.removeprefix("encoding:")))
+            for key in self._store.checked_keys("encoding:", "encoding_manual")
+        ]
         return MaintenanceSummary(
             run=MaintenanceRunOut(**run.__dict__) if run else None,
             fixed=fixed,
             unresolved=unresolved,
             quarantine=quarantine,
+            encoding=encoding,
+            encoding_manual=sorted(manual)[:ENCODING_LIST_LIMIT],
         )
 
     def _purge_quarantine(self, ctx: RunContext) -> None:

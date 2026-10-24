@@ -146,7 +146,7 @@ DRY_RUN_SUFFIX = " (пробный запуск — ничего не измен
 
 ATTENTION = "attention"
 """Фильтр отчёта «требует внимания»: не исправлено и нужно посмотреть человеку."""
-ATTENTION_KINDS = ("tags", "cover", "short", "mismatch")
+ATTENTION_KINDS = ("tags", "cover", "short", "mismatch", "encoding")
 LIDARR_SKIP = "%Lidarr — не трогаем%"
 """Так bodrod до 0.16.0 писал пропуски в папках Lidarr: это не проблема, во «Требует внимания» не показываются."""
 
@@ -762,6 +762,14 @@ class Store:
                 "SELECT signature, checked_at, reason FROM maintenance_checked WHERE key = ?", (key,)
             ).fetchone()
         return (row["signature"], row["checked_at"], row["reason"]) if row else None
+
+    def checked_keys(self, prefix: str, reason: str) -> list[str]:
+        """Ключи отметок «проверено» с причиной `reason` (например, файлы с неисправимой кодировкой)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key FROM maintenance_checked WHERE key LIKE ? AND reason = ?", (prefix + "%", reason)
+            ).fetchall()
+        return [r["key"] for r in rows]
 
     def set_checked(self, key: str, signature: str, reason: str | None = None) -> None:
         with self._lock:

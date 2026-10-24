@@ -146,7 +146,7 @@ fun FullPlayerScreen(
     val navigator = LocalNavigator.current
     val similarTitle = stringResource(R.string.player_similar_source, song.title)
     LaunchedEffect(extrasViewModel) { extrasViewModel.messages.collect { actions.showMessage(it) } }
-    val artistLiked = extras.artist?.let { LocalReactions.current.artistLiked(it.id, it.starred) } == true
+    val artistLiked = extras.artist.valueOrNull?.let { LocalReactions.current.artistLiked(it.id, it.starred) } == true
     val extrasActions = remember(extrasViewModel, song.id) {
         PlayerExtrasActions(
             onOpenArtist = navigator::openArtist,
@@ -168,6 +168,7 @@ fun FullPlayerScreen(
             onAllPlaylists = { actions.addToPlaylist(listOf(song)) },
             onSleepTimer = { sheet = PlayerSheet.Sleep },
             onQuality = extrasViewModel::setQuality,
+            onRetry = extrasViewModel::retry,
         )
     }
     val extrasContent: LazyListScope.() -> Unit = {

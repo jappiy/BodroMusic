@@ -5,8 +5,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Leaderboard
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -72,6 +75,7 @@ import ru.bodro.music.ui.theme.rememberPlayerColors
 
 enum class TopLevel(val route: Any, val routeClass: KClass<*>, val icon: ImageVector, val label: Int, val tag: String) {
     Home(HomeRoute, HomeRoute::class, Icons.Rounded.Home, R.string.tab_home, "tab-home"),
+    Charts(ChartsRoute, ChartsRoute::class, Icons.Rounded.Leaderboard, R.string.tab_charts, "tab-charts"),
     Collection(CollectionRoute, CollectionRoute::class, Icons.Rounded.LibraryMusic, R.string.tab_collection, "tab-collection"),
     Search(SearchRoute, SearchRoute::class, Icons.Rounded.Search, R.string.tab_search, "tab-search"),
     Settings(SettingsRoute, SettingsRoute::class, Icons.Rounded.Settings, R.string.tab_settings, "tab-settings"),
@@ -126,6 +130,8 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
     BackHandler(enabled = expanded) { expanded = false }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
+    // На «Главной» мини-плеер не нужен: трек, лайк и управление — в самой волне, плеер открывается тапом по «таблетке».
+    val onHome = backStackEntry?.destination?.hasRoute(HomeRoute::class) == true
     LaunchedEffect(backStackEntry) {
         val destination = backStackEntry?.destination ?: return@LaunchedEffect
         TopLevel.entries.firstOrNull { destination.hasRoute(it.routeClass) }?.let { selectedTab = it }
@@ -165,10 +171,11 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
                             snackbarHost = { SnackbarHost(snackbar) },
                             bottomBar = {
                                 Column(if (wide) Modifier.navigationBarsPadding() else Modifier) {
+                                    // Появляется и исчезает плавно вместе с высотой: отступ содержимого меняется без скачка.
                                     AnimatedVisibility(
-                                        visible = player.hasMedia && !expanded,
-                                        enter = fadeIn(tween(200)),
-                                        exit = fadeOut(tween(200)),
+                                        visible = player.hasMedia && !expanded && !onHome,
+                                        enter = fadeIn(tween(MINI_PLAYER_MS)) + expandVertically(tween(MINI_PLAYER_MS)),
+                                        exit = fadeOut(tween(MINI_PLAYER_MS)) + shrinkVertically(tween(MINI_PLAYER_MS)),
                                     ) {
                                         MiniPlayer(
                                             state = player,
@@ -290,3 +297,5 @@ private class NavControllerNavigator(
 
 /** Для экранов, которым нужен доступ к общему переходу (плеер). */
 typealias SharedScope = SharedTransitionScope
+
+private const val MINI_PLAYER_MS = 250

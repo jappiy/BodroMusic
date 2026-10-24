@@ -102,7 +102,16 @@ val BodroShapes = Shapes(
 
 /** Цвета текущей обложки для плеера; `null` — использовать цвета темы. */
 @Immutable
-data class PlayerColors(val background: Color, val accent: Color, val onBackground: Color)
+/** Цвета текущего трека. [glow] — цвета свечения «Моей волны» (доминантный обложки и акценты). */
+data class PlayerColors(
+    val background: Color,
+    val accent: Color,
+    val onBackground: Color,
+    val glow: List<Color> = listOf(accent),
+)
+
+/** Свечение без обложки (или с выключенными цветами обложки) — нейтральное тёплое из палитры приложения. */
+val NeutralGlow = listOf(Color(0xFFC0702E), BodroOrange, Color(0xFF8E3B2E))
 
 val LocalPlayerColors = staticCompositionLocalOf<PlayerColors?> { null }
 
@@ -137,7 +146,8 @@ fun rememberPlayerColors(cover: CoverColors?, enabled: Boolean): PlayerColors {
     val background by animateColorAsState(targetBackground, tween(600), label = "playerBackground")
     val accent by animateColorAsState(targetAccent, tween(600), label = "playerAccent")
     val onBackground = if (background.luminance() > 0.5f) Color(0xFF15130F) else Color(0xFFF7F3EC)
-    return PlayerColors(background, accent, onBackground)
+    val glow = if (enabled && cover != null && cover.glow.isNotEmpty()) cover.glow else NeutralGlow
+    return PlayerColors(background, accent, onBackground, glow)
 }
 
 private fun adjustBackground(color: Color, dark: Boolean): Color =

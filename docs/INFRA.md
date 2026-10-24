@@ -285,6 +285,10 @@ bodrod 0.4.0 (регламент обслуживания библиотеки) 
 bodrod 0.5.0 (исправления регламента и заявок, пароль из `/secrets`) — [`docs/history/006-maintenance-fixes.md`](history/006-maintenance-fixes.md).
 bodrod 0.16.0 (сводка обслуживания, `cover.jpg` в папках Lidarr из Cover Art Archive; ставится по `docs/DEPLOY.md`,
 база не менялась) — [`docs/history/019-maintenance-summary.md`](history/019-maintenance-summary.md).
+bodrod 0.21.0 (шаг регламента «Кодировка тегов» с журналом и откатом, проверка кодировки при импорте, короткий
+русский текст о треке; ставится по `docs/DEPLOY.md`, база `9f5de2f` не менялась; новая необязательная переменная
+`ACOUSTID_API_KEY` — работает только в образе с `fpcalc`) — [`docs/history/027-tag-encoding-fix.md`](history/027-tag-encoding-fix.md),
+[`029-track-blurb.md`](history/029-track-blurb.md). На 2026-10-24 не установлен.
 
 ---
 

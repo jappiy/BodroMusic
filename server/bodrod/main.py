@@ -339,7 +339,9 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         charts=charts,
         analysis=analysis,
         yandex_links=yandex_links,
-        facts=ArtistFacts(lastfm),
+        facts=ArtistFacts(
+            lastfm, http=http, yandex=lambda: yandex_tokens.api(yandex_tokens.resolve(None)), store=store
+        ),
         wave=WaveService(store, navidrome_db, analysis, pool_prefix, settings.wave_modes_file, lastfm)
         if navidrome_db is not None and settings.wave_enabled
         else None,
@@ -521,11 +523,14 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         svc: Svc,
         artist: Annotated[str, Query(min_length=1, max_length=200)],
         title: Annotated[str | None, Query(max_length=300)] = None,
+        album: Annotated[str | None, Query(max_length=300)] = None,
+        year: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+        max_chars: Annotated[int, Query(alias="maxChars", ge=40, le=300)] = 110,
     ) -> ArtistFactsOut:
-        """Факт о треке или исполнителе для главной «Моя волна» (Last.fm). Нет данных — пустой ответ."""
+        """Короткий текст на русском для главной «Моя волна»: Википедия, Яндекс, Last.fm, шаблоны. Нет — пусто."""
         if svc.facts is None:
             return ArtistFactsOut()
-        return ArtistFactsOut(**await svc.facts.facts(artist, title))
+        return ArtistFactsOut(**await svc.facts.facts(artist, title, album, year, max_chars))
 
     @app.post("/api/v1/library/check", response_model=LibraryCheck, response_model_by_alias=True)
     async def library_check(user: User, svc: Svc, body: LibraryCheckRequest) -> LibraryCheck:
@@ -722,6 +727,15 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             raise HTTPException(409, "Обслуживание уже идёт")
         log.info("%s запустил обслуживание библиотеки", user.username)
         return Response(status_code=202)
+
+    @app.post("/api/v1/maintenance/encoding/{fix_id}/revert", status_code=204, response_class=Response)
+    async def maintenance_encoding_revert(maintenance: Maintenance, user: User, fix_id: int) -> Response:
+        try:
+            await maintenance.revert_encoding(fix_id)
+        except MaintenanceError as e:
+            raise HTTPException(409, str(e)) from e
+        log.info("%s отменил исправление кодировки (%s)", user.username, fix_id)
+        return Response(status_code=204)
 
     @app.post("/api/v1/maintenance/quarantine/{entry_id}/restore", status_code=204, response_class=Response)
     async def maintenance_restore(maintenance: Maintenance, user: User, entry_id: int) -> Response:

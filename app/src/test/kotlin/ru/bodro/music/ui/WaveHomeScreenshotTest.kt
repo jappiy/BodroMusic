@@ -22,8 +22,8 @@ import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
+import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
-import ru.bodro.music.core.downloads.ArtistFacts
 import ru.bodro.music.core.downloads.DiscoverTrack
 import ru.bodro.music.core.downloads.WaveModeInfo
 import ru.bodro.music.core.model.Artist
@@ -31,6 +31,7 @@ import ru.bodro.music.core.model.Playlist
 import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
+import ru.bodro.music.data.reco.Section
 import ru.bodro.music.data.repository.ReactionState
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.playback.PlayerUiState
@@ -51,10 +52,11 @@ import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.theme.BodroTheme
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.theme.PlayerColors
+import ru.bodro.music.ui.util.UiError
 
 /**
- * Снимки главной «Моя волна» на размерах реальных экранов (задания 021–022): телефон в портрете и ландшафте,
- * складной в разложенном виде. PNG — в `app/build/screenshots/`; тест проверяет, что ключевые элементы на экране.
+ * Снимки главной «Моя волна» на размерах реальных экранов (задания 021–022, 025): телефон в портрете и ландшафте,
+ * складной в разложенном виде; блоки под плеером — готовые и в загрузке. PNG — в `app/build/screenshots/`.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -76,7 +78,13 @@ class WaveHomeScreenshotTest {
         WaveModeInfo("artist:Кино", "В стиле: Кино", dynamic = true),
         WaveModeInfo("release:al1", "Новый релиз: ЛСП", subtitle = "Альбом", dynamic = true),
     )
-    private val facts = ArtistFacts(fact = "Кино — советская рок-группа, основанная в 1981 году.", tags = listOf("russian rock"))
+    private val blurbs: Section<List<String>> = Section.Ready(
+        listOf(
+            "Советская рок-группа, основанная в 1981 году в Ленинграде; одна из самых известных групп русского рока, " +
+                "чьи песни поют до сих пор.",
+            "Советская рок-группа, основанная в 1981 году.",
+        ),
+    )
 
     @Test
     fun `phone portrait - wave playing`() = shoot(
@@ -93,6 +101,18 @@ class WaveHomeScreenshotTest {
         PlayerUiState(connected = true),
         AppSettings(),
     )
+
+    @Test
+    fun `phone portrait - text is still loading`() = shoot(
+        "home-phone-blurb-loading",
+        "w411dp-h891dp-port-xxhdpi",
+        playing,
+        AppSettings(),
+        Section.Loading,
+    )
+
+    @Test
+    fun `small phone - compact layout`() = shoot("home-small", "w360dp-h640dp-port-xhdpi", playing, AppSettings())
 
     @Test
     fun `phone landscape - wave playing`() = shoot("home-phone-landscape", "w891dp-h411dp-land-xxhdpi", playing, AppSettings())
@@ -113,7 +133,14 @@ class WaveHomeScreenshotTest {
         Surface(Modifier.fillMaxSize(), color = palette.background) {
             LazyColumn {
                 playerExtras(
-                    PlayerExtrasUi("s1", Artist("a1", "Кино"), similar, similar.take(2), listOf(Playlist("p1", "Дорога"))),
+                    PlayerExtrasUi(
+                        "s1",
+                        Section.Ready(Artist("a1", "Кино")),
+                        Section.Ready(similar),
+                        Section.Ready(similar.take(2)),
+                        Section.Ready(listOf("Советская рок-группа, основанная в 1981 году.")),
+                        listOf(Playlist("p1", "Дорога")),
+                    ),
                     emptyMap(),
                     canDownload = true,
                     artistLiked = true,
@@ -126,29 +153,64 @@ class WaveHomeScreenshotTest {
         }
     }
 
-    private fun shoot(name: String, qualifiers: String, player: PlayerUiState, settings: AppSettings) = render(name, qualifiers) {
-        Surface(Modifier.fillMaxSize(), color = Color.Black) {
+    @Test
+    fun `player extras - loading skeletons`() = render("player-extras-loading", "w411dp-h891dp-port-xxhdpi") {
+        val palette = PlayerPalette(Color(0xFF3B2A6B), Color.White, Color(0xFFFFB627))
+        val noop = DiscoverCallbacks({}, {}, {}, {}, {}, {})
+        val actions = PlayerExtrasActions({}, { _, _ -> }, noop, {}, {}, {}, {}, {}, {})
+        Surface(Modifier.fillMaxSize(), color = palette.background) {
             LazyColumn {
-                item {
-                    WaveHome(
-                        player = player,
-                        settings = settings.copy(backgroundAnimation = false),
-                        facts = facts,
-                        modes = rememberModeCards(modes),
-                        onTogglePlay = {},
-                        onNext = {},
-                        onPrevious = {},
-                        onSelectMode = {},
-                        onOpenSettings = {},
-                        onOpenSearch = {},
-                    )
-                }
+                playerExtras(
+                    PlayerExtrasUi(
+                        "s1",
+                        Section.Loading,
+                        Section.Loading,
+                        Section.Failed(UiError(R.string.error_not_found)),
+                        Section.Loading,
+                    ),
+                    emptyMap(),
+                    canDownload = true,
+                    artistLiked = false,
+                    sleepActive = false,
+                    quality = StreamQuality.Original,
+                    palette = palette,
+                    actions = actions,
+                )
             }
+        }
+    }
+
+    private fun shoot(
+        name: String,
+        qualifiers: String,
+        player: PlayerUiState,
+        settings: AppSettings,
+        text: Section<List<String>> = blurbs,
+    ) = render(name, qualifiers) {
+        Surface(Modifier.fillMaxSize(), color = Color.Black) {
+            WaveHome(
+                player = player,
+                settings = settings.copy(backgroundAnimation = false),
+                blurbs = text,
+                modes = rememberModeCards(modes),
+                onTogglePlay = {},
+                onNext = {},
+                onPrevious = {},
+                onSelectMode = {},
+                onOpenSettings = {},
+                onOpenSearch = {},
+            )
         }
     }
 
     private fun render(name: String, qualifiers: String, content: @Composable () -> Unit) {
         RuntimeEnvironment.setQualifiers(qualifiers)
+        // Как системная «Отключить анимацию»: мерцание скелетонов и фон статичны, иначе цикл кадров не кончается.
+        android.provider.Settings.Global.putFloat(
+            RuntimeEnvironment.getApplication().contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            0f,
+        )
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         activity.setContent { Providers(content) }
         shadowOf(Looper.getMainLooper()).idle()
@@ -168,7 +230,12 @@ class WaveHomeScreenshotTest {
                 LocalNavigator provides NoNavigator,
                 LocalReactions provides ReactionState(),
                 LocalCoverArtUrls provides mockk(relaxed = true),
-                LocalPlayerColors provides PlayerColors(Color(0xFF3B2A6B), Color(0xFFFFB627), Color.White),
+                LocalPlayerColors provides PlayerColors(
+                    Color(0xFF3B2A6B),
+                    Color(0xFFFFB627),
+                    Color.White,
+                    glow = listOf(Color(0xFF13B5C8), Color(0xFF1F6FD1), Color(0xFF7AE0E8)),
+                ),
                 content = content,
             )
         }

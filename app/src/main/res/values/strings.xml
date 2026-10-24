@@ -463,7 +463,7 @@
     <string name="settings_blocklist_summary">Удалённые треки, которые не скачаются снова</string>
     <string name="settings_maintenance_summary">Отчёт: теги, обложки, дубли, короткие файлы</string>
     <string name="maintenance_title">Обслуживание библиотеки</string>
-    <string name="maintenance_hint">Каждую ночь сервер проверяет библиотеку: дописывает теги и обложки по каталогам (Яндекс Музыка, Deezer, iTunes, MusicBrainz, Last.fm), убирает дубли и обрезанные файлы, собирает альбомы из разных папок и находит чужие релизы в папках исполнителей. В папках Lidarr файлы и теги не меняются — только добавляется обложка из Cover Art Archive. Убранное лежит в карантине, его можно вернуть.</string>
+    <string name="maintenance_hint">Каждую ночь сервер проверяет библиотеку: дописывает теги и обложки по каталогам (Яндекс Музыка, Deezer, iTunes, MusicBrainz, Last.fm), убирает дубли и обрезанные файлы, собирает альбомы из разных папок и находит чужие релизы в папках исполнителей, исправляет битую кодировку тегов («Ñåêðåò» → «Секрет»). В папках Lidarr файлы и теги не меняются — только добавляется обложка из Cover Art Archive. Убранное лежит в карантине, его можно вернуть.</string>
     <string name="maintenance_never">Ещё не запускалось</string>
     <string name="maintenance_last">Последний запуск: %1$s — %2$s</string>
     <string name="maintenance_status_running">идёт</string>
@@ -635,4 +635,18 @@
     <string name="reco_analysis_title">Анализ звучания</string>
     <string name="reco_analysis_summary">Проанализировано %1$d из %2$d, ошибок %3$d</string>
     <string name="reco_analysis_off">Не настроен: нужен ANALYZER_TOKEN и контейнер анализатора</string>
+    <!-- Задание 025: волна на весь экран, вкладка «Чарты», доп. информация о треке, кодировка тегов -->
+    <string name="tab_charts">Чарты</string>
+    <string name="wave_blurb_loading">Собираю интересное…</string>
+    <string name="wave_mode_style_of">В стиле артиста</string>
+    <string name="wave_mode_new_release">Новый релиз</string>
+    <string name="player_extras_loading">Загружаем информацию об исполнителе…</string>
+    <string name="player_extras_none">Нет дополнительной информации</string>
+    <string name="player_artist_failed">Не удалось загрузить информацию об исполнителе</string>
+    <string name="player_section_failed">Не удалось загрузить</string>
+    <string name="maintenance_encoding">Исправленная кодировка тегов: %1$d</string>
+    <string name="maintenance_encoding_manual">Битая кодировка — нужна ручная проверка: %1$d</string>
+    <string name="maintenance_encoding_revert">Отменить</string>
+    <string name="maintenance_encoding_reverted">отменено</string>
+    <string name="maintenance_encoding_revert_done">Исходные теги возвращены</string>
 </resources>

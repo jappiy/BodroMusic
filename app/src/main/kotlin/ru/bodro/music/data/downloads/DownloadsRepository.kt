@@ -167,6 +167,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun restoreFromQuarantine(id: Long) = client.restoreFromQuarantine(id)
 
+    suspend fun revertEncodingFix(id: Long) = client.revertEncodingFix(id)
+
     // endregion
 
     // region Источники загрузки и выгрузка из Яндекса
@@ -201,8 +203,13 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun waveReport() = client.waveReport()
 
-    suspend fun artistFacts(artist: String, title: String?): ru.bodro.music.core.downloads.ArtistFacts =
-        client.artistFacts(artist, title)
+    suspend fun artistFacts(
+        artist: String,
+        title: String?,
+        album: String? = null,
+        year: Int? = null,
+        maxChars: Int? = null,
+    ): ru.bodro.music.core.downloads.ArtistFacts = client.artistFacts(artist, title, album, year, maxChars)
 
     suspend fun exportPlaylists(): List<ru.bodro.music.core.downloads.ExportPlaylist> = client.exportPlaylists()
 

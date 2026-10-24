@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.bodro.music.R
+import ru.bodro.music.core.downloads.EncodingFix
 import ru.bodro.music.core.downloads.MaintenanceCount
 import ru.bodro.music.core.downloads.MaintenanceRun
 import ru.bodro.music.core.downloads.MaintenanceStatus
@@ -95,6 +96,14 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
             runCatching { downloads.runMaintenance() }.onFailure(onError)
             runCatching { reload() }
             _state.update { it.copy(starting = false) }
+        }
+    }
+
+    fun revertEncoding(fix: EncodingFix, onDone: (Throwable?) -> Unit) {
+        viewModelScope.launch {
+            val result = runCatching { downloads.revertEncodingFix(fix.id) }
+            onDone(result.exceptionOrNull())
+            runCatching { reload() }
         }
     }
 
@@ -170,6 +179,25 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
                             tag = "unresolved",
                         )
                     }
+                }
+                // Кодировка тегов: «было → стало» с откатом и список на ручную проверку.
+                if (summary.encoding.isNotEmpty()) {
+                    item(key = "encoding-header") { SectionTitle(stringResource(R.string.maintenance_encoding, summary.encoding.size)) }
+                    items(summary.encoding, key = { "enc-${it.id}" }) { fix ->
+                        EncodingRow(fix) {
+                            viewModel.revertEncoding(fix) { e ->
+                                actions.showMessage(
+                                    e?.toUiError()?.text(context) ?: context.getString(R.string.maintenance_encoding_revert_done),
+                                )
+                            }
+                        }
+                    }
+                }
+                if (summary.encodingManual.isNotEmpty()) {
+                    item(key = "encoding-manual-header") {
+                        SectionTitle(stringResource(R.string.maintenance_encoding_manual, summary.encodingManual.size))
+                    }
+                    items(summary.encodingManual, key = { "enc-manual-$it" }) { path -> Hint(path) }
                 }
                 item(key = "quarantine-header") {
                     Column {
@@ -303,6 +331,32 @@ private fun Counts(title: String, counts: List<MaintenanceCount>, empty: String,
                 Spacer(Modifier.size(12.dp))
                 Text(count.count.toString(), style = MaterialTheme.typography.titleSmall)
             }
+        }
+    }
+}
+
+/** Файл с исправленной кодировкой: путь, «было → стало» по полям, «Отменить». */
+@Composable
+private fun EncodingRow(fix: EncodingFix, onRevert: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp).testTag("encoding-${fix.id}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(fix.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fix.changes.forEach { change ->
+                Text("${change.field}: ${change.before} → ${change.after}", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if (fix.reverted) {
+            Text(
+                stringResource(R.string.maintenance_encoding_reverted),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        } else {
+            TextButton(onClick = onRevert) { Text(stringResource(R.string.maintenance_encoding_revert)) }
         }
     }
 }

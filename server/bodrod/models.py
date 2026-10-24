@@ -279,13 +279,37 @@ class QuarantineItemOut(ApiModel):
     expires_at: int
 
 
+class TagChangeOut(ApiModel):
+    """Поле тега: было → стало («название», «Ñåêðåò», «Секрет»)."""
+
+    field: str
+    before: str
+    after: str
+
+
+class EncodingFixOut(ApiModel):
+    """Исправленная кодировка тегов файла; откат — `POST /maintenance/encoding/{id}/revert`."""
+
+    id: int
+    path: str
+    changes: list[TagChangeOut]
+    source: str
+    reverted: bool = False
+
+
 class MaintenanceSummary(ApiModel):
-    """Сводка последнего запуска: исправлено по типам, карантин (списком), не исправлено по причинам."""
+    """Сводка последнего запуска: исправлено по типам, карантин (списком), не исправлено по причинам.
+
+    `encoding` — исправления кодировки последнего запуска («было → стало»), `encoding_manual` — файлы с битой
+    кодировкой, которую не удалось восстановить (пути относительно папки музыки).
+    """
 
     run: MaintenanceRunOut | None = None
     fixed: list[MaintenanceCount] = Field(default_factory=list)
     unresolved: list[MaintenanceCount] = Field(default_factory=list)
     quarantine: list[QuarantineItemOut] = Field(default_factory=list)
+    encoding: list[EncodingFixOut] = Field(default_factory=list)
+    encoding_manual: list[str] = Field(default_factory=list)
 
 
 class SourceOut(ApiModel):
@@ -399,9 +423,11 @@ class WaveModeOut(ApiModel):
 
 
 class ArtistFactsOut(ApiModel):
-    """Факт о треке или исполнителе (Last.fm): одна фраза и теги. Пусто — строку не показывать."""
+    """Короткий текст о треке или исполнителе на русском. `variants` — все подходящие фразы (≤ `maxChars`),
+    от лучшей к запасным: приложение берёт первую, которая помещается. Пусто — блок не показывать."""
 
     fact: str | None = None
+    variants: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     source: str | None = None
 

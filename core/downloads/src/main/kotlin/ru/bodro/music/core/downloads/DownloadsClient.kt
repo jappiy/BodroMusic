@@ -78,9 +78,18 @@ class DownloadsClient(
         listOfNotNull("artist" to artist, "title" to title, songId?.let { "songId" to it }),
     )
 
-    /** Факт о треке или исполнителе для главной (bodrod 0.18.0+). */
-    suspend fun artistFacts(artist: String, title: String?): ArtistFacts =
-        get(listOf("api", "v1", "artists", "facts"), listOfNotNull("artist" to artist, title?.let { "title" to it }))
+    /** Короткий текст о треке для главной (bodrod 0.18.0+; альбом, год и лимит — 0.21.0+, старый сервер их не знает). */
+    suspend fun artistFacts(artist: String, title: String?, album: String? = null, year: Int? = null, maxChars: Int? = null): ArtistFacts =
+        get(
+            listOf("api", "v1", "artists", "facts"),
+            listOfNotNull(
+                "artist" to artist,
+                title?.let { "title" to it },
+                album?.let { "album" to it },
+                year?.let { "year" to it.toString() },
+                maxChars?.let { "maxChars" to it.toString() },
+            ),
+        )
 
     /** Какие треки удалены из библиотеки или заменены другой копией (bodrod 0.4.0+). */
     suspend fun checkLibrary(ids: List<String>): LibraryCheck = post(listOf("api", "v1", "library", "check"), IdsBody(ids))
@@ -158,6 +167,12 @@ class DownloadsClient(
     /** Запустить сейчас; 409 ([DownloadsError.Disabled]) — уже идёт. */
     suspend fun runMaintenance() {
         execute<Unit?>(Request.Builder().url(url(listOf("api", "v1", "maintenance", "run"))).post(EMPTY), null) { null }
+    }
+
+    /** Вернуть исходные теги файла, исправленные шагом «Кодировка тегов» (bodrod 0.21.0+). */
+    suspend fun revertEncodingFix(id: Long) {
+        val path = listOf("api", "v1", "maintenance", "encoding", id.toString(), "revert")
+        execute<Unit?>(Request.Builder().url(url(path)).post(EMPTY), null) { null }
     }
 
     suspend fun restoreFromQuarantine(id: Long) {

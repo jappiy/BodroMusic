@@ -1,6 +1,5 @@
 package ru.bodro.music.ui.screens.home
 
-import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,36 +9,31 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -48,12 +42,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,28 +56,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.bodro.music.R
-import ru.bodro.music.core.domain.wave.WaveCharacter
-import ru.bodro.music.core.domain.wave.WaveMood
-import ru.bodro.music.core.domain.wave.WavePreset
-import ru.bodro.music.core.downloads.ArtistFacts
-import ru.bodro.music.core.downloads.WaveModeInfo
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
+import ru.bodro.music.data.reco.Section
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.app.LocalAppActions
@@ -94,106 +82,24 @@ import ru.bodro.music.ui.app.LocalNavigator
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
-import ru.bodro.music.ui.screens.settings.waveCharacterLabel
-import ru.bodro.music.ui.screens.wave.EqualizerBackground
-import ru.bodro.music.ui.theme.BodroCoral
-import ru.bodro.music.ui.theme.BodroOrange
-import ru.bodro.music.ui.theme.BodroViolet
+import ru.bodro.music.ui.components.shimmerAlpha
+import ru.bodro.music.ui.screens.wave.GlowBackground
 import ru.bodro.music.ui.theme.BodroYellow
 import ru.bodro.music.ui.theme.LocalPlayerColors
+import ru.bodro.music.ui.theme.NeutralGlow
 import ru.bodro.music.ui.theme.WaveTitleStyle
 
-/** Фигура на карточке режима. */
-enum class ModeShape { Circle, Blob, Triangle, Squircle, Rings, Diamond }
-
-/** Карточка режима волны: id режима, подпись, число треков, цвета градиента и фигура, настройки запуска. */
-data class ModeCard(
-    val id: String,
-    val title: String,
-    val colors: List<Color>,
-    val shape: ModeShape,
-    val subtitle: String? = null,
-    val count: Int? = null,
-) {
-    /** Миксы и пресеты с телефона — по [WavePreset]; режимы сервера — `preset` = id режима. */
-    val settings: WaveSettings get() = WavePreset.of(id)?.settings() ?: WaveSettings(preset = id)
-}
-
-/** Вид карточки по id режима: цвета и фигура (ориентир — «Моя волна» Яндекса). */
-private val ModeVisuals: Map<String, Pair<List<Color>, ModeShape>> = mapOf(
-    "energetic" to (listOf(BodroYellow, BodroOrange) to ModeShape.Triangle),
-    "calm" to (listOf(Color(0xFF5EC8E5), Color(0xFF3A66D6)) to ModeShape.Circle),
-    "happy" to (listOf(Color(0xFFFFD84D), BodroCoral) to ModeShape.Blob),
-    "sad" to (listOf(Color(0xFF6C7BA8), Color(0xFF2E3550)) to ModeShape.Rings),
-    "loud" to (listOf(Color(0xFFFF3D3D), Color(0xFF7A0019)) to ModeShape.Triangle),
-    "discover" to (listOf(BodroViolet, Color(0xFF00C2A8)) to ModeShape.Diamond),
-    "favorites" to (listOf(BodroCoral, Color(0xFFB0286B)) to ModeShape.Blob),
-    "popular" to (listOf(BodroOrange, BodroViolet) to ModeShape.Squircle),
-    "new" to (listOf(Color(0xFF7CF29C), Color(0xFF00A3FF)) to ModeShape.Diamond),
-    "instrumental" to (listOf(Color(0xFFB8C6FF), Color(0xFF5B5FC7)) to ModeShape.Rings),
-    "ru" to (listOf(Color(0xFFFFFFFF), Color(0xFF1C5BD9), Color(0xFFE53935)) to ModeShape.Squircle),
-    "en" to (listOf(Color(0xFF1C3FAA), Color(0xFFE53935)) to ModeShape.Circle),
-    "track_mix" to (listOf(Color(0xFF43D17A), Color(0xFF1F7A8C)) to ModeShape.Circle),
-    "album_mix" to (listOf(Color(0xFFFF8FB1), BodroViolet) to ModeShape.Squircle),
-    "decade_mix" to (listOf(Color(0xFFE0B36A), Color(0xFF8A5A2B)) to ModeShape.Rings),
-)
-
-private val DynamicPalettes = listOf(
-    listOf(Color(0xFFFF9A62), Color(0xFFB5179E)),
-    listOf(Color(0xFF4CC9F0), Color(0xFF4361EE)),
-    listOf(Color(0xFFF9C74F), Color(0xFF43AA8B)),
-    listOf(Color(0xFFF72585), Color(0xFF7209B7)),
-)
-
-private fun visualOf(id: String): Pair<List<Color>, ModeShape> = ModeVisuals[id]
-    ?: (
-        DynamicPalettes[(id.hashCode() and Int.MAX_VALUE) % DynamicPalettes.size] to
-            if (id.startsWith("release:")) ModeShape.Squircle else ModeShape.Blob
-        )
-
-/** Миксы считаются на телефоне — их карточки есть всегда. */
-@Composable
-private fun mixCards(): List<ModeCard> = listOf(
-    WavePreset.TrackMix to R.string.mix_tracks,
-    WavePreset.AlbumMix to R.string.mix_albums,
-    WavePreset.DecadeMix to R.string.mix_decade,
-).map { (preset, title) -> visualOf(preset.id).let { (colors, shape) -> ModeCard(preset.id, stringResource(title), colors, shape) } }
-
 /**
- * Карточки режимов: с сервера (bodrod 0.19.0+: число треков под режим, «В стиле X», «Новый релиз X») или, без него,
- * режимы, которые телефон собирает сам. Миксы — в конце.
- */
-@Composable
-fun rememberModeCards(server: List<WaveModeInfo>?): List<ModeCard> {
-    val mixes = mixCards()
-    val local = listOf(
-        WavePreset.Energetic to R.string.wave_mood_energetic,
-        WavePreset.Calm to R.string.wave_mood_calm,
-        WavePreset.Happy to R.string.wave_mood_happy,
-        WavePreset.Sad to R.string.wave_mood_sad,
-        WavePreset.Discover to R.string.wave_mode_discover,
-        WavePreset.Favorites to R.string.wave_mode_favorites,
-        WavePreset.Popular to R.string.wave_mode_popular,
-    ).map { (preset, title) -> visualOf(preset.id).let { (colors, shape) -> ModeCard(preset.id, stringResource(title), colors, shape) } }
-    return remember(server, mixes, local) {
-        val fromServer = server?.map { mode ->
-            val (colors, shape) = visualOf(mode.id)
-            ModeCard(mode.id, mode.title, colors, shape, subtitle = mode.subtitle, count = mode.count)
-        }
-        (fromServer ?: local) + mixes
-    }
-}
-
-/**
- * Главная «Моя волна» (сверху вниз): строка с настройками волны, заголовком или чипом режима и поиском; крупное имя
- * исполнителя и маленькая обложка (свайп — следующий / предыдущий трек); кнопка, «таблетка» с названием и
- * прогрессом, лайк; факт из Last.fm; карусель режимов. Фон — эквалайзер в цветах обложки.
+ * Главная — только «Моя волна» на весь экран, без прокрутки к другому контенту (остальное — во вкладке «Чарты»).
+ * Сверху вниз: настройки волны, заголовок или чип режима, поиск; крупное имя исполнителя и обложка (свайп —
+ * следующий / предыдущий трек); play/pause, «таблетка» с названием и прогрессом (тап — плеер), лайк; короткий
+ * текст о треке; карусель режимов-куполов. Фон — живое свечение в цветах обложки ([GlowBackground]).
  */
 @Composable
 fun WaveHome(
     player: PlayerUiState,
     settings: AppSettings,
-    facts: ArtistFacts?,
+    blurbs: Section<List<String>>,
     modes: List<ModeCard>,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
@@ -201,6 +107,7 @@ fun WaveHome(
     onSelectMode: (String?) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
+    modifier: Modifier = Modifier,
     lowCoverage: Boolean = false,
     onFindMore: () -> Unit = {},
 ) {
@@ -208,43 +115,46 @@ fun WaveHome(
     val colors = LocalPlayerColors.current
     val wavePlaying = player.source.isWave && player.hasMedia
     val active = settings.waveModeId.ifBlank { null }?.let { id ->
-        modes.firstOrNull { it.id == id }
-            ?: ModeCard(id, id, emptyList(), ModeShape.Circle)
+        modes.firstOrNull { it.id == id } ?: ModeCard(id, id, Color.Gray, Icons.Rounded.AutoAwesome)
     }
     val configuration = LocalConfiguration.current
-    // Широкое окно (ландшафт, разложенный боком): блок по высоте экрана, исполнитель слева, управление справа.
+    // Широкое окно (ландшафт, разложенный боком): исполнитель слева, управление справа; по высоте может не влезть —
+    // тогда блок прокручивается целиком (контента ниже волны всё равно нет).
     val wide = configuration.screenWidthDp > configuration.screenHeightDp && configuration.screenWidthDp >= WIDE_MIN
-    val height = if (wide) {
-        (configuration.screenHeightDp * WIDE_HERO_SHARE).dp.coerceAtLeast(WIDE_HERO_MIN)
-    } else {
-        (configuration.screenHeightDp * HERO_SHARE).dp.coerceIn(HERO_MIN, HERO_MAX)
-    }
     val start: (ModeCard?) -> Unit = { chosen ->
         onSelectMode(chosen?.id)
         actions.startWave(chosen?.settings ?: WaveSettings())
     }
+    // Сброс режима: волна играет — сразу «Моя волна» без режима; не играет — только снять режим.
+    val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectMode(null) }
 
-    Box(Modifier.fillMaxWidth().heightIn(min = height).testTag("wave-home")) {
-        EqualizerBackground(
-            accent = colors?.accent ?: BodroYellow,
-            base = colors?.background ?: Color(0xFF14110E),
-            animate = settings.backgroundAnimation && (!wavePlaying || player.isPlaying),
+    Box(modifier.fillMaxSize().background(Color.Black).testTag("wave-home")) {
+        GlowBackground(
+            colors = if (wavePlaying) colors?.glow ?: NeutralGlow else NeutralGlow,
+            animate = settings.backgroundAnimation,
+            playing = wavePlaying && player.isPlaying,
             modifier = Modifier.matchParentSize(),
         )
-        Column(
-            Modifier.fillMaxWidth().heightIn(min = height).statusBarsPadding().padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            // Сброс режима: волна играет — сразу «Моя волна» без режима; не играет — только снять режим.
-            val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectMode(null) }
-            WaveTopRow(active, onOpenSettings, onReset = reset, onOpenSearch)
-            if (wavePlaying && player.currentSong != null) {
-                NowPlayingBlock(player, player.currentSong, onTogglePlay, onNext, onPrevious, facts, wide)
-            } else {
-                StartBlock(loading = player.waveLoading, onStart = { start(active) })
+        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+            val compact = maxHeight < COMPACT_HEIGHT
+            val content: @Composable ColumnScope.(scrollable: Boolean) -> Unit = { scrollable ->
+                WaveTopRow(active, onOpenSettings, onReset = reset, onOpenSearch)
+                if (scrollable) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.weight(1f))
+                if (wavePlaying && player.currentSong != null) {
+                    NowPlayingBlock(player, player.currentSong, onTogglePlay, onNext, onPrevious, blurbs, wide, compact)
+                } else {
+                    StartBlock(loading = player.waveLoading, onStart = { start(active) })
+                }
+                if (lowCoverage && wavePlaying && active != null) LowCoverageHint(onFindMore)
+                if (scrollable) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.weight(0.5f))
+                ModeDomes(modes, active = active, onPick = { chosen -> if (chosen == null) reset() else start(chosen) })
+                Spacer(Modifier.height(8.dp))
             }
-            if (lowCoverage && wavePlaying && active != null) LowCoverageHint(onFindMore)
-            ModeCarousel(modes, active = active, onPick = { chosen -> if (chosen == null) reset() else start(chosen) })
+            if (wide) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { content(true) }
+            } else {
+                Column(Modifier.fillMaxSize()) { content(false) }
+            }
         }
     }
 }
@@ -315,7 +225,7 @@ private fun StartBlock(loading: Boolean, onStart: () -> Unit) {
     }
 }
 
-/** Исполнитель, обложка, управление и факт. Свайп по исполнителю и обложке — следующий / предыдущий трек. */
+/** Исполнитель, обложка, управление и короткий текст. Свайп по исполнителю и обложке — следующий / предыдущий трек. */
 @Composable
 private fun NowPlayingBlock(
     player: PlayerUiState,
@@ -323,8 +233,9 @@ private fun NowPlayingBlock(
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    facts: ArtistFacts?,
+    blurbs: Section<List<String>>,
     wide: Boolean,
+    compact: Boolean,
 ) {
     val navigator = LocalNavigator.current
     var direction by remember { mutableIntStateOf(1) }
@@ -340,7 +251,7 @@ private fun NowPlayingBlock(
             label = "wave-track",
             modifier = modifier
                 .pointerInput(Unit) {
-                    // Только горизонтальный жест: вертикальная прокрутка главной и карусель режимов не мешают.
+                    // Только горизонтальный жест: карусель режимов и вертикальные жесты не мешают.
                     detectHorizontalDragGestures(
                         onDragStart = { drag = 0f },
                         onDragEnd = {
@@ -366,16 +277,20 @@ private fun NowPlayingBlock(
                     style = WaveTitleStyle.copy(color = Color.White),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 26.sp, maxFontSize = 60.sp, stepSize = 2.sp),
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 26.sp,
+                        maxFontSize = if (compact) 44.sp else 60.sp,
+                        stepSize = 2.sp,
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = current.artistId != null) { current.artistId?.let(navigator::openArtist) }
                         .testTag("wave-artist"),
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(if (compact) 10.dp else 16.dp))
                 CoverImage(
                     current.coverArt,
-                    Modifier.size(COVER_SIZE.dp),
+                    Modifier.size(if (compact) COVER_COMPACT.dp else COVER_SIZE.dp),
                     sizeHint = 200.dp,
                     shape = RoundedCornerShape(14.dp),
                     kind = CoverKind.Song,
@@ -386,7 +301,7 @@ private fun NowPlayingBlock(
     val controls: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier) {
             ControlRow(player, song, onTogglePlay, onOpenPlayer = navigator::openPlayer)
-            facts?.let { FactLine(it) }
+            TrackBlurb(blurbs, Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp))
         }
     }
     if (wide) {
@@ -397,7 +312,7 @@ private fun NowPlayingBlock(
     } else {
         Column(Modifier.fillMaxWidth()) {
             swipeArea(Modifier.fillMaxWidth())
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(if (compact) 14.dp else 20.dp))
             controls(Modifier.fillMaxWidth().widthIn(max = PILL_MAX_WIDTH))
         }
     }
@@ -467,17 +382,70 @@ private fun ControlRow(player: PlayerUiState, song: Song, onTogglePlay: () -> Un
     }
 }
 
+/**
+ * Короткий текст о треке под «таблеткой»: место — ровно [BLURB_LINES] строки. Сервер присылает несколько законченных
+ * фраз (до ~110 символов); показывается первая, которая целиком помещается при текущей ширине и размере шрифта —
+ * без многоточий. Не поместилась ни одна или текста нет — блок пуст. Пока текст подбирается — «Собираю интересное…».
+ */
 @Composable
-private fun FactLine(facts: ArtistFacts) {
-    val text = facts.fact ?: facts.tags.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: return
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = Color.White.copy(alpha = 0.82f),
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 14.dp).testTag("wave-fact"),
-    )
+private fun TrackBlurb(blurbs: Section<List<String>>, modifier: Modifier = Modifier) {
+    val style = MaterialTheme.typography.bodyMedium
+    val lineHeight = with(LocalDensity.current) { style.lineHeight.toDp() }
+    val iconSpace = BLURB_ICON + 12.dp
+    BoxWithConstraints(modifier.fillMaxWidth().height(lineHeight * BLURB_LINES + 4.dp).testTag("wave-blurb")) {
+        val measurer = rememberTextMeasurer()
+        val textWidth = with(LocalDensity.current) { (maxWidth - iconSpace).roundToPx().coerceAtLeast(1) }
+        val fitting = (blurbs as? Section.Ready)?.value?.let { variants ->
+            remember(variants, textWidth, style) { firstFitting(variants, textWidth, style, measurer::measureLines) }
+        }
+        val shown: String? = when {
+            blurbs is Section.Loading -> LOADING
+            fitting != null -> fitting
+            else -> null
+        }
+        AnimatedContent(targetState = shown, transitionSpec = {
+            fadeIn(tween(BLURB_FADE_MS)) togetherWith fadeOut(tween(BLURB_FADE_MS))
+        }, label = "blurb") { text ->
+            if (text != null) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Box(
+                        Modifier.size(BLURB_ICON).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.size(12.dp))
+                    if (text == LOADING) {
+                        val alpha = shimmerAlpha()
+                        Text(
+                            stringResource(R.string.wave_blurb_loading),
+                            style = style,
+                            color = Color.White,
+                            modifier = Modifier.graphicsLayer { this.alpha = 0.45f + alpha * 2f }.testTag("wave-blurb-loading"),
+                        )
+                    } else {
+                        Text(text, style = style, color = Color.White.copy(alpha = 0.86f), modifier = Modifier.testTag("wave-fact"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun androidx.compose.ui.text.TextMeasurer.measureLines(text: String, width: Int, style: TextStyle): Pair<Int, Boolean> {
+    val layout = measure(text, style, constraints = Constraints(maxWidth = width), maxLines = BLURB_LINES + 1)
+    return layout.lineCount to layout.hasVisualOverflow
+}
+
+/** Первая фраза, которая целиком помещается в [BLURB_LINES] строки ширины [width]. */
+internal fun firstFitting(
+    variants: List<String>,
+    width: Int,
+    style: TextStyle,
+    measure: (String, Int, TextStyle) -> Pair<Int, Boolean>,
+): String? = variants.firstOrNull { text ->
+    val (lines, overflow) = measure(text, width, style)
+    lines <= BLURB_LINES && !overflow
 }
 
 /** Под режим мало треков в библиотеке: предложить подобрать и докачать похожее (пул «На пробу»). */
@@ -503,204 +471,15 @@ private fun LowCoverageHint(onFindMore: () -> Unit) {
     }
 }
 
-/** Карусель режимов. При выбранном режиме первая карточка — «Назад к привычному». */
-@Composable
-private fun ModeCarousel(cards: List<ModeCard>, active: ModeCard?, onPick: (ModeCard?) -> Unit) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.padding(top = 20.dp).testTag("wave-modes"),
-    ) {
-        if (active != null) {
-            item(key = "back") {
-                ModeCardView(
-                    stringResource(R.string.wave_back_to_usual),
-                    null,
-                    listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.12f)),
-                    ModeShape.Rings,
-                    selected = false,
-                    tag = "wave-mode-back",
-                ) { onPick(null) }
-            }
-        }
-        items(cards, key = { it.id }) { card ->
-            val caption = card.subtitle ?: card.count?.let { pluralStringResource(R.plurals.tracks, it, it) }
-            ModeCardView(card.title, caption, card.colors, card.shape, selected = card.id == active?.id, tag = "wave-mode-${card.id}") {
-                onPick(card)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModeCardView(
-    title: String,
-    caption: String?,
-    colors: List<Color>,
-    shape: ModeShape,
-    selected: Boolean,
-    tag: String,
-    onClick: () -> Unit,
-) {
-    Column(
-        Modifier
-            .width(CARD_WIDTH.dp)
-            .height(CARD_HEIGHT.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.08f))
-            .then(if (selected) Modifier.border(2.dp, Color.White, RoundedCornerShape(20.dp)) else Modifier)
-            .clickable(onClick = onClick)
-            .padding(10.dp)
-            .testTag(tag),
-    ) {
-        Canvas(Modifier.fillMaxWidth().height(CARD_WIDTH.dp - 44.dp)) { drawModeShape(shape, colors) }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
-            maxLines = if (caption ==
-                null
-            ) {
-                2
-            } else {
-                1
-            },
-            overflow = TextOverflow.Ellipsis,
-        )
-        caption?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawModeShape(shape: ModeShape, colors: List<Color>) {
-    val brush = Brush.linearGradient(colors, start = Offset.Zero, end = Offset(size.width, size.height))
-    val cx = size.width / 2
-    val cy = size.height / 2
-    val r = minOf(size.width, size.height) * 0.42f
-    when (shape) {
-        ModeShape.Circle -> drawCircle(brush, r, Offset(cx, cy))
-        ModeShape.Rings -> {
-            drawCircle(brush, r, Offset(cx, cy), alpha = 0.35f)
-            drawCircle(brush, r * 0.7f, Offset(cx, cy), alpha = 0.6f)
-            drawCircle(brush, r * 0.4f, Offset(cx, cy))
-        }
-        ModeShape.Squircle -> drawRoundRect(
-            brush,
-            topLeft = Offset(cx - r, cy - r),
-            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(r * 0.55f),
-        )
-        ModeShape.Triangle -> drawPath(
-            Path().apply {
-                moveTo(cx, cy - r)
-                lineTo(cx + r, cy + r * 0.8f)
-                lineTo(cx - r, cy + r * 0.8f)
-                close()
-            },
-            brush,
-        )
-        ModeShape.Diamond -> drawPath(
-            Path().apply {
-                moveTo(cx, cy - r)
-                lineTo(cx + r, cy)
-                lineTo(cx, cy + r)
-                lineTo(cx - r, cy)
-                close()
-            },
-            brush,
-        )
-        ModeShape.Blob -> {
-            drawCircle(brush, r * 0.7f, Offset(cx - r * 0.35f, cy - r * 0.15f))
-            drawCircle(brush, r * 0.6f, Offset(cx + r * 0.4f, cy + r * 0.2f))
-            drawCircle(brush, r * 0.45f, Offset(cx, cy + r * 0.45f))
-        }
-    }
-}
-
-/** Настройки волны (кнопка слева сверху): характер и настроение — сочетаются с режимом. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun WaveSettingsSheet(
-    settings: AppSettings,
-    onCharacter: (WaveCharacter) -> Unit,
-    onMood: (WaveMood) -> Unit,
-    onLanguage: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
-            Text(stringResource(R.string.wave_settings), style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.settings_wave_character), style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WaveCharacter.entries.forEach { character ->
-                    FilterChip(
-                        selected = settings.waveCharacter == character,
-                        onClick = { onCharacter(character) },
-                        label = { Text(stringResource(waveCharacterLabel(character))) },
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.settings_wave_mood), style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WaveMood.entries.forEach { mood ->
-                    FilterChip(selected = settings.waveMood == mood, onClick = {
-                        onMood(mood)
-                    }, label = { Text(stringResource(moodLabel(mood))) })
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.wave_language), style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    "" to R.string.wave_language_any,
-                    "ru" to R.string.wave_language_ru,
-                    "en" to R.string.wave_language_en,
-                    "none" to R.string.wave_language_none,
-                )
-                    .forEach { (code, label) ->
-                        FilterChip(selected = settings.waveLanguage == code, onClick = {
-                            onLanguage(code)
-                        }, label = { Text(stringResource(label)) })
-                    }
-            }
-            Text(
-                stringResource(R.string.wave_settings_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-    }
-}
-
-@StringRes
-fun moodLabel(mood: WaveMood): Int = when (mood) {
-    WaveMood.Any -> R.string.wave_mood_any
-    WaveMood.Energetic -> R.string.wave_mood_energetic
-    WaveMood.Calm -> R.string.wave_mood_calm
-    WaveMood.Happy -> R.string.wave_mood_happy
-    WaveMood.Sad -> R.string.wave_mood_sad
-}
-
-private const val HERO_SHARE = 0.78f
-private val HERO_MIN = 460.dp
-private val HERO_MAX = 760.dp
+/** Метка состояния «текст подбирается» в [TrackBlurb]. */
+private const val LOADING = "\u0000loading"
+private const val BLURB_LINES = 3
+private val BLURB_ICON: Dp = 32.dp
+private const val BLURB_FADE_MS = 400
 private const val COVER_SIZE = 84
-private const val CARD_WIDTH = 116
-private const val CARD_HEIGHT = 136
+private const val COVER_COMPACT = 64
+private val COMPACT_HEIGHT = 640.dp
 private const val WIDE_MIN = 600
-private const val WIDE_HERO_SHARE = 0.92f
-private val WIDE_HERO_MIN = 320.dp
 private val PILL_MAX_WIDTH = 640.dp
 private const val SWIPE_MS = 260
 private const val SWIPE_THRESHOLD = 56

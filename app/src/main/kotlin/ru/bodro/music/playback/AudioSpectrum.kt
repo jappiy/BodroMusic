@@ -22,8 +22,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Кадр спектра: [bands] — уровни полос 0..1 от низких частот к высоким, [level] — общая громкость 0..1. */
-class SpectrumFrame(val bands: FloatArray, val level: Float) {
+/**
+ * Кадр спектра: [bands] — уровни полос 0..1 от низких частот к высоким, [level] — общая громкость (RMS) 0..1,
+ * [bass] — энергия низких частот (40–160 Гц: бочка и бас) 0..1 — по ней фон «вдыхает» на сильных долях.
+ */
+class SpectrumFrame(val bands: FloatArray, val level: Float, val bass: Float = 0f) {
     companion object {
         val Silent = SpectrumFrame(FloatArray(AudioSpectrum.BANDS), 0f)
     }
@@ -37,9 +40,17 @@ class SpectrumFrame(val bands: FloatArray, val level: Float) {
  */
 object AudioSpectrum {
     const val BANDS = 16
+
+    /**
+     * PCM приходит в процессор раньше, чем в динамик, — на размер буфера `AudioTrack` (у DefaultAudioSink для PCM
+     * не меньше 250 мс). Фон берёт кадр с этой задержкой ([frameAt]), чтобы «вдох» совпадал с ударом, который слышно.
+     */
+    const val OUTPUT_LATENCY_MS = 250L
+    private const val HISTORY = 64
     private val listeners = AtomicInteger(0)
     private val _frames = MutableStateFlow(SpectrumFrame.Silent)
     val frames: StateFlow<SpectrumFrame> = _frames.asStateFlow()
+    private val history = ArrayDeque<Pair<Long, SpectrumFrame>>()
 
     val isListening: Boolean get() = listeners.get() > 0
 
@@ -51,17 +62,36 @@ object AudioSpectrum {
         if (listeners.decrementAndGet() <= 0) {
             listeners.set(0)
             _frames.value = SpectrumFrame.Silent
+            synchronized(history) { history.clear() }
         }
     }
 
-    internal fun publish(frame: SpectrumFrame) {
+    internal fun publish(frame: SpectrumFrame, nowNanos: Long = System.nanoTime()) {
         _frames.value = frame
+        synchronized(history) {
+            history.addLast(nowNanos to frame)
+            while (history.size > HISTORY) history.removeFirst()
+        }
     }
+
+    /** Кадр, который звучит в динамике сейчас: опубликованный [OUTPUT_LATENCY_MS] назад (или самый старый из есть). */
+    fun frameAt(nowNanos: Long = System.nanoTime()): SpectrumFrame {
+        val target = nowNanos - OUTPUT_LATENCY_MS * 1_000_000
+        synchronized(history) {
+            if (history.isEmpty()) return SpectrumFrame.Silent
+            // Звук давно не приходил (пауза, перемотка) — тишина, а не застывший последний кадр.
+            if (nowNanos - history.last().first > STALE_NANOS) return SpectrumFrame.Silent
+            return history.lastOrNull { it.first <= target }?.second ?: history.first().second
+        }
+    }
+
+    private const val STALE_NANOS = 1_000_000_000L
 }
 
 /**
- * Пропускает 16-битный PCM без изменений и, пока [AudioSpectrum] слушают, ~30 раз в секунду считает спектр:
- * БПФ на 1024 отсчёта (окно Ханна), 16 логарифмических полос 40 Гц – 16 кГц, уровни в дБ → 0..1.
+ * Пропускает 16-битный PCM без изменений и, пока [AudioSpectrum] слушают, ~60 раз в секунду считает спектр:
+ * БПФ на 1024 отсчёта (окно Ханна), 16 логарифмических полос 40 Гц – 16 кГц, громкость (RMS) и энергию баса
+ * 40–160 Гц, уровни в дБ → 0..1.
  * Звук приходит в процессор раньше, чем в динамик (буфер вывода ~0,2–0,5 с); фон сглаживает уровни, задержка
  * на глаз не заметна. Другие форматы (float, многоканальный passthrough) процессор не берёт — плеер играет их мимо.
  */
@@ -77,6 +107,8 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
     private val im = FloatArray(FFT_SIZE)
     private val window = FloatArray(FFT_SIZE) { (0.5 - 0.5 * cos(2 * PI * it / (FFT_SIZE - 1))).toFloat() }
     private var bandEdges = edges(DEFAULT_RATE)
+    private var bassFrom = bin(BASS_LOW_HZ, DEFAULT_RATE)
+    private var bassTo = bin(BASS_HIGH_HZ, DEFAULT_RATE) + 1
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) throw UnhandledAudioFormatException(inputAudioFormat)
@@ -84,6 +116,8 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
         sampleRate = inputAudioFormat.sampleRate
         hop = (sampleRate / FRAMES_PER_SECOND).coerceAtLeast(1)
         bandEdges = edges(sampleRate)
+        bassFrom = bin(BASS_LOW_HZ, sampleRate)
+        bassTo = bin(BASS_HIGH_HZ, sampleRate) + 1
         return inputAudioFormat
     }
 
@@ -137,17 +171,28 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
             bands[b] = ((db - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f)
         }
         val rmsDb = 10f * log10(energy / FFT_SIZE + 1e-12f)
-        return SpectrumFrame(bands, ((rmsDb - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f))
+        var low = 0f
+        for (k in bassFrom until bassTo) low += re[k] * re[k] + im[k] * im[k]
+        val bassDb = 10f * log10(low / (bassTo - bassFrom) / (FFT_SIZE * FFT_SIZE / 16f) + 1e-12f)
+        return SpectrumFrame(
+            bands,
+            ((rmsDb - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f),
+            ((bassDb - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f),
+        )
     }
 
     companion object {
         const val FFT_SIZE = 1024
-        const val FRAMES_PER_SECOND = 30
+        const val FRAMES_PER_SECOND = 60
         private const val DEFAULT_RATE = 44_100
         private const val SHORT_SCALE = 32_768f
         private const val FLOOR_DB = -60f
         private const val LOW_HZ = 40.0
         private const val HIGH_HZ = 16_000.0
+        private const val BASS_LOW_HZ = 40.0
+        private const val BASS_HIGH_HZ = 160.0
+
+        fun bin(hz: Double, sampleRate: Int): Int = (hz * FFT_SIZE / sampleRate).toInt().coerceIn(1, FFT_SIZE / 2 - 1)
 
         /** Границы полос в номерах бинов БПФ: логарифмически от 40 Гц до 16 кГц (не выше Найквиста). */
         fun edges(sampleRate: Int): IntArray {

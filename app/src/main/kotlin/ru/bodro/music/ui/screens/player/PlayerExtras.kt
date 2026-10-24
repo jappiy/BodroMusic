@@ -24,7 +24,9 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -47,9 +49,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -73,52 +73,77 @@ import ru.bodro.music.core.model.Playlist
 import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.data.downloads.DownloadsRepository
+import ru.bodro.music.data.reco.Section
+import ru.bodro.music.data.reco.TrackInfo
+import ru.bodro.music.data.reco.TrackInfoPart
+import ru.bodro.music.data.reco.TrackInfoRepository
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.data.repository.PlaylistRepository
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.SettingsRepository
-import ru.bodro.music.playback.PlayerConnection
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.components.SkeletonArtistCard
+import ru.bodro.music.ui.components.SkeletonLines
+import ru.bodro.music.ui.components.SkeletonTrackRow
+import ru.bodro.music.ui.components.rememberSystemAnimations
+import ru.bodro.music.ui.components.shimmerAlpha
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.screens.search.DiscoverTrackRow
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
-/** Блоки под плеером для текущего трека: исполнитель, похожие, популярные исполнителя, свои плейлисты. */
+/**
+ * Блоки под плеером для текущего трека: исполнитель, «О треке», похожие, популярные исполнителя, свои плейлисты.
+ * Догружаемые блоки — [Section]: загрузка (скелетон), готово, пусто (скрыт), ошибка («Повторить»).
+ */
 data class PlayerExtrasUi(
     val songId: String? = null,
-    val artist: Artist? = null,
-    val similar: List<DiscoverTrack> = emptyList(),
-    val popular: List<DiscoverTrack> = emptyList(),
+    val artist: Section<Artist> = Section.Empty,
+    val similar: Section<List<DiscoverTrack>> = Section.Empty,
+    val popular: Section<List<DiscoverTrack>> = Section.Empty,
+    val blurbs: Section<List<String>> = Section.Empty,
     val playlists: List<Playlist> = emptyList(),
-)
+) {
+    val isLoading: Boolean get() = listOf(artist, similar, popular, blurbs).any { it is Section.Loading }
+
+    /** Всё догрузилось, и ничего нет — вместо пустых блоков одна строка «Нет дополнительной информации». */
+    val nothingFound: Boolean get() = songId != null && listOf(artist, similar, popular, blurbs).all { it is Section.Empty }
+
+    companion object {
+        fun of(info: TrackInfo, playlists: List<Playlist>) =
+            PlayerExtrasUi(info.songId, info.artist, info.similar, info.popular, info.blurbs, playlists)
+    }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class PlayerExtrasViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    player: PlayerConnection,
     private val library: LibraryRepository,
     private val downloads: DownloadsRepository,
     private val playlists: PlaylistRepository,
     private val reactions: ReactionRepository,
     private val settingsRepository: SettingsRepository,
+    private val trackInfo: TrackInfoRepository,
 ) : ViewModel() {
-    /** Нет сети, bodrod или Last.fm — блоки пустые и не показываются. */
-    val extras: StateFlow<PlayerExtrasUi> = player.state
-        .map { it.currentSong }
-        .distinctUntilChanged { a, b -> a?.id == b?.id }
-        .transformLatest { song ->
-            if (song == null) {
-                emit(PlayerExtrasUi())
-                return@transformLatest
-            }
-            emit(PlayerExtrasUi(songId = song.id))
-            emit(load(song))
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerExtrasUi())
+    private val myPlaylists = trackInfo.current
+        .map { it.songId }
+        .distinctUntilChanged()
+        .transformLatest { emit(runCatching { playlists.myPlaylists() }.getOrDefault(emptyList())) }
+        .onStart { emit(emptyList()) }
+
+    /**
+     * Блоки грузятся ещё при старте трека ([TrackInfoRepository]) — к прокрутке плеера обычно уже готовы.
+     * Нет сети, bodrod или Last.fm — блок пустой и не показывается.
+     */
+    val extras: StateFlow<PlayerExtrasUi> = combine(trackInfo.current, myPlaylists) { info, mine -> PlayerExtrasUi.of(info, mine) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerExtrasUi.of(trackInfo.current.value, emptyList()))
+
+    fun retry(part: TrackInfoPart) {
+        trackInfo.current.value.songId?.let { trackInfo.retry(it, part) }
+    }
 
     /** Заявки на загрузку по ключу «исполнитель|название»; пока плеер открыт — с опросом сервиса. */
     val requests: StateFlow<Map<String, DownloadRequest>> = combine(
@@ -135,33 +160,6 @@ class PlayerExtrasViewModel @Inject constructor(
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
-
-    private suspend fun load(song: Song): PlayerExtrasUi = coroutineScope {
-        val artistName = song.artist.orEmpty()
-        val artist = async { song.artistId?.let { id -> runCatching { library.artist(id).first.artist }.getOrNull() } }
-        val similar = async {
-            if (downloads.isConfigured && artistName.isNotBlank()) {
-                runCatching { downloads.similarTracks(artistName, song.title, song.id) }.getOrDefault(emptyList())
-            } else {
-                emptyList()
-            }
-        }
-        val popular = async {
-            if (downloads.isConfigured && artistName.isNotBlank()) {
-                runCatching { downloads.artistPopular(artistName).tracks }.getOrDefault(emptyList())
-            } else {
-                emptyList()
-            }
-        }
-        val mine = async { runCatching { playlists.myPlaylists() }.getOrDefault(emptyList()) }
-        PlayerExtrasUi(
-            songId = song.id,
-            artist = artist.await(),
-            similar = similar.await().filterNot { it.librarySongId == song.id }.distinctBy { it.key },
-            popular = popular.await().filterNot { it.librarySongId == song.id }.distinctBy { it.key }.take(POPULAR_SHOWN),
-            playlists = mine.await(),
-        )
-    }
 
     /** ♡ исполнителя: звезда в Navidrome для текущей учётки (liked2lidarr по ней подписывает на новые релизы в Lidarr). */
     fun toggleArtistLike(artist: Artist, current: Boolean) {
@@ -204,10 +202,6 @@ class PlayerExtrasViewModel @Inject constructor(
     fun setQuality(quality: StreamQuality) {
         viewModelScope.launch { settingsRepository.update { it.copy(quality = quality) } }
     }
-
-    private companion object {
-        const val POPULAR_SHOWN = 10
-    }
 }
 
 /** Действия блоков под плеером (из экрана плеера). */
@@ -221,6 +215,7 @@ class PlayerExtrasActions(
     val onAllPlaylists: () -> Unit,
     val onSleepTimer: () -> Unit,
     val onQuality: (StreamQuality) -> Unit,
+    val onRetry: (TrackInfoPart) -> Unit = {},
 )
 
 /** Блоки под основным плеером (прокрутка вниз). Нет данных — блок не показывается. */
@@ -234,11 +229,41 @@ fun LazyListScope.playerExtras(
     palette: PlayerPalette,
     actions: PlayerExtrasActions,
 ) {
-    extras.artist?.let { artist ->
-        item(key = "artist") { ArtistCard(artist, artistLiked, palette, actions) }
+    if (extras.isLoading) item(key = "extras-status") { LoadingStatus(palette) }
+    if (extras.nothingFound) {
+        item(key = "extras-none") {
+            Text(
+                stringResource(R.string.player_extras_none),
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.content.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).testTag("player-extras-none"),
+            )
+        }
     }
-    trackSection("similar", R.string.player_similar, extras.similar, requests, canDownload, palette, actions)
-    trackSection("popular", R.string.player_popular, extras.popular, requests, canDownload, palette, actions)
+    when (val artist = extras.artist) {
+        Section.Loading -> item(key = "artist-loading") { SkeletonArtistCard(palette.content, shimmerAlpha()) }
+        is Section.Ready -> item(key = "artist") { ArtistCard(artist.value, artistLiked, palette, actions) }
+        is Section.Failed -> item(key = "artist-failed") {
+            SectionError(R.string.player_artist_failed, palette) { actions.onRetry(TrackInfoPart.Artist) }
+        }
+        Section.Empty -> Unit
+    }
+    when (val blurbs = extras.blurbs) {
+        Section.Loading -> item(key = "about-loading") {
+            SkeletonLines(2, palette.content, shimmerAlpha(), Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+        }
+        is Section.Ready -> item(key = "about") {
+            Text(
+                blurbs.value.first(),
+                style = MaterialTheme.typography.bodyLarge,
+                color = palette.content.copy(alpha = 0.85f),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp).testTag("player-about"),
+            )
+        }
+        else -> Unit
+    }
+    trackSection("similar", R.string.player_similar, TrackInfoPart.Similar, extras.similar, requests, canDownload, palette, actions)
+    trackSection("popular", R.string.player_popular, TrackInfoPart.Popular, extras.popular, requests, canDownload, palette, actions)
     item(key = "playlists-header") { SectionTitle(stringResource(R.string.menu_add_to_playlist), palette) }
     items(extras.playlists.take(PLAYLISTS_SHOWN), key = { "pl-${it.id}" }) { playlist ->
         Row(
@@ -318,13 +343,28 @@ private fun ArtistCard(artist: Artist, liked: Boolean, palette: PlayerPalette, a
 private fun LazyListScope.trackSection(
     key: String,
     title: Int,
-    tracks: List<DiscoverTrack>,
+    part: TrackInfoPart,
+    section: Section<List<DiscoverTrack>>,
     requests: Map<String, DownloadRequest>,
     canDownload: Boolean,
     palette: PlayerPalette,
     actions: PlayerExtrasActions,
 ) {
-    if (tracks.isEmpty()) return
+    when (section) {
+        Section.Empty -> return
+        Section.Loading -> {
+            item(key = "$key-header") { SectionTitle(stringResource(title), palette) }
+            items(SKELETON_ROWS, key = { "$key-skeleton-$it" }) { SkeletonTrackRow(palette.content, shimmerAlpha()) }
+            return
+        }
+        is Section.Failed -> {
+            item(key = "$key-header") { SectionTitle(stringResource(title), palette) }
+            item(key = "$key-failed") { SectionError(R.string.player_section_failed, palette) { actions.onRetry(part) } }
+            return
+        }
+        is Section.Ready -> Unit
+    }
+    val tracks = section.value
     item(key = "$key-header") {
         val missing = tracks.count { t ->
             t.librarySongId == null &&
@@ -361,6 +401,46 @@ private fun LazyListScope.trackSection(
             } else {
                 Spacer(Modifier.size(48.dp))
             }
+        }
+    }
+}
+
+/** «Загружаем информацию об исполнителе…» с индикатором — пока грузится хоть один блок. */
+@Composable
+private fun LoadingStatus(palette: PlayerPalette) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp).testTag("player-extras-loading"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (rememberSystemAnimations()) {
+            CircularProgressIndicator(Modifier.size(16.dp), color = palette.accent, strokeWidth = 2.dp)
+        } else {
+            Icon(Icons.Rounded.HourglassTop, contentDescription = null, tint = palette.accent, modifier = Modifier.size(16.dp))
+        }
+        Text(
+            stringResource(R.string.player_extras_loading),
+            style = MaterialTheme.typography.bodyMedium,
+            color = palette.content.copy(alpha = 0.7f),
+            modifier = Modifier.weight(1f).padding(start = 10.dp),
+        )
+    }
+}
+
+/** Блок не загрузился: короткое сообщение и «Повторить». */
+@Composable
+private fun SectionError(message: Int, palette: PlayerPalette, onRetry: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(message),
+            style = MaterialTheme.typography.bodyMedium,
+            color = palette.content.copy(alpha = 0.7f),
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRetry, modifier = Modifier.testTag("player-extras-retry")) {
+            Text(stringResource(R.string.action_retry), color = palette.accent)
         }
     }
 }
@@ -435,6 +515,7 @@ private fun OnPlayerColors(palette: PlayerPalette, content: @Composable () -> Un
 }
 
 private const val PLAYLISTS_SHOWN = 5
+private const val SKELETON_ROWS = 4
 
 /** Источник очереди для трека, запущенного из блоков плеера. */
 fun extrasSource(title: String) = QueueSource.CustomSource(title)

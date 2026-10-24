@@ -19,6 +19,7 @@ import coil3.toBitmap
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -77,8 +78,16 @@ class ImageLoaderFactory @Inject constructor(private val http: OkHttpClient) {
         .build()
 }
 
-/** Цвета обложки для фона плеера и мини-плеера. */
-data class CoverColors(val background: Color, val accent: Color, val onBackground: Color)
+/**
+ * Цвета обложки для фона плеера и мини-плеера. [glow] — доминантный цвет и 1–2 акцента (разные по оттенку) для
+ * свечения «Моей волны».
+ */
+data class CoverColors(
+    val background: Color,
+    val accent: Color,
+    val onBackground: Color,
+    val glow: List<Color> = listOf(accent),
+)
 
 @Singleton
 class CoverPaletteRepository @Inject constructor(
@@ -113,6 +122,32 @@ class CoverPaletteRepository @Inject constructor(
             background = Color(backgroundSwatch.rgb),
             accent = Color(accentSwatch.rgb),
             onBackground = Color(backgroundSwatch.bodyTextColor).copy(alpha = 1f),
+            glow = glowColors(palette),
         )
+    }
+
+    /** Доминантный цвет, затем самые заметные акценты, отличные от него по оттенку (≥ 25°). */
+    private fun glowColors(palette: Palette): List<Color> {
+        val swatches = listOfNotNull(
+            palette.dominantSwatch,
+            palette.vibrantSwatch,
+            palette.lightVibrantSwatch,
+            palette.darkVibrantSwatch,
+            palette.mutedSwatch,
+            palette.lightMutedSwatch,
+        )
+        val chosen = mutableListOf<Palette.Swatch>()
+        for (swatch in swatches.sortedByDescending { if (it === palette.dominantSwatch) Int.MAX_VALUE else it.population }) {
+            if (chosen.size == GLOW_COLORS) break
+            if (chosen.none { hueDistance(it.hsl[0], swatch.hsl[0]) < MIN_HUE_DISTANCE }) chosen += swatch
+        }
+        return chosen.map { Color(it.rgb) }
+    }
+
+    private fun hueDistance(a: Float, b: Float): Float = abs(a - b).let { minOf(it, 360f - it) }
+
+    private companion object {
+        const val GLOW_COLORS = 3
+        const val MIN_HUE_DISTANCE = 25f
     }
 }

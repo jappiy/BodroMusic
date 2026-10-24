@@ -41,9 +41,11 @@ class PlaybackUiTest {
 
     @Test
     fun openAlbumPlayTrackAndReact() {
-        // Блок «Моей волны» занимает почти весь первый экран — подборки ниже, к ним нужно прокрутить.
+        // На «Главной» — только волна; подборки библиотеки — на вкладке «Чарты».
+        compose.onNodeWithTag("tab-charts").performClick()
+        compose.waitForTag("charts-tab")
         compose.waitUntil(15_000) {
-            runCatching { compose.onNodeWithTag("home-list").performScrollToNode(hasTestTag("album-al-1")) }.isSuccess
+            runCatching { compose.onNodeWithTag("charts-list").performScrollToNode(hasTestTag("album-al-1")) }.isSuccess
         }
         compose.waitForTag("album-al-1")
         compose.onAllNodesWithTag("album-al-1")[0].performClick()

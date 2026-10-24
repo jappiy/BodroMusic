@@ -6,7 +6,6 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -32,10 +31,8 @@ import ru.bodro.music.data.repository.HomeData
 import ru.bodro.music.data.repository.LibraryRepository
 import ru.bodro.music.data.repository.PlaylistRepository
 import ru.bodro.music.data.repository.SearchHistoryRepository
-import ru.bodro.music.playback.PlayerConnection
-import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.LoadState
-import ru.bodro.music.ui.screens.home.HomeViewModel
+import ru.bodro.music.ui.screens.charts.ChartsTabViewModel
 import ru.bodro.music.ui.screens.login.LoginViewModel
 import ru.bodro.music.ui.screens.search.SearchViewModel
 
@@ -102,20 +99,13 @@ class ViewModelTests {
 
     // endregion
 
-    // region Главная
+    // region Вкладка «Чарты» (подборки, бывшие на главной)
 
     @Test
-    fun `home loads content and maps errors`() = runTest(main.dispatcher) {
-        val player = mockk<PlayerConnection> { every { state } returns MutableStateFlow(PlayerUiState()) }
+    fun `charts tab loads content and maps errors`() = runTest(main.dispatcher) {
         coEvery { library.home() } throws SubsonicException(SubsonicError.Api(40, "Wrong"))
         val charts = mockk<ru.bodro.music.data.reco.ChartsRepository> { coEvery { home() } returns emptyList() }
-        val settingsRepo = mockk<ru.bodro.music.data.settings.SettingsRepository>(relaxed = true) {
-            every { settings } returns MutableStateFlow(ru.bodro.music.data.settings.AppSettings())
-        }
-        val wave = mockk<ru.bodro.music.data.repository.WaveRepository>(relaxed = true) {
-            every { coverage } returns MutableStateFlow(null)
-        }
-        val vm = HomeViewModel(library, player, charts, settingsRepo, mockk(relaxed = true), wave, mockk(relaxed = true))
+        val vm = ChartsTabViewModel(library, charts)
         advanceUntilIdle()
         assertEquals(R.string.error_wrong_credentials, (vm.state.value as LoadState.Error).error.message)
 

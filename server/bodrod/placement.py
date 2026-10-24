@@ -152,6 +152,7 @@ def place_file(source: Path, dest: Path, tags: Tags, cover: tuple[bytes, str] | 
     try:
         shutil.copyfile(source, tmp)
         written = write_tags(tmp, tags, cover)
+        written += fix_encoding(tmp)
         os.replace(tmp, dest)
     finally:
         with contextlib.suppress(FileNotFoundError):
@@ -170,6 +171,25 @@ def remove_source(source: Path, downloads_dir: str) -> None:
 
 
 # region Теги
+
+
+def fix_encoding(path: Path) -> list[str]:
+    """Импорт: битая кодировка в остальных тегах (жанр, композитор, альбом из файла) исправляется сразу,
+    чтобы в библиотеку не попадали «Ðîê» и «Ñåêðåò». Возвращает исправленные поля для лога."""
+    from .encoding import FIELD_NAMES, read_values, repair_fields, write_values
+
+    values = read_values(path)
+    if not values:
+        return []
+    fixed, _ = repair_fields(values)
+    if not fixed:
+        return []
+    try:
+        write_values(path, fixed)
+    except Exception:  # noqa: BLE001 — не исправилось: ночной регламент попробует ещё раз
+        log.warning("Не удалось исправить кодировку тегов %s", path.name, exc_info=True)
+        return []
+    return [f"кодировка: {FIELD_NAMES[k]}" for k in fixed]
 
 
 def write_tags(path: Path, tags: Tags, cover: tuple[bytes, str] | None) -> list[str]:

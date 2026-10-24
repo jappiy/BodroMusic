@@ -102,6 +102,9 @@ class Settings:
     discogs_token: str | None = None
     """Ключ API Last.fm (необязательно): без него Last.fm везде пропускается."""
     lastfm_api_key: str | None = None
+    """Ключ AcoustID (необязательно): трек с неисправимой кодировкой тегов опознаётся по отпечатку звука.
+    Нужен ещё `fpcalc` (Chromaprint) в образе; без них — поиск по имени файла в `TAG_PROVIDERS`."""
+    acoustid_api_key: str | None = None
 
     data_dir: str = "/data"
     worker_interval_s: float = 3.0
@@ -325,6 +328,7 @@ class Settings:
             tag_providers=_list("TAG_PROVIDERS", DEFAULT_TAG_PROVIDERS),
             discogs_token=_secret("DISCOGS_TOKEN", os.path.join(SECRETS_DIR, "discogs_token")),
             lastfm_api_key=_secret("LASTFM_API_KEY", os.path.join(SECRETS_DIR, "lastfm_api_key")),
+            acoustid_api_key=_secret("ACOUSTID_API_KEY", os.path.join(SECRETS_DIR, "acoustid_api_key")),
             data_dir=_opt("DATA_DIR") or "/data",
             slskd_search_timeout_s=_int("SLSKD_SEARCH_TIMEOUT_S", 25),
             slskd_max_candidates=_int("SLSKD_MAX_CANDIDATES", 5),

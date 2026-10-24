@@ -4,6 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object HomeRoute
 
+@Serializable data object ChartsRoute
+
 @Serializable data object CollectionRoute
 
 @Serializable data object SearchRoute
