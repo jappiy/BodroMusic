@@ -2,7 +2,7 @@
 
 - **Дата:** 2026-10-24
 - **Версии:** приложение 0.27.0 (`versionCode 28`)
-- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.27.0
+- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.27.0 (CI зелёный на `11efb42`, Release #21, APK в `dist`)
 - **Статус:** реализовано; снимки Robolectric (портрет, маленький экран, ландшафт, разложенный); на телефоне не проверено
 
 ## Задание

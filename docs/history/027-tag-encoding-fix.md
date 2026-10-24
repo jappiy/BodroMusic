@@ -2,8 +2,8 @@
 
 - **Дата:** 2026-10-24
 - **Версии:** bodrod 0.21.0, приложение 0.27.0 (экран отчёта)
-- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.27.0
-- **bodrod:** 0.21.0 по `docs/DEPLOY.md` (только код, база `9f5de2f` не менялась)
+- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.27.0 (CI зелёный на `11efb42`, Release #21, APK в `dist`)
+- **bodrod:** 0.21.0 установлен на NAS 2026-10-24 по `docs/DEPLOY.md` (только код, база `9f5de2f` не менялась)
 - **Статус:** реализовано; pytest (детектор на парах из задания, запись MP3/FLAC/OGG/M4A, регламент, откат, пробный
   режим); на реальной библиотеке не проверено
 
