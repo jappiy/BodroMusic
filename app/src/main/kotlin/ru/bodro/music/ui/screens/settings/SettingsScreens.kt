@@ -1,13 +1,9 @@
 package ru.bodro.music.ui.screens.settings
 
-import kotlin.math.abs
-import androidx.compose.ui.unit.Dp
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +33,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +63,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -72,6 +71,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,8 +83,8 @@ import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
-import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.data.settings.AppSettings
+import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.components.BodroTopBar
 import ru.bodro.music.ui.components.LoadState
@@ -584,15 +584,22 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                 settings.coverColors,
                 { v -> viewModel.update { it.copy(coverColors = v) } },
             )
-            ChoiceGroup(stringResource(R.string.settings_background_animation), BackgroundAnimation.entries, settings.backgroundAnimation, { mode ->
+            ChoiceGroup(
                 stringResource(
-                    when (mode) {
-                        BackgroundAnimation.Full -> R.string.background_animation_full
-                        BackgroundAnimation.Eco -> R.string.background_animation_eco
-                        BackgroundAnimation.Off -> R.string.background_animation_off
-                    },
-                )
-            }) { mode -> viewModel.update { it.copy(backgroundAnimation = mode) } }
+                    R.string.settings_background_animation,
+                ),
+                BackgroundAnimation.entries,
+                settings.backgroundAnimation,
+                { mode ->
+                    stringResource(
+                        when (mode) {
+                            BackgroundAnimation.Full -> R.string.background_animation_full
+                            BackgroundAnimation.Eco -> R.string.background_animation_eco
+                            BackgroundAnimation.Off -> R.string.background_animation_off
+                        },
+                    )
+                },
+            ) { mode -> viewModel.update { it.copy(backgroundAnimation = mode) } }
             Text(
                 stringResource(R.string.settings_background_animation_summary),
                 style = MaterialTheme.typography.bodySmall,

@@ -22,7 +22,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
-import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.downloads.DiscoverTrack
@@ -35,6 +34,7 @@ import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.reco.Section
 import ru.bodro.music.data.repository.ReactionState
 import ru.bodro.music.data.settings.AppSettings
+import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.app.AppActions
 import ru.bodro.music.ui.app.LocalAppActions

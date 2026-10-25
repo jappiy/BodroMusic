@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
@@ -29,7 +30,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -109,7 +109,15 @@ fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Bo
                 .layout { measurable, constraints ->
                     val w = constraints.maxWidth
                     val h = constraints.maxHeight
-                    val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = (w + 1) / 2, maxHeight = (h + 1) / 2))
+                    val placeable = measurable.measure(
+                        constraints.copy(
+                            minWidth = 0,
+                            minHeight = 0,
+                            maxWidth = (w + 1) / 2,
+                            maxHeight =
+                            (h + 1) / 2,
+                        ),
+                    )
                     layout(w, h) { placeable.place(0, 0) }
                 }
                 .graphicsLayer {

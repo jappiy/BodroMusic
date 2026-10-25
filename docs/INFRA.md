@@ -289,6 +289,11 @@ bodrod 0.21.0 (шаг регламента «Кодировка тегов» с 
 русский текст о треке; ставится по `docs/DEPLOY.md`, база `9f5de2f` не менялась; новая необязательная переменная
 `ACOUSTID_API_KEY` — работает только в образе с `fpcalc`) — [`docs/history/027-tag-encoding-fix.md`](history/027-tag-encoding-fix.md),
 [`029-track-blurb.md`](history/029-track-blurb.md). Установлен 2026-10-24 (robocopy → «Остановить» → «Создать», `/api/health` → 0.21.0).
+bodrod 0.22.0–0.23.0 (тексты песен `.lrc`/`.txt` рядом с треками — bodrod пишет в папку музыки; подводки к трекам;
+необязательные переменные `LYRICS_ENABLED`, `LYRICS_YANDEX_DELAY_S`, `LYRICS_LRCLIB`, `LYRICS_NIGHTLY_LIMIT`,
+`LYRICS_NIGHTLY_MINUTES`, `BLURB_LLM_PROVIDER` (`none` | `anthropic` | `ollama`), `BLURB_LLM_MODEL`, `BLURB_LLM_URL`,
+`ANTHROPIC_API_KEY` / `/secrets/anthropic_api_key`; база `9f5de2f` не менялась) —
+[`033-pravki-2026-10-25.md`](history/033-pravki-2026-10-25.md). Установлен 2026-10-25 (`/api/health` → 0.23.0).
 
 ---
 

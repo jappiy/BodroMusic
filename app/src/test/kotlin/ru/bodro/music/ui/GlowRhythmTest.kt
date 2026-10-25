@@ -14,7 +14,8 @@ import ru.bodro.music.ui.screens.wave.NebulaRhythm
 
 /** Задания 025, 033: ритм туманности на главной, подбор короткого текста под три строки, только русский текст. */
 class GlowRhythmTest {
-    private fun frame(energy: Float, beats: Int = 0) = SpectrumFrame(FloatArray(AudioSpectrum.BANDS), energy, energy = energy, beats = beats)
+    private fun frame(energy: Float, beats: Int = 0) =
+        SpectrumFrame(FloatArray(AudioSpectrum.BANDS), energy, energy = energy, beats = beats)
 
     @Test
     fun `energy rises fast and falls slowly`() {

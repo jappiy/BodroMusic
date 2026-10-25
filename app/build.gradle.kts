@@ -12,8 +12,8 @@ plugins {
 }
 
 // Версия приложения. Каждое изменение функциональности — запись в CHANGELOG.md и повышение версии.
-val appVersionCode = 28
-val appVersionName = "0.27.0"
+val appVersionCode = 29
+val appVersionName = "0.28.0"
 
 val gitHash: String = providers.exec {
     commandLine("git", "rev-parse", "--short=10", "HEAD")

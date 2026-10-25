@@ -91,6 +91,9 @@ class DownloadsClient(
             ),
         )
 
+    /** Подводки к трекам волны в порядке воспроизведения (bodrod 0.23.0+): антиповтор типов — по этому порядку. */
+    suspend fun blurbs(ids: List<String>): Blurbs = post(listOf("api", "v1", "blurbs"), IdsBody(ids))
+
     /** Какие треки удалены из библиотеки или заменены другой копией (bodrod 0.4.0+). */
     suspend fun checkLibrary(ids: List<String>): LibraryCheck = post(listOf("api", "v1", "library", "check"), IdsBody(ids))
 

@@ -77,6 +77,9 @@ class TrackInfoRepository @Inject constructor(
 
     private class Entry(val song: Song, val state: MutableStateFlow<TrackInfo>)
 
+    /** Последние заигравшие треки (по порядку) — сервер не повторяет тип подводки чаще раза в 5 треков. */
+    private val recent = ArrayDeque<String>()
+
     /** Информация о текущем треке плеера; загрузка начинается, как только трек сменился. */
     val current: StateFlow<TrackInfo> = player.state
         .map { it.currentSong }
@@ -85,6 +88,11 @@ class TrackInfoRepository @Inject constructor(
         .stateIn(scope, SharingStarted.Eagerly, TrackInfo())
 
     fun infoFor(song: Song): StateFlow<TrackInfo> {
+        synchronized(recent) {
+            recent.remove(song.id)
+            recent.addLast(song.id)
+            while (recent.size > RECENT_FOR_BLURBS) recent.removeFirst()
+        }
         val (entry, parts) = synchronized(cache) {
             val known = cache[song.id]
             if (known != null) {
@@ -142,8 +150,15 @@ class TrackInfoRepository @Inject constructor(
                 Section.Empty
             }
             TrackInfoPart.Blurbs -> if (downloads.isConfigured && artistName != null) {
-                downloads.artistFacts(artistName, song.title, song.album, song.year, BLURB_MAX_CHARS).texts
+                // Сначала подводка bodrod 0.23.0+ (факты, история, причина в волне), запасные — короткий текст о треке.
+                val order = synchronized(recent) { recent.toList() }
+                val blurb = runCatching { downloads.blurbs(order).items.firstOrNull { it.id == song.id }?.text }
+                    .getOrNull()
+                val facts = runCatching { downloads.artistFacts(artistName, song.title, song.album, song.year, BLURB_MAX_CHARS).texts }
+                    .getOrElse { if (blurb == null) throw it else emptyList() }
+                (listOfNotNull(blurb) + facts)
                     .filter(::isRussian)
+                    .distinct()
                     .ifEmpty { null }
                     ?.let { Section.Ready(it) } ?: Section.Empty
             } else {
@@ -169,6 +184,7 @@ class TrackInfoRepository @Inject constructor(
 
     companion object {
         private const val MAX_CACHE = 12
+        private const val RECENT_FOR_BLURBS = 10
         private const val TIMEOUT_MS = 25_000L
         const val POPULAR_SHOWN = 10
 

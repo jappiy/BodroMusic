@@ -3,6 +3,7 @@ package ru.bodro.music.ui.screens.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.SleepTimerOption
 import ru.bodro.music.core.domain.player.SleepTimerState
@@ -214,8 +217,24 @@ fun LyricsSheet(viewModel: PlayerViewModel, positionMs: Long, onSeek: (Long) -> 
                 val lyrics = s.lyrics
                 val listState = rememberLazyListState()
                 val active = lyrics.activeLineIndex(positionMs)
-                LaunchedEffect(active) {
-                    if (active >= 0) listState.animateScrollToItem((active - 2).coerceAtLeast(0))
+                // Пользователь листает сам — автопрокрутка замирает и через LYRICS_IDLE_MS после последнего
+                // касания плавно возвращается к текущей строке.
+                val dragging by listState.interactionSource.collectIsDraggedAsState()
+                var touchedAt by remember { mutableLongStateOf(0L) }
+                LaunchedEffect(dragging) {
+                    if (dragging) {
+                        touchedAt = Long.MAX_VALUE
+                    } else if (touchedAt !=
+                        0L
+                    ) {
+                        touchedAt = System.currentTimeMillis()
+                    }
+                }
+                LaunchedEffect(active, touchedAt) {
+                    if (active < 0 || touchedAt == Long.MAX_VALUE) return@LaunchedEffect
+                    val wait = touchedAt + LYRICS_IDLE_MS - System.currentTimeMillis()
+                    if (wait > 0) delay(wait)
+                    listState.animateScrollToItem((active - 2).coerceAtLeast(0))
                 }
                 LazyColumn(state = listState, modifier = Modifier.fillMaxHeight(0.85f), contentPadding = PaddingValues(20.dp)) {
                     itemsIndexed(lyrics.lines) { index, line ->
@@ -236,7 +255,11 @@ fun LyricsSheet(viewModel: PlayerViewModel, positionMs: Long, onSeek: (Long) -> 
                                     if (lyrics.synced &&
                                         line.startMs != null
                                     ) {
-                                        Modifier.clickable { onSeek(line.startMs!!) }
+                                        // Перемотка к строке; пауза остаётся паузой (seekTo не трогает playWhenReady).
+                                        Modifier.clickable {
+                                            touchedAt = 0L
+                                            onSeek(line.startMs!!)
+                                        }
                                     } else {
                                         Modifier
                                     },
@@ -286,3 +309,5 @@ fun SleepTimerDialog(current: SleepTimerState?, onSelect: (SleepTimerOption?) ->
         },
     )
 }
+
+private const val LYRICS_IDLE_MS = 3_000L

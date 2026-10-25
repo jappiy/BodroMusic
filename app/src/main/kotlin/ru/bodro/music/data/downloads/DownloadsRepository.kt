@@ -203,6 +203,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun waveReport() = client.waveReport()
 
+    suspend fun blurbs(ids: List<String>): ru.bodro.music.core.downloads.Blurbs = client.blurbs(ids)
+
     suspend fun artistFacts(
         artist: String,
         title: String?,

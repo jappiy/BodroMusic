@@ -246,6 +246,13 @@ data class WaveReport(
     val modes: Map<String, Int> = emptyMap(),
 )
 
+/** Подводка к треку на главной (bodrod 0.23.0+): [type] — откуда факт (context, personal, story, sound…). */
+@Serializable
+data class Blurb(val id: String, val text: String, val type: String = "")
+
+@Serializable
+data class Blurbs(val items: List<Blurb> = emptyList())
+
 /**
  * Короткий текст о треке или исполнителе для главной (bodrod 0.21.0+: только русский, законченная фраза).
  * [variants] — все подходящие фразы от лучшей к запасным: показывается первая, которая помещается целиком.
