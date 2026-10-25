@@ -25,3 +25,5 @@ server/bodrod-data/
 # Модели Essentia для сборки анализатора на NAS (скачиваются fetch-models.ps1)
 analyzer/models/*.pb
 analyzer/models/*.json
+
+.claude/settings.local.json
