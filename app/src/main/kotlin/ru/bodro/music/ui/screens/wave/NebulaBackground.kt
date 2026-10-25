@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -52,10 +53,21 @@ import ru.bodro.music.playback.SpectrumFrame
  * - Ритм — из PCM плеера ([AudioSpectrum], без микрофона): энергия с AGC и доли ([NebulaRhythm]); кадр берётся
  *   с задержкой вывода звука, поэтому совпадает с тем, что слышно (и в Bluetooth-наушниках).
  * - [mode]: Полный — каждый кадр; Экономный (и системное энергосбережение) — 30 кадров/с без пульсации;
- *   Выкл и системное «Отключить анимацию» — неподвижный кадр. Не на экране / приложение свёрнуто — кадров нет.
+ *   Выкл — неподвижный кадр.
+ * - Системный масштаб анимации 0 («Отключить анимацию», параметры разработчика) фон не замораживает: кадры идут
+ *   через [withFrameNanos], который масштаб не трогает. Это осознанно считается «уменьшить движение» — 15 кадров/с,
+ *   течение вдвое медленнее, без пульсации. Остановить совсем — «Анимация фона: Выкл».
+ * - Кадров нет, когда фон не виден: приложение свёрнуто или экран погашен (не RESUMED), [active] = false
+ *   (главную закрыл полноэкранный плеер) или вкладка другая (фон убран из композиции).
  */
 @Composable
-fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Boolean, modifier: Modifier = Modifier) {
+fun NebulaBackground(
+    colors: List<Color>,
+    mode: BackgroundAnimation,
+    playing: Boolean,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+) {
     val palette = remember(colors) { nebulaPalette(colors.firstOrNull() ?: Color(0xFF7A3FD0)) }
     val colA by animateColorAsState(palette[0], tween(PALETTE_MS), label = "nebula-a")
     val colB by animateColorAsState(palette[1], tween(PALETTE_MS), label = "nebula-b")
@@ -63,11 +75,10 @@ fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Bo
 
     val context = LocalContext.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    // Системная «Отключить анимацию» (и автотесты) — неподвижный кадр, как у остальных анимаций Compose.
-    val systemAnimations = remember(context) {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+    val reducedMotion = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
-    val animate = mode != BackgroundAnimation.Off && systemAnimations
+    val animate = mode != BackgroundAnimation.Off && active
     val running = animate && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     if (animate && playing) {
         LifecycleResumeEffect(Unit) {
@@ -80,7 +91,7 @@ fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Bo
     var energy by remember { mutableFloatStateOf(0f) }
     var beat by remember { mutableFloatStateOf(0f) }
     val rhythm = remember { NebulaRhythm() }
-    LaunchedEffect(running, playing, mode) {
+    LaunchedEffect(running, playing, mode, reducedMotion) {
         if (!running) return@LaunchedEffect
         var last = 0L
         var pending = 0f
@@ -89,11 +100,17 @@ fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Bo
                 val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(MAX_DT)
                 last = now
                 pending += dt
-                val eco = mode == BackgroundAnimation.Eco || context.powerSaving()
-                if (eco && pending < ECO_FRAME_S) return@withFrameNanos
+                val eco = reducedMotion || mode == BackgroundAnimation.Eco || context.powerSaving()
+                val frame = if (reducedMotion) REDUCED_FRAME_S else ECO_FRAME_S
+                if (eco && pending < frame) return@withFrameNanos
                 val step = pending
                 pending = 0f
-                rhythm.update(if (playing) AudioSpectrum.frameAt() else SpectrumFrame.Silent, step, playing, pulse = !eco)
+                rhythm.update(
+                    if (playing) AudioSpectrum.frameAt() else SpectrumFrame.Silent,
+                    if (reducedMotion) step * REDUCED_SPEED else step,
+                    playing,
+                    pulse = !eco,
+                )
                 energy = rhythm.energy
                 beat = rhythm.beat
                 phase = rhythm.phase
@@ -106,18 +123,12 @@ fun NebulaBackground(colors: List<Color>, mode: BackgroundAnimation, playing: Bo
         Canvas(
             Modifier
                 // Половинное разрешение: рисуем в слой вдвое меньше и растягиваем (шейдер мягкий, деталей не теряет).
+                // Размер — строго фиксированный: Canvas без своего размера при minWidth = 0 становился 0×0, и
+                // туманность не рисовалась вовсе (до 0.29.0 фон главной был просто чёрным).
                 .layout { measurable, constraints ->
                     val w = constraints.maxWidth
                     val h = constraints.maxHeight
-                    val placeable = measurable.measure(
-                        constraints.copy(
-                            minWidth = 0,
-                            minHeight = 0,
-                            maxWidth = (w + 1) / 2,
-                            maxHeight =
-                            (h + 1) / 2,
-                        ),
-                    )
+                    val placeable = measurable.measure(Constraints.fixed((w + 1) / 2, (h + 1) / 2))
                     layout(w, h) { placeable.place(0, 0) }
                 }
                 .graphicsLayer {
@@ -141,7 +152,7 @@ private fun Context.powerSaving(): Boolean = (getSystemService(Context.POWER_SER
 
 /**
  * Ритм для фона из кадров звука: [energy] — громкость (подъём ~50 мс, спад ~400 мс), [beat] — 1 на долю
- * с затуханием τ ≈ 180 мс, [phase] — фаза течения: скорость 0,8 + 1,2·энергия при воспроизведении, 0,25 на паузе,
+ * с затуханием τ ≈ 180 мс, [phase] — фаза течения: скорость 1,4 + 1,6·энергия при воспроизведении, 0,5 на паузе,
  * смена скорости плавная.
  */
 internal class NebulaRhythm {
@@ -174,9 +185,9 @@ internal class NebulaRhythm {
         const val RELEASE_S = 0.4f
         const val BEAT_TAU_S = 0.18f
         const val SPEED_TAU_S = 0.6f
-        const val PLAY_SPEED = 0.8f
-        const val ENERGY_SPEED = 1.2f
-        const val PAUSE_SPEED = 0.25f
+        const val PLAY_SPEED = 1.4f
+        const val ENERGY_SPEED = 1.6f
+        const val PAUSE_SPEED = 0.5f
     }
 }
 
@@ -295,6 +306,8 @@ private fun DrawScope.drawGradientNebula(a: Color, b: Color, c: Color, phase: Fl
 private const val PALETTE_MS = 800
 private const val MAX_DT = 0.1f
 private const val ECO_FRAME_S = 1f / 30f
+private const val REDUCED_FRAME_S = 1f / 15f
+private const val REDUCED_SPEED = 0.5f
 private const val START_PHASE = 7f
 private const val FADE_START = 0.42f
 private const val FADE_LEN = 0.33f

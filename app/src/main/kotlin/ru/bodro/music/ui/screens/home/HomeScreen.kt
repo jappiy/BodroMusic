@@ -35,8 +35,8 @@ fun HomeScreen(onOpenSearch: () -> Unit = {}, viewModel: HomeViewModel = hiltVie
     WaveHome(
         player = player,
         settings = settings,
-        // Текст — только о треке волны, который сейчас на экране.
-        blurbs = trackInfo.blurbs.takeIf { trackInfo.songId == player.currentSong?.id && player.source.isWave }
+        // Текст — о треке, который сейчас на экране (из волны или нет).
+        blurbs = trackInfo.blurbs.takeIf { trackInfo.songId == player.currentSong?.id }
             ?: Section.Empty,
         modes = modeCards,
         onTogglePlay = viewModel::togglePlay,

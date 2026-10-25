@@ -8,7 +8,9 @@ electronic. Здесь из них получаются признаки, на �
 - `valence` 0..1 — позитивность: happy против sad;
 - `acoustic` / `electronic` — модель, а без неё — по жанрам discogs (Electronic → электронное; Folk, Classical,
   Jazz, Blues, акустические стили → акустическое);
-- `instrumental` — 1 − voice;
+- `instrumental` — 1 − voice; «без слов» — от [INSTRUMENTAL_MIN] (один порог и для режима, и для языка `none`);
+- `loudness` — EBU R128 (LUFS) от анализатора; у моно-файлов анализатор до 0.3.1 её не считал — тогда оценка по RMS
+  (`rmsDb`, для музыки расходится с LUFS на 1–3 дБ), `loudness_estimated` = True;
 - `camelot` — тональность в колесе Camelot («8A») для гармоничных соседей;
 - `lang` — язык вокала. Модели языка в Essentia нет, поэтому определяется по тегу файла `language`, а без него —
   по письменности названия и исполнителя: кириллица → `ru`, только латиница → `en` (приблизительно: латиницей пишут
@@ -20,6 +22,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+INSTRUMENTAL_MIN = 0.7
+"""Порог «без слов» (1 − voice): с него трек попадает в режим «Без слов» и получает язык `none`."""
 _CYRILLIC = re.compile(r"[А-Яа-яЁё]")
 _LATIN = re.compile(r"[A-Za-z]")
 _ELECTRONIC_GENRES = ("Electronic",)
@@ -72,7 +76,7 @@ def energy(features: dict[str, Any]) -> float | None:
     tempo = min(1.0, max(0.0, (float(bpm) - 70.0) / 100.0))
     parts = [float(dance if dance is not None else 0.5), float(moods.get("aggressive", 0.3)),
              1.0 - float(moods.get("relaxed", 0.5)), tempo]  # fmt: skip
-    loudness = features.get("loudness")
+    loudness = features.get("loudness") if features.get("loudness") is not None else features.get("rmsDb")
     if loudness is not None:
         parts.append(min(1.0, max(0.0, (float(loudness) + 20.0) / 14.0)))  # −20 LUFS → 0, −6 → 1
     return round(sum(parts) / len(parts), 4)
@@ -82,7 +86,7 @@ def language(title: str, artist: str, album: str | None, tag: str | None, instru
     if tag:
         value = tag.strip().lower()[:3]
         return {"rus": "ru", "ru": "ru", "eng": "en", "en": "en"}.get(value, value[:2] or None)
-    if instrumental is not None and instrumental >= 0.75:
+    if instrumental is not None and instrumental >= INSTRUMENTAL_MIN:
         return "none"
     text = f"{title} {artist} {album or ''}"
     if _CYRILLIC.search(text):
@@ -120,7 +124,8 @@ def traits(features: dict[str, Any] | None, title: str, artist: str, album: str 
         "acoustic": float(acoustic)
         if acoustic is not None
         else (_genre_share(genres, _ACOUSTIC_GENRES, _ACOUSTIC_STYLES) if genres else None),
-        "loudness": f.get("loudness"),
+        "loudness": f.get("loudness") if f.get("loudness") is not None else f.get("rmsDb"),
+        "loudness_estimated": f.get("loudness") is None and f.get("rmsDb") is not None,
         "camelot": camelot(f.get("key"), f.get("scale")),
         "lang": language(title, artist, album, language_tag, instrumental),
     }

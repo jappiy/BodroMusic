@@ -29,6 +29,9 @@ interface AppActions {
 
     fun startWave(settings: WaveSettings)
 
+    /** Главная вне волны: перевести очередь на волну от [song] ([skip] — сразу к первому треку волны). */
+    fun continueWithWave(song: Song, skip: Boolean) {}
+
     fun showSongMenu(song: Song, context: SongMenuContext = SongMenuContext())
 
     fun addToPlaylist(songs: List<Song>)

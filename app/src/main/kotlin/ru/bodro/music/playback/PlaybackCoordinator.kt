@@ -9,6 +9,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +28,7 @@ import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.RepeatMode
 import ru.bodro.music.core.model.Song
+import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.data.log.LogRepository
@@ -74,6 +76,10 @@ class PlaybackCoordinator(
     private var queueAccountId: Long? = null
     private var tickJob: Job? = null
     private var refillJob: Job? = null
+    private var continueJob: Job? = null
+
+    /** Трек, от которого уже продолжали волной (не подбирать повторно при каждом изменении очереди). */
+    private var continuedFrom: String? = null
     private var persistJob: Job? = null
     private var ticks = 0
     private var lastErrorAtMs = 0L
@@ -344,7 +350,7 @@ class PlaybackCoordinator(
     // region Волна
 
     private fun checkWaveRefill() {
-        val source = deps.sources.source.value as? QueueSource.WaveSource ?: return
+        val source = deps.sources.source.value as? QueueSource.WaveSource ?: return checkQueueEnd()
         if (player.mediaItemCount == 0) return
         val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
         if (remaining > WaveEngine.REFILL_THRESHOLD || refillJob?.isActive == true) return
@@ -363,6 +369,38 @@ class PlaybackCoordinator(
             val inQueue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
             val fresh = batch.filter { it.id !in inQueue }
             if (fresh.isNotEmpty()) player.addMediaItems(deps.items.create(fresh))
+        }
+    }
+
+    /**
+     * Очередь не волны (одиночный трек из поиска или чартов, альбом, плейлист) дошла до последнего трека и повтор
+     * выключен — сразу после него продолжаем волной, подобранной от этого трека (как «Моя волна» после альбома).
+     * Порция добавляется заранее, в начале последнего трека: переход без паузы. Очередь до этого не трогается.
+     */
+    private fun checkQueueEnd() {
+        if (player.mediaItemCount == 0 || player.hasNextMediaItem() || player.repeatMode != Player.REPEAT_MODE_OFF) return
+        val song = currentSong ?: return
+        if (continueJob?.isActive == true || continuedFrom == song.id) return
+        continuedFrom = song.id
+        val source = deps.sources.source.value
+        val accountId = deps.connection.activeAccountId
+        val settings = WaveSettings.byTrack(song)
+        continueJob = scope.launch {
+            val batch = try {
+                withContext(Dispatchers.IO) { deps.wave.nextBatch(settings, song, listOf(song)) }.filter { it.id != song.id }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                deps.log.event(PlayerEvent.Wave, "Не удалось продолжить волной: ${e.message}", isError = true)
+                return@launch
+            }
+            // Пока подбирали, пользователь мог запустить другое или сменить учётку.
+            val stillLast = currentSong?.id == song.id && !player.hasNextMediaItem()
+            val sameQueue = deps.sources.source.value == source && deps.connection.activeAccountId == accountId
+            if (batch.isEmpty() || !stillLast || !sameQueue) return@launch
+            deps.sources.set(QueueSource.WaveSource(settings))
+            player.addMediaItems(deps.items.create(batch))
+            deps.log.event(PlayerEvent.Wave, "Очередь кончается — дальше волна по треку «${song.title}»: +${batch.size}")
         }
     }
 

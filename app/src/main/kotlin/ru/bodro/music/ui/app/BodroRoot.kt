@@ -181,7 +181,7 @@ private fun MainShell(viewModel: MainViewModel, externalRequests: Flow<ExternalR
                 Box(Modifier.fillMaxSize()) {
                     // Фон главной — на весь экран: под нижним меню, левой панелью, статус-баром и панелью жестов.
                     AnimatedVisibility(visible = onHome, enter = fadeIn(tween(BARS_MS)), exit = fadeOut(tween(BARS_MS))) {
-                        HomeBackdrop(player, settings, Modifier.fillMaxSize())
+                        HomeBackdrop(player, settings, Modifier.fillMaxSize(), active = !expanded)
                     }
                     // Слева и справа — вырез камеры и панель навигации в ландшафте: содержимое под них не заходит.
                     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {

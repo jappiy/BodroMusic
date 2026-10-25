@@ -56,7 +56,6 @@ import ru.bodro.music.core.domain.player.QualityBadges
 import ru.bodro.music.core.model.Playlist
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
-import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
@@ -107,7 +106,7 @@ fun SongMenuSheet(
                 act { actions.addToPlaylist(listOf(song)) }
             }
             MenuItem(Icons.Rounded.Waves, stringResource(R.string.menu_wave_by_track)) {
-                act { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) }
+                act { actions.startWave(WaveSettings.byTrack(song)) }
             }
             MenuItem(Icons.Rounded.GraphicEq, stringResource(R.string.menu_similar_sound), tag = "menu-similar-sound") {
                 act { actions.playSimilar(song) }

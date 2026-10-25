@@ -19,6 +19,9 @@ enum class WaveMood {
 
     /** Грустное. */
     Sad,
+
+    /** «Пошумим»: громкое и агрессивное (тот же порог, что у режима на главной). */
+    Loud,
 }
 
 /** Признаки звучания трека (0..1, кроме [bpm]). */
@@ -47,6 +50,7 @@ object SoundArranger {
             WaveMood.Calm -> features.energy?.let { e -> ((features.relaxed ?: 0.5) + (1.0 - e)) / 2 } ?: features.relaxed
             WaveMood.Happy -> features.happy
             WaveMood.Sad -> features.sad
+            WaveMood.Loud -> features.aggressive?.let { a -> features.energy?.let { e -> (a + e) / 2 } ?: a }
         }
     }
 

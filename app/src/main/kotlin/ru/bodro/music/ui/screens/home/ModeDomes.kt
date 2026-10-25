@@ -125,6 +125,9 @@ private val BackColor = Color(0xFF8C93A3)
 private fun visualOf(id: String): Pair<Color, ImageVector> = ModeVisuals[id]
     ?: (DynamicColors[(id.hashCode() and Int.MAX_VALUE) % DynamicColors.size] to Icons.Rounded.AutoAwesome)
 
+/** Цвет режима для фона главной, когда у трека нет обложки. */
+internal fun modeColor(id: String): Color = visualOf(id).first
+
 private fun artistOf(id: String, title: String): String? = when {
     id.startsWith("artist:") -> id.removePrefix("artist:")
     id.startsWith("release:") -> title.substringAfter(": ", "").ifBlank { null }

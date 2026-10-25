@@ -169,3 +169,24 @@ def test_modes_file_overrides_thresholds(tmp_path):
                           modes_file=str(path), clock=lambda: NOW)  # fmt: skip
     assert service.modes["calm"]["bpm_max"] == 60 and service.modes["calm"]["energy_max"] == 0.45
     assert service.tuning["artist_gap"] == 2
+
+
+def test_report_counts_are_consistent(tmp_path):
+    """Задание 034: «Популярное» и «Новое» — не вся библиотека, «без слов» = язык none, настроения сходятся."""
+    service = make_service(tmp_path, [("s1", 1, 0, 10, None), ("s2", 0, 0, 3, None)])
+    report = asyncio.run(service.report("vasya"))
+    modes = {m["id"]: m for m in report["modeList"]}
+    assert report["library"] == len(SONGS) and report["pending"] == 0 and report["failed"] == 0
+    assert modes["popular"]["count"] == 2  # только треки с отметками, а не вся медиатека
+    assert modes["new"]["count"] == 0  # всё добавлено одним импортом
+    assert modes["favorites"]["count"] == 2 and modes["energetic"]["mood"] is True  # лайк и 3 прослушивания
+    assert modes["instrumental"]["count"] == report["languages"].get("none", 0) == 1
+    in_moods = {m: modes[m]["count"] for m in ("energetic", "calm", "happy", "sad", "loud")}
+    assert report["noMood"] <= report["analyzed"] and sum(in_moods.values()) >= report["analyzed"] - report["noMood"]
+    assert report["modes"]["popular"] == 2  # старое поле для клиентов до 0.29.0
+
+
+def test_loudness_falls_back_to_rms():
+    t = traits({"rmsDb": -12.0, "moods": {"relaxed": 0.5}, "danceability": 0.5}, "Song", "Band")
+    assert t["loudness"] == -12.0 and t["loudness_estimated"] is True
+    assert traits({"loudness": -9.0, "rmsDb": -12.0}, "Song", "Band")["loudness_estimated"] is False

@@ -37,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -47,11 +48,13 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +86,7 @@ import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
+import ru.bodro.music.core.downloads.WaveReportMode
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.data.settings.ThemeMode
@@ -390,6 +394,7 @@ private fun waveMoodLabel(mood: WaveMood): Int = when (mood) {
     WaveMood.Calm -> R.string.wave_mood_calm
     WaveMood.Happy -> R.string.wave_mood_happy
     WaveMood.Sad -> R.string.wave_mood_sad
+    WaveMood.Loud -> R.string.wave_mood_loud
 }
 
 /** Чипы с переносом на следующую строку: на узком экране и крупном шрифте ничего не сжимается. */
@@ -515,6 +520,10 @@ class WaveReportViewModel @Inject constructor(private val wave: ru.bodro.music.d
     }
 }
 
+/**
+ * «Анализ звучания и режимы» понятными словами: сколько проанализировано и не удалось (с причинами), сколько треков в
+ * каждом настроении и режиме — названиями, как на главной; язык вокала. Технические признаки — под «Подробнее».
+ */
 @Composable
 private fun WaveReportSection(viewModel: WaveReportViewModel = hiltViewModel()) {
     val state by viewModel.report.collectAsStateWithLifecycle()
@@ -525,44 +534,117 @@ private fun WaveReportSection(viewModel: WaveReportViewModel = hiltViewModel()) 
     when {
         state is LoadState.Loading -> Unit
         report == null -> Text(stringResource(R.string.wave_report_unavailable), style = small, color = muted)
-        else -> {
-            Text(
-                stringResource(R.string.wave_report_analyzed, report.analyzed, report.library),
-                style = MaterialTheme.typography.bodyMedium,
+        else -> WaveReportContent(report)
+    }
+}
+
+/** Содержимое отчёта (без загрузки) — отдельно, чтобы снимать его в тестах. */
+@Composable
+internal fun WaveReportContent(report: ru.bodro.music.core.downloads.WaveReport) {
+    val small = MaterialTheme.typography.bodySmall
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.testTag("wave-report")) {
+        Text(
+            stringResource(R.string.wave_report_analyzed, report.analyzed, report.library),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (report.library > 0) {
+            LinearProgressIndicator(
+                progress = { report.analyzed.toFloat() / report.library },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                drawStopIndicator = {},
             )
-            Text(
-                stringResource(
-                    R.string.wave_report_features,
-                    report.features.entries.joinToString {
-                        "${it.key} ${it.value}"
-                    },
-                ),
-                style = small,
-                color = muted,
-            )
-            Text(
-                stringResource(
-                    R.string.wave_report_modes,
-                    report.modes.entries.joinToString {
-                        "${it.key} ${it.value}"
-                    },
-                ),
-                style = small,
-                color = muted,
-            )
-            Text(
-                stringResource(
-                    R.string.wave_report_languages,
-                    report.languages.entries.joinToString {
-                        "${it.key} ${it.value}"
-                    },
-                ),
-                style = small,
-                color = muted,
-            )
+        }
+        if (report.failed > 0) {
+            Text(stringResource(R.string.wave_report_failed, report.failed), style = MaterialTheme.typography.bodyMedium)
+            report.failures.forEach { failure ->
+                Text(stringResource(R.string.wave_report_reason, failure.reason, failure.count), style = small, color = muted)
+            }
+            if (report.excluded > 0) Text(stringResource(R.string.wave_report_excluded, report.excluded), style = small, color = muted)
+        }
+        report.pending?.takeIf { it > 0 }?.let {
+            Text(stringResource(R.string.wave_report_pending, it), style = MaterialTheme.typography.bodyMedium)
+        }
+        val modes = report.modeList.ifEmpty { report.modes.map { (id, n) -> WaveReportMode(id, id, n, id in MOOD_IDS) } }
+        val moods = modes.filter { it.mood }
+        if (moods.isNotEmpty()) {
+            ReportHeader(R.string.wave_report_moods)
+            moods.forEach { ReportRow(it.title, it.count) }
+            report.noMood?.let { ReportRow(stringResource(R.string.wave_report_no_mood), it) }
+            Text(stringResource(R.string.wave_report_moods_hint), style = small, color = muted, modifier = Modifier.padding(top = 4.dp))
+        }
+        val others = modes.filterNot { it.mood }
+        if (others.isNotEmpty()) {
+            ReportHeader(R.string.wave_report_modes_title)
+            others.forEach { ReportRow(it.title, it.count) }
+        }
+        if (report.languages.isNotEmpty()) {
+            ReportHeader(R.string.wave_report_languages_title)
+            LANGUAGE_ORDER.forEach { (code, label) -> report.languages[code]?.let { ReportRow(stringResource(label), it) } }
+            val other = report.languages.filterKeys { k -> LANGUAGE_ORDER.none { it.first == k } }.values.sum()
+            if (other > 0) ReportRow(stringResource(R.string.wave_report_lang_other), other)
+            Text(stringResource(R.string.wave_report_languages_hint), style = small, color = muted, modifier = Modifier.padding(top = 4.dp))
+        }
+        var details by rememberSaveable { mutableStateOf(false) }
+        TextButton(onClick = { details = !details }, modifier = Modifier.padding(top = 8.dp).testTag("wave-report-details")) {
+            Text(stringResource(if (details) R.string.wave_report_details_hide else R.string.wave_report_details_show))
+        }
+        if (details) {
+            Text(stringResource(R.string.wave_report_details_hint), style = small, color = muted)
+            FEATURE_LABELS.forEach { (key, label) -> report.features[key]?.let { ReportRow(stringResource(label), it) } }
+            if (report.loudnessEstimated > 0) {
+                Text(
+                    stringResource(R.string.wave_report_loudness_estimated, report.loudnessEstimated),
+                    style = small,
+                    color = muted,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun ReportHeader(title: Int) {
+    Text(stringResource(title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+}
+
+@Composable
+private fun ReportRow(title: String, count: Int) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(
+            stringResource(R.string.wave_report_count, count),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Режимы-настроения у сервера до 0.24.0 (он не помечал их сам). */
+private val MOOD_IDS = setOf("energetic", "calm", "happy", "sad", "loud")
+
+private val LANGUAGE_ORDER = listOf(
+    "ru" to R.string.wave_report_lang_ru,
+    "en" to R.string.wave_report_lang_en,
+    "none" to R.string.wave_report_lang_none,
+    "unknown" to R.string.wave_report_lang_unknown,
+)
+
+private val FEATURE_LABELS = listOf(
+    "bpm" to R.string.wave_feature_bpm,
+    "energy" to R.string.wave_feature_energy,
+    "valence" to R.string.wave_feature_valence,
+    "aggressive" to R.string.wave_feature_aggressive,
+    "relaxed" to R.string.wave_feature_relaxed,
+    "danceability" to R.string.wave_feature_danceability,
+    "instrumental" to R.string.wave_feature_instrumental,
+    "acoustic" to R.string.wave_feature_acoustic,
+    "electronic" to R.string.wave_feature_electronic,
+    "camelot" to R.string.wave_feature_camelot,
+    "loudness" to R.string.wave_feature_loudness,
+)
 
 @Composable
 fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {

@@ -36,14 +36,15 @@ from ..db import Store
 from ..metadata.lastfm import LastFmClient, LastFmError
 from ..navidrome_db import NavidromeDb, NdAnnotation
 from .keys import artist_key
-from .traits import camelot_compatible, traits
+from .traits import INSTRUMENTAL_MIN, camelot_compatible, traits
 
 log = logging.getLogger(__name__)
 
 """Режимы и пороги. Ключи порогов: `<признак>_min` / `<признак>_max` (energy, valence, bpm, aggressive, relaxed,
 acoustic, electronic, instrumental, danceability), `any_min` — хотя бы один из признаков не ниже порога, `lang`,
-`unheard` (не слушал), `favorite` (лайк или часто слушает), `not_favorite_artist`, `added_days`, `popular`,
-`pool_share` — доля пула «На пробу»."""
+`unheard` (не слушал), `favorite` (лайк или часто слушает), `not_favorite_artist`, `added_days` (добавлен за N дней,
+не считая первичного импорта библиотеки), `popular` (есть отметки пользователей: лайки, оценки, прослушивания; чем
+больше — тем выше), `pool_share` — доля пула «На пробу»."""
 DEFAULT_MODES: dict[str, dict[str, Any]] = {
     "default": {"title": "Моя волна", "pool_share": 0.15},
     "energetic": {"title": "Бодрое", "energy_min": 0.55, "bpm_min": 105, "bpm_max": 165, "valence_min": 0.35},
@@ -55,12 +56,16 @@ DEFAULT_MODES: dict[str, dict[str, Any]] = {
     "favorites": {"title": "Любимое", "favorite": True},
     "popular": {"title": "Популярное", "popular": True},
     "new": {"title": "Новое", "added_days": 60, "pool_share": 0.2},
-    "instrumental": {"title": "Без слов", "instrumental_min": 0.6},
+    "instrumental": {"title": "Без слов", "instrumental_min": INSTRUMENTAL_MIN},
     "ru": {"title": "На русском", "lang": "ru"},
     "en": {"title": "На английском", "lang": "en"},
 }
 """Настроение из настроек волны — те же пороги, что у режимов."""
-MOOD_MODES = {"energetic": "energetic", "calm": "calm", "happy": "happy", "sad": "sad"}
+MOOD_MODES = {"energetic": "energetic", "calm": "calm", "happy": "happy", "sad": "sad", "loud": "loud"}
+"""Режимы-настроения: сколько треков в каждом и сколько ни в одном — в отчёте."""
+MOODS = ("energetic", "calm", "happy", "sad", "loud")
+IMPORT_GRACE_S = 3 * 86400
+"""Треки, добавленные в первые 3 дня жизни библиотеки, — первичный импорт, а не «Новое»."""
 DEFAULT_TUNING: dict[str, Any] = {
     "bpm_tolerance": 0.10,
     "energy_step": 0.15,
@@ -104,6 +109,8 @@ class _Snapshot:
     by_id: dict[str, WaveSong] = field(default_factory=dict)
     popularity: dict[str, int] = field(default_factory=dict)
     built_at: float = 0.0
+    """Когда библиотеку начали наполнять (самый ранний `created_at`): от него отсчитывается первичный импорт."""
+    first_added: float | None = None
 
 
 def _ts(value: str | None) -> float | None:
@@ -188,6 +195,10 @@ class WaveService:
             snap.songs.append(song)
             snap.by_id[song.id] = song
         snap.popularity = self._db.annotation_counts()
+        for song in snap.songs:
+            song.traits["popularity"] = snap.popularity.get(song.id, 0)
+        added = [s.added_ts for s in snap.songs if s.added_ts]
+        snap.first_added = min(added) if added else None
         return snap
 
     async def _user_notes(self, username: str) -> dict[str, NdAnnotation]:
@@ -282,8 +293,14 @@ class WaveService:
         if name == "favorite":
             return not value or bool(note and (note.starred or note.play_count >= self.tuning["favorite_plays"]))
         if name == "added_days":
-            return bool(song.added_ts) and self._clock() - song.added_ts <= value * 86400 / relax
-        return True  # popular и неизвестные ключи — не фильтр, а вес
+            # Вся библиотека, залитая в первые дни, — не «Новое»: иначе после импорта режим = вся медиатека.
+            first = self._snapshot.first_added
+            if not song.added_ts or (first is not None and song.added_ts < first + IMPORT_GRACE_S):
+                return False
+            return self._clock() - song.added_ts <= value * 86400 / relax
+        if name == "popular":
+            return not value or int(t.get("popularity") or 0) > 0
+        return True  # неизвестные ключи — не фильтр
 
     def _rules(self, mode: str, mood: str | None, lang: str | None) -> dict[str, Any]:
         base = mode.split(":", 1)[0]
@@ -492,17 +509,29 @@ class WaveService:
                                "subtitle": song.album, "count": None, "dynamic": True})  # fmt: skip
         return result
 
-    async def report(self) -> dict[str, Any]:
-        """Какие признаки считаются, сколько треков проанализировано и сколько попадает в каждый режим."""
+    async def report(self, username: str | None = None) -> dict[str, Any]:
+        """Отчёт для «Настройки → Волна» (bodrod 0.24.0): что проанализировано, сколько не удалось и почему, сколько
+        треков в каждом режиме и настроении — по тем же правилам, что и подбор (личные режимы — для `username`).
+
+        Режимы по звучанию считаются среди проанализированных (у остальных признаков нет). Язык — по тегу и
+        письменности названия, поэтому он есть у всей библиотеки, а `none` («без слов») — только у проанализированных.
+        «Популярное» — треки с отметками любых пользователей; «Новое» — добавленные за 60 дней после импорта.
+        """
         snap = await self._library()
         library = [s for s in snap.songs if not s.pool]
         analyzed = [s for s in library if s.traits.get("analyzed")]
-        counts = {}
-        for name in self.modes:
-            if name in ("default", "favorites", "discover"):
-                continue  # зависят от пользователя
+        notes = await self._user_notes(username) if username else {}
+        favorite_artists = {snap.by_id[i].artist_key for i, n in notes.items() if i in snap.by_id and n.starred}
+        modes = []
+        for name, config in self.modes.items():
+            if name == "default" or (not username and name in ("favorites", "discover")):
+                continue
             rules = self._rules(name, None, None)
-            counts[name] = sum(1 for s in library if self._matches(s, rules, {}, set()))
+            count = sum(1 for s in library if self._matches(s, rules, notes, favorite_artists))
+            modes.append({"id": name, "title": config.get("title", name), "count": count,
+                          "mood": name in MOODS})  # fmt: skip
+        mood_rules = {m: self._rules(m, None, None) for m in MOODS if m in self.modes}
+        no_mood = sum(1 for s in analyzed if not any(self._matches(s, r, {}, set()) for r in mood_rules.values()))
         with_feature = {
             name: sum(1 for s in analyzed if s.traits.get(name) is not None)
             for name in ("bpm", "energy", "valence", "aggressive", "relaxed", "danceability", "instrumental",
@@ -512,12 +541,24 @@ class WaveService:
         for s in library:
             key = s.traits.get("lang") or "unknown"
             langs[key] = langs.get(key, 0) + 1
+        status = self._analysis.status() if self._analysis is not None and hasattr(self._analysis, "status") else {}
+        failures = (
+            self._analysis.failures() if self._analysis is not None and hasattr(self._analysis, "failures") else []
+        )
+        failed = int(status.get("errors") or 0)
         return {
             "library": len(library),
             "analyzed": len(analyzed),
+            "failed": failed,
+            "excluded": int(status.get("skipped") or 0),
+            "pending": max(0, len(library) - len(analyzed) - failed),
+            "failures": failures,
+            "loudnessEstimated": sum(1 for s in analyzed if s.traits.get("loudness_estimated")),
+            "noMood": no_mood,
+            "modeList": modes,
+            "modes": {m["id"]: m["count"] for m in modes},
             "features": with_feature,
             "languages": langs,
-            "modes": counts,
             "tuning": self.tuning,
         }
 

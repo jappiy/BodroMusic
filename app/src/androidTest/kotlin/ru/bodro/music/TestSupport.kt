@@ -14,13 +14,17 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.runBlocking
 import ru.bodro.music.data.settings.AppSettings
+import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.di.AppEntryPoint
 
 val appContext: Context get() = ApplicationProvider.getApplicationContext()
 
 val entryPoint: AppEntryPoint get() = EntryPointAccessors.fromApplication(appContext, AppEntryPoint::class.java)
 
-/** Чистое состояние: без учёток, очередей, логов; настройки по умолчанию. Разрешение на уведомления — заранее. */
+/**
+ * Чистое состояние: без учёток, очередей, логов; настройки по умолчанию, но фон главной неподвижен (туманность
+ * рисует кадры и при системной «Отключить анимацию», а Compose-тесты ждут простоя). Разрешение на уведомления — заранее.
+ */
 fun resetApp() = runBlocking {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -28,7 +32,7 @@ fun resetApp() = runBlocking {
     }
     onMain { entryPoint.player().disconnect() }
     entryPoint.database().clearAllTables()
-    entryPoint.settings().update { AppSettings() }
+    entryPoint.settings().update { AppSettings(backgroundAnimation = BackgroundAnimation.Off) }
 }
 
 @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)

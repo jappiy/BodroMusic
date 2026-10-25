@@ -1,7 +1,7 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-10-25 (задание 033 — правки от 2026-10-25: тексты песен из Яндекса и LRCLIB, дизлайк на главной и в
-уведомлении, туманность на главной, прозрачные панели, бесконечная карусель, настройки волны, подводки к трекам). Документ для следующего агента или разработчика: что сделано, где что лежит,
+Состояние на 2026-10-25 (задание 034 — главная показывает любой играющий трек и продолжает волной по нему, живой фон
+вместо чёрного, имя исполнителя без наложения строк, понятный отчёт об анализе звучания). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
 
 ## 0. Обязательные правила для агента (выполнять в каждом задании)
@@ -65,11 +65,11 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.28.0** (`versionCode 29`), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.23.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`).
-  Воркер анализа звучания: **0.3.0** (`analyzer/`, образ `ghcr.io/jappiy/bodromusic-analyzer:0016967`).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.28.0
-  (`BodroMusic-0.28.0.apk` — release с R8; `BodroMusic-0.28.0-debug.apk` — debug, ставится рядом).
+- Текущая версия приложения: **0.29.0** (`versionCode 30`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.24.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`; на NAS — 0.23.0).
+  Воркер анализа звучания: **0.3.1** (`analyzer/`; на NAS — 0.3.0).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.29.0
+  (`BodroMusic-0.29.0.apk` — release с R8; `BodroMusic-0.29.0-debug.apk` — debug, ставится рядом).
 - Эталоны владельца (скриншоты и видео Яндекс Музыки): `docs/refs/<дата>/`.
 - Установка bodrod и анализатора на NAS — только по [`docs/DEPLOY.md`](DEPLOY.md): образ `bodrod:local` собирается
   на NAS из скопированной папки, теги GHCR в YAML не пишутся.
@@ -77,6 +77,13 @@
 - Устройство сервера (контейнеры, папки, потоки скачивания): [`docs/INFRA.md`](INFRA.md).
 
 ## 2. Статус
+
+**Задание 034** (app 0.29.0 / bodrod 0.24.0 / анализатор 0.3.1, релиз v0.29.0) — [034](history/034-home-report-background.md):
+туманность с 0.28.0 не рисовалась (холст 0×0) — исправлено, масштаб анимации 0 больше не замораживает фон; цвет режима
+для треков без обложки; имя исполнителя с интервалом в em; главная для трека не из волны («Волна по треку»,
+«следующий» → волна от трека, конец любой очереди → волна по последнему); отчёт «Анализ звучания и режимы» словами,
+на сервере — честные «Популярное»/«Новое», единый порог «без слов», громкость моно. Снимки Robolectric и pytest;
+bodrod 0.24.0 на NAS не установлен; на телефоне не проверено.
 
 **Задание 033** (app 0.28.0 / bodrod 0.22.0–0.23.0, релиз v0.28.0) — правки от 2026-10-25
 ([033](history/033-pravki-2026-10-25.md)): сбор текстов песен (Яндекс до 20.11.2026, LRCLIB) в `.lrc`/`.txt` рядом с
@@ -182,11 +189,11 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **169** — `core:subsonic` 55, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
-  `app` 31 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
+- Unit: **173** — `core:subsonic` 55, `core:domain` 70 (в т. ч. `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
+  `app` 35 (Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 11 — цикл воркера без Essentia, NaN/inf → null, ошибка трека не останавливает пачку;
   дочерний процесс (краш, зависание, перезапуск); декодирование ffmpeg (3 теста, без ffmpeg пропускаются — идут в CI).
-- Сервер (`server/tests`, pytest): **225** (задания 027, 029 — `test_encoding.py`, `test_facts.py`; задание 024 — `test_similar.py`; задание 023 — `test_wave.py`; задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
+- Сервер (`server/tests`, pytest): **245** (задание 034 — отчёт и громкость в `test_wave.py`; задания 027, 029 — `test_encoding.py`, `test_facts.py`; задание 024 — `test_similar.py`; задание 023 — `test_wave.py`; задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
   `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
   YouTube, `test_lastfm.py`), в том числе `test_maintenance.py` (регламент на мини-библиотеке с FLAC-заголовками)
   и `test_maintenance_cases.py` (случаи из реальной библиотеки: дубли, короткие, альбомы, чужие релизы, обложки).
@@ -241,10 +248,16 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   `AudioSpectrum` (полосы, RMS, бас, 60 кадров/с) + `BeatTracker` (энергия с AGC 10 с, доли: ФНЧ 150 Гц, порог
   «среднее + 1,5σ», 200 мс); `frameAt()` берёт кадр с задержкой вывода, которую меряет `OutputLatencyProbe`
   (обработано процессором − `currentPosition`); анализ только при подписчике (`acquire/release`).
-- **Фон главной** (0.28.0): `ui/screens/wave/NebulaBackground.kt` — туманность (AGSL Android 13+, ½ разрешения; ниже —
-  градиенты), палитра `nebulaPalette` от `PlayerColors.glow[0]`, без обложки — фиолетовый `NeutralGlow`; `NebulaRhythm`;
-  режимы `BackgroundAnimation` Full / Eco (30 кадров/с) / Off. Рисуется в корне (`HomeBackdrop` в `BodroRoot`) под
-  прозрачными панелями, статус-бар со светлыми значками (`SystemBarIcons`).
+- **Фон главной** (0.28.0–0.29.0): `ui/screens/wave/NebulaBackground.kt` — туманность (AGSL Android 13+, ½ разрешения
+  через `Modifier.layout` с `Constraints.fixed` — иначе `Canvas` 0×0; ниже — градиенты), палитра `nebulaPalette` от
+  обложки любого играющего трека, без обложки — цвет режима (`modeColor`), иначе фиолетовый `NeutralGlow`;
+  `NebulaRhythm`; режимы `BackgroundAnimation` Full / Eco (30 кадров/с) / Off; системный масштаб анимации 0 —
+  «уменьшить движение» (15 кадров/с, медленнее, без пульсации), а не стоп. Кадры — только RESUMED, на «Главной» и
+  не под плеером (`HomeBackdrop(active)`). Рисуется в корне под прозрачными панелями (`SystemBarIcons`).
+- **Главная вне волны** (0.29.0): `WaveHome` показывает любой трек; «следующий»/свайп/дизлайк — `AppActions.continueWithWave`
+  → `PlayerConnection.continueWithWave` (текущий не прерывается, хвост очереди → волна `WaveSettings.byTrack`);
+  режим — `startWave(settings, from = текущий)`. Конец любой очереди (повтор выкл.) — `PlaybackCoordinator.checkQueueEnd`
+  добавляет волну по последнему треку. Волна по треку подмешивает похожие по звучанию (`WaveRepository.withSoundAlike`).
 - **Дизлайк** (0.28.0): главная — `AppActions.dislikeFromWave` (снекбар `UiMessage` с «Отменить»); уведомление —
   `setMediaButtonPreferences` (слоты `BACK_SECONDARY` / `FORWARD_SECONDARY`, команда `ru.bodro.music.DISLIKE`).
 - **Тексты песен** (bodrod 0.22.0, `lyrics.py`): `.lrc`/`.txt` рядом с аудио (Navidrome 0.64 читает их при запросе),
@@ -263,8 +276,9 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
   журнал `tag_encoding_fixes`, откат `POST /maintenance/encoding/{id}/revert`.
 - **CI**: при падении инструментальных тестов их текст — в аннотациях проверки (`check-runs/<job>/annotations`
   в публичном API); логи job с ПК владельца не скачиваются (хранилище GitHub недоступно).
-- **Фон «Моей волны»** и мерцание скелетонов при системной «Отключить анимацию» статичные
-  (`rememberSystemAnimations()`) — иначе Compose не простаивает и инструментальные тесты падают.
+- **Мерцание скелетонов** при системной «Отключить анимацию» статичное (`rememberSystemAnimations()`); фон главной —
+  нет (см. выше), поэтому инструментальные тесты выставляют «Анимированный фон: Выкл» в `resetApp()`, иначе Compose
+  не простаивает.
 - **Снимки экранов** в unit-тестах: Robolectric `GraphicsMode.NATIVE` + `ComponentActivity.setContent` +
   `decorView.draw` (`WaveHomeScreenshotTest`, PNG в `app/build/screenshots/`). Compose ui-test в unit-тестах не
   подключён: с ПК владельца Maven Central не отвечает, а Gradle офлайн не находит `androidx.test:runner`.
@@ -380,6 +394,9 @@ Smoke-тест против реального Navidrome: скопировать
 
 ## 8. Следующие шаги
 
+00. Задание 034: поставить bodrod 0.24.0 (и по желанию анализатор 0.3.1) по `docs/DEPLOY.md`; на телефоне проверить
+   0.29.0 — фон течёт (и с масштабом анимации 0), «Пошумим» без обложки красный, трек из чартов на главной и свайп →
+   волна по треку, конец альбома → волна, отчёт «Настройки → Волна» ([034](history/034-home-report-background.md)).
 0. Задание 033: на телефоне проверить 0.28.0 — туманность и ритм (в т. ч. в Bluetooth-наушниках), прозрачные
    панели, дизлайк на главной и в уведомлении (как оболочка разложила кнопки), бесконечную карусель, «Настройки →
    Волна», подводки, перемотку по строкам. Следить за сбором текстов (`GET /api/v1/lyrics/collect`, сводка
@@ -486,6 +503,7 @@ Smoke-тест против реального Navidrome: скопировать
 | 031 | 2026-10-24 | Вкладка «Чарты» в нижнем меню (всё, что было на главной под волной) | app 0.27.0 | [031-charts-tab.md](history/031-charts-tab.md) |
 | 032 | 2026-10-24 | Мини-плеер скрыт на «Главной», плавное появление на других вкладках | app 0.27.0 | [032-hide-mini-player-home.md](history/032-hide-mini-player-home.md) |
 | 033 | 2026-10-25 | Правки: тексты песен (Яндекс, LRCLIB), дизлайк на главной и в уведомлении, туманность, панели в цвет главной, бесконечная карусель, настройки волны, подводки к трекам, перемотка по строкам | app 0.28.0, bodrod 0.22.0–0.23.0 | [033-pravki-2026-10-25.md](history/033-pravki-2026-10-25.md) |
+| 034 | 2026-10-25 | Главная: имя исполнителя без наложения, трек не из волны и волна по нему, живой фон (холст 0×0, масштаб анимации, цвет режима); отчёт об анализе словами, честные счётчики режимов | app 0.29.0, bodrod 0.24.0, анализатор 0.3.1 | [034-home-report-background.md](history/034-home-report-background.md) |
 | 008 | 2026-10-19 | Цепочка источников загрузки (Яндекс Музыка, slskd, YouTube Music, Lidarr), «метки» Lidarr через цепочку, экран «Источники загрузки», массовая выгрузка из Яндекса | app 0.14.0, bodrod 0.7.0 | [008-download-sources-chain.md](history/008-download-sources-chain.md) |
 
 ## 11. Продолжение на компьютере владельца (Windows, папка `C:\Projects\BodroMusic`)

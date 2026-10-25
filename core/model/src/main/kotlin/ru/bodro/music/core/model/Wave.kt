@@ -61,4 +61,12 @@ data class WaveSettings(
     val preset: String? = null,
 ) {
     val yearRange: IntRange? get() = decade?.let { it..(it + 9) }
+
+    /** Волна «по треку» ([WaveSeed.Track]): название для главной — «Волна по треку «…»». */
+    val trackSeed: WaveSeed.Track? get() = seed as? WaveSeed.Track
+
+    companion object {
+        /** Волна, подобранная от трека: звучание, исполнитель, жанр, похожие. */
+        fun byTrack(song: Song): WaveSettings = WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))
+    }
 }

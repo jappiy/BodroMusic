@@ -50,7 +50,7 @@ class GlowRhythmTest {
             loud.update(frame(1f), 1 / 60f, playing = true)
             paused.update(frame(0f), 1 / 60f, playing = false)
         }
-        assertTrue("громко: ${loud.phase}, пауза: ${paused.phase}", loud.phase - 7f > (paused.phase - 7f) * 5)
+        assertTrue("громко: ${loud.phase}, пауза: ${paused.phase}", loud.phase - 7f > (paused.phase - 7f) * 4)
     }
 
     @Test

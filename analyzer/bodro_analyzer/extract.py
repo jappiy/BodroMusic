@@ -118,7 +118,9 @@ class EssentiaExtractor:
                 features[feature] = value
         bpm, *_ = es.RhythmExtractor2013(method="multifeature")(audio44)
         key, scale, strength = es.KeyExtractor()(audio44)
-        loudness = es.LoudnessEBUR128(sampleRate=SAMPLE_RATE)(stereo)[2] if decoded.channels > 1 else None
+        # Моно-файл ffmpeg уже раскладывает в два одинаковых канала — так его и слышно; раньше громкость моно не
+        # считалась, и у таких треков не было признака loudness.
+        loudness = es.LoudnessEBUR128(sampleRate=SAMPLE_RATE)(stereo)[2]
         rms = float(np.sqrt(np.mean(np.square(audio44, dtype=np.float64)))) if len(audio44) else 0.0
         features.update(
             {

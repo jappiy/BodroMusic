@@ -147,11 +147,37 @@ class WaveRepository @Inject constructor(
             nowMs = clock.now(),
             random = Random(random.nextLong()),
         )
-        val raw = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
+        val raw = withSoundAlike(resolved, engine.nextBatch(request), queue, wanted).filter { state.of(it) != Reaction.Disliked }
         val familiar = sound.arrange(raw, mood, batchSize, currentSong)
         val batch = withPool(familiar, resolved, fullProfile, queue, preset?.character)
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
         batch
+    }
+
+    /**
+     * Волна по треку: к кандидатам движка (исполнитель, жанр, похожие исполнители) подмешиваются похожие по звучанию
+     * треки библиотеки (bodrod с анализом), через один, — дальше [SoundArranger] выстраивает их плавно.
+     */
+    private suspend fun withSoundAlike(settings: WaveSettings, engineSongs: List<Song>, queue: List<Song>, wanted: Int): List<Song> {
+        val seed = settings.trackSeed ?: return engineSongs
+        if (!sound.isSupported()) return engineSongs
+        val played = queue.mapTo(mutableSetOf()) { it.id } + seed.songId
+        val alike = runCatching { sound.similar(Song(id = seed.songId, title = seed.title)) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrDefault(emptyList())
+            .filter { it.id !in played }
+            .shuffled(random)
+            .take(wanted / 2)
+        if (alike.isEmpty()) return engineSongs
+        val rest = engineSongs.filter { s -> s.id !in played && alike.none { it.id == s.id } }
+        val mixed = mutableListOf<Song>()
+        val a = alike.iterator()
+        val b = rest.iterator()
+        while (mixed.size < wanted && (a.hasNext() || b.hasNext())) {
+            if (a.hasNext()) mixed += a.next()
+            if (b.hasNext() && mixed.size < wanted) mixed += b.next()
+        }
+        return mixed
     }
 
     /** Подбирает ли волну bodrod (0.19.0+, режимы и темпоритм). Ответ запоминается на учётку. */

@@ -236,15 +236,33 @@ data class WaveModeInfo(
     val dynamic: Boolean = false,
 )
 
-/** Отчёт об анализе: сколько проанализировано, у скольких есть каждый признак, сколько треков в каждом режиме. */
+/**
+ * Отчёт об анализе: сколько проанализировано и не удалось (с причинами), сколько треков в каждом режиме и
+ * настроении, у скольких есть каждый признак. Поля с [failed] по [modeList] — bodrod 0.24.0+; старый сервер
+ * присылает только [modes] (id → число).
+ */
 @Serializable
 data class WaveReport(
     val library: Int = 0,
     val analyzed: Int = 0,
+    val failed: Int = 0,
+    val excluded: Int = 0,
+    val pending: Int? = null,
+    val failures: List<WaveReportFailure> = emptyList(),
+    val loudnessEstimated: Int = 0,
+    val noMood: Int? = null,
+    val modeList: List<WaveReportMode> = emptyList(),
     val features: Map<String, Int> = emptyMap(),
     val languages: Map<String, Int> = emptyMap(),
     val modes: Map<String, Int> = emptyMap(),
 )
+
+@Serializable
+data class WaveReportFailure(val reason: String, val count: Int)
+
+/** Режим в отчёте: [mood] — режим-настроение («Бодрое», «Пошумим»…). */
+@Serializable
+data class WaveReportMode(val id: String, val title: String, val count: Int, val mood: Boolean = false)
 
 /** Подводка к треку на главной (bodrod 0.23.0+): [type] — откуда факт (context, personal, story, sound…). */
 @Serializable

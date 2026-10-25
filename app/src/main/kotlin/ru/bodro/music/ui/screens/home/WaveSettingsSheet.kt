@@ -91,4 +91,5 @@ fun moodLabel(mood: WaveMood): Int = when (mood) {
     WaveMood.Calm -> R.string.wave_mood_calm
     WaveMood.Happy -> R.string.wave_mood_happy
     WaveMood.Sad -> R.string.wave_mood_sad
+    WaveMood.Loud -> R.string.wave_mood_loud
 }

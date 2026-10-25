@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.bodro.music.R
+import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
@@ -84,6 +85,7 @@ import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.components.shimmerAlpha
+import ru.bodro.music.ui.screens.player.sourceTitle
 import ru.bodro.music.ui.screens.wave.NebulaBackground
 import ru.bodro.music.ui.theme.BodroYellow
 import ru.bodro.music.ui.theme.LocalPlayerColors
@@ -92,6 +94,9 @@ import ru.bodro.music.ui.theme.WaveTitleStyle
 
 /**
  * Главная — только «Моя волна» на весь экран, без прокрутки к другому контенту (остальное — во вкладке «Чарты»).
+ * Показывает то, что реально играет, откуда бы трек ни был запущен. Трек не из волны (чарты, поиск, альбом):
+ * сверху «Волна по треку «…»», очередь не трогается, пока пользователь не нажмёт «следующий» (свайп) или не выберет
+ * режим — тогда очередь переходит на волну от этого трека; кончится сама — сервис продолжит волной от последнего.
  * Сверху вниз: настройки волны, заголовок или чип режима, поиск; крупное имя исполнителя и обложка (свайп —
  * следующий / предыдущий трек); «Не нравится», play/pause, «таблетка» с названием и прогрессом (тап — плеер), лайк; короткий
  * текст о треке; карусель режимов-куполов. Фон — туманность в цветах обложки ([NebulaBackground]).
@@ -116,6 +121,7 @@ fun WaveHome(
 ) {
     val actions = LocalAppActions.current
     val wavePlaying = player.source.isWave && player.hasMedia
+    val outsideWave = player.hasMedia && !player.source.isWave
     val active = settings.waveModeId.ifBlank { null }?.let { id ->
         modes.firstOrNull { it.id == id } ?: ModeCard(id, id, Color.Gray, Icons.Rounded.AutoAwesome)
     }
@@ -127,18 +133,30 @@ fun WaveHome(
         onSelectMode(chosen?.id)
         actions.startWave(chosen?.settings ?: WaveSettings())
     }
-    // Сброс режима: волна играет — сразу «Моя волна» без режима; не играет — только снять режим.
-    val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectMode(null) }
+    // Сброс режима: что-то играет — сразу «Моя волна» без режима (от текущего трека); иначе — только снять режим.
+    val reset: () -> Unit = { if (player.hasMedia) start(null) else onSelectMode(null) }
+    // «Следующий» вне волны — очередь переходит на волну от текущего трека.
+    val next: () -> Unit = {
+        val song = player.currentSong
+        if (outsideWave && song != null) actions.continueWithWave(song, skip = true) else onNext()
+    }
+    val title = when {
+        outsideWave -> player.currentSong?.let { stringResource(R.string.wave_by_track, it.title) }
+        else -> (player.source as? QueueSource.WaveSource)?.settings?.trackSeed?.takeIf { wavePlaying }
+            ?.let { stringResource(R.string.wave_by_track, it.title) }
+    }
+    val subtitle = if (outsideWave) stringResource(R.string.wave_now_from, sourceTitle(player.source)) else null
 
     Box(modifier.fillMaxSize().then(if (drawBackground) Modifier.background(Color.Black) else Modifier).testTag("wave-home")) {
         if (drawBackground) HomeBackdrop(player, settings, Modifier.matchParentSize())
         BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
             val compact = maxHeight < COMPACT_HEIGHT
             val content: @Composable ColumnScope.(scrollable: Boolean) -> Unit = { scrollable ->
-                WaveTopRow(active, onOpenSettings, onReset = reset, onOpenSearch)
+                // Чип режима — только когда играет волна этого режима (а не трек из чартов при выбранном режиме).
+                WaveTopRow(active?.takeIf { title == null }, title, subtitle, onOpenSettings, onReset = reset, onOpenSearch)
                 if (scrollable) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.weight(1f))
-                if (wavePlaying && player.currentSong != null) {
-                    NowPlayingBlock(player, player.currentSong, onTogglePlay, onNext, onPrevious, blurbs, wide, compact)
+                if (player.hasMedia && player.currentSong != null) {
+                    NowPlayingBlock(player, player.currentSong, onTogglePlay, next, onPrevious, blurbs, wide, compact)
                 } else {
                     StartBlock(loading = player.waveLoading, onStart = { start(active) })
                 }
@@ -156,30 +174,61 @@ fun WaveHome(
     }
 }
 
-/** Фон главной: чёрный и живая туманность в цветах обложки. Корень рисует его на весь экран, edge-to-edge. */
+/**
+ * Фон главной: чёрный и живая туманность. Корень рисует его на весь экран, edge-to-edge. Цвета — обложки текущего
+ * трека (любого, не только из волны); без обложки — цвет режима волны («Пошумим» — красный, «Спокойное» — голубой…);
+ * ничего не играет и режима нет — фиолетовый [NeutralGlow]. [active] = false — главную закрыл плеер, кадров нет.
+ */
 @Composable
-fun HomeBackdrop(player: PlayerUiState, settings: AppSettings, modifier: Modifier = Modifier) {
+fun HomeBackdrop(player: PlayerUiState, settings: AppSettings, modifier: Modifier = Modifier, active: Boolean = true) {
     val colors = LocalPlayerColors.current
-    val wavePlaying = player.source.isWave && player.hasMedia
+    val cover = colors?.glow?.takeIf { player.hasMedia && it.isNotEmpty() && it != NeutralGlow }
+    val modeId = (player.source as? QueueSource.WaveSource)?.settings?.preset ?: settings.waveModeId.ifBlank { null }
+    val mode = modeId?.takeIf { !player.hasMedia || player.source.isWave }?.let { listOf(modeColor(it)) }
     Box(modifier.background(Color.Black)) {
         NebulaBackground(
-            colors = if (wavePlaying) colors?.glow ?: NeutralGlow else NeutralGlow,
+            colors = cover ?: mode ?: NeutralGlow,
             mode = settings.backgroundAnimation,
-            playing = wavePlaying && player.isPlaying,
+            playing = player.hasMedia && player.isPlaying,
             modifier = Modifier.matchParentSize(),
+            active = active,
         )
     }
 }
 
 @Composable
-private fun WaveTopRow(card: ModeCard?, onOpenSettings: () -> Unit, onReset: () -> Unit, onOpenSearch: () -> Unit) {
+private fun WaveTopRow(
+    card: ModeCard?,
+    title: String?,
+    subtitle: String?,
+    onOpenSettings: () -> Unit,
+    onReset: () -> Unit,
+    onOpenSearch: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onOpenSettings, modifier = Modifier.testTag("wave-settings")) {
             Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.wave_settings), tint = Color.White)
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             if (card == null) {
-                Text(stringResource(R.string.wave_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.testTag("wave-title")) {
+                    Text(
+                        title ?: stringResource(R.string.wave_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    subtitle?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             } else {
                 Row(
                     Modifier
@@ -289,8 +338,10 @@ private fun NowPlayingBlock(
                     style = WaveTitleStyle.copy(color = Color.White),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    // Сначала уменьшается шрифт, потом — две строки с многоточием. Межстрочный интервал в em
+                    // ([WaveTitleStyle]) растёт вместе с размером: строки капсом и с Й/Ё не наползают.
                     autoSize = TextAutoSize.StepBased(
-                        minFontSize = 26.sp,
+                        minFontSize = if (compact) 24.sp else 26.sp,
                         maxFontSize = if (compact) 44.sp else 60.sp,
                         stepSize = 2.sp,
                     ),

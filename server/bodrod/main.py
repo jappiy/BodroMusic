@@ -565,7 +565,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     @app.get("/api/v1/wave/report")
     async def wave_report(user: User, svc: Svc) -> dict[str, Any]:
         """Какие признаки считаются, сколько треков проанализировано, сколько попадает в каждый режим."""
-        return await require_wave(svc).report()
+        return await require_wave(svc).report(user.username)
 
     @app.get("/api/v1/tracks/similar", response_model=list[TrackCandidate], response_model_by_alias=True)
     async def tracks_similar(

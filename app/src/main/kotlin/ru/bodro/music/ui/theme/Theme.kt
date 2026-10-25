@@ -23,7 +23,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.image.CoverColors
@@ -89,8 +91,18 @@ val BodroTypography = Typography().let { base ->
     )
 }
 
-/** Огромный заголовок исполнителя на экране волны. */
-val WaveTitleStyle = TextStyle(fontSize = 44.sp, lineHeight = 48.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp)
+/**
+ * Огромный заголовок исполнителя на экране волны. Межстрочный интервал — в em, а не в sp: автоподбор размера
+ * (до 60 sp) иначе оставлял интервал 48 sp, и заглавные с надстрочными знаками (Й, Ё, Á) второй строки залезали
+ * на первую. 1,14 em и [LineHeightStyle.Trim.None] — место под диакритику и над первой строкой.
+ */
+val WaveTitleStyle = TextStyle(
+    fontSize = 44.sp,
+    lineHeight = 1.14.em,
+    fontWeight = FontWeight.Black,
+    letterSpacing = (-0.02).em,
+    lineHeightStyle = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.None),
+)
 
 val BodroShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),

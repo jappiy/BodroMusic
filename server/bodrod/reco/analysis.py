@@ -83,6 +83,14 @@ def energy_of(features: dict[str, Any]) -> float | None:
     return round(sum(parts) / len(parts), 4)
 
 
+def _reason(error: str) -> str:
+    """Причина неудачи для отчёта: первая строка без пути к файлу, не длиннее 120 символов."""
+    line = (error.strip().splitlines() or [""])[0]
+    if ": " in line and ("/" in line.split(": ", 1)[0] or "\\" in line.split(": ", 1)[0]):
+        line = line.split(": ", 1)[1]
+    return line[:120] or "Неизвестная ошибка"
+
+
 def _added_ts(value: str) -> float:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00").split(".")[0]).timestamp()
@@ -458,6 +466,18 @@ class AnalysisService:
             "library": len(library),
             "lastResultAt": self._last_result_at,
         }
+
+    def failures(self, limit: int = 5) -> list[dict[str, Any]]:
+        """Почему не удалось проанализировать треки библиотеки: причина (первая строка ошибки) → сколько треков."""
+        library = set(self._paths.values())
+        counts: dict[str, int] = {}
+        for r in self._store.query("SELECT path, error FROM audio_features WHERE error IS NOT NULL"):
+            if r["path"] not in library:
+                continue
+            reason = _reason(str(r["error"]))
+            counts[reason] = counts.get(reason, 0) + 1
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+        return [{"reason": reason, "count": count} for reason, count in top]
 
     # endregion
 

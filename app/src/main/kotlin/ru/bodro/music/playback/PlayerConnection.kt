@@ -156,17 +156,61 @@ class PlayerConnection @Inject constructor(
     }
 
     /** Запуск волны / микса: первая порция грузится здесь, дальше сервис подгружает сам. */
-    fun startWave(settings: WaveSettings, onError: (Throwable) -> Unit = {}) {
+    fun startWave(settings: WaveSettings, from: Song? = null, onError: (Throwable) -> Unit = {}) {
         _state.update { it.copy(waveLoading = true) }
         scope.launch {
             try {
-                val batch = wave.nextBatch(settings, currentSong = null, queue = emptyList())
+                // [from] — трек, который играл: волна (и режим с главной) подбирается от него, без резкой смены звучания.
+                val batch = wave.nextBatch(settings, currentSong = from, queue = listOfNotNull(from))
+                    .filter { it.id != from?.id }
                 if (batch.isEmpty()) {
                     onError(IllegalStateException("empty"))
                 } else {
                     play(batch, 0, QueueSource.WaveSource(settings))
                 }
             } catch (e: Exception) {
+                onError(e)
+            } finally {
+                _state.update { it.copy(waveLoading = false) }
+            }
+        }
+    }
+
+    /**
+     * Перевести очередь на волну от [from], не прерывая его: после текущего трека — порция «волны по треку», хвост
+     * прежней очереди (альбом, плейлист, чарт) убирается, сыгранное до него остаётся для «назад». [skip] — сразу
+     * перейти к первому треку волны (свайп или «следующий» на главной). Пустая порция — [skip] работает как обычный
+     * «следующий».
+     */
+    fun continueWithWave(from: Song, skip: Boolean, onError: (Throwable) -> Unit = {}) {
+        if (_state.value.waveLoading) return
+        _state.update { it.copy(waveLoading = true) }
+        val settings = WaveSettings.byTrack(from)
+        scope.launch {
+            try {
+                val batch = wave.nextBatch(settings, currentSong = from, queue = listOf(from)).filter { it.id != from.id }
+                if (batch.isEmpty()) {
+                    if (skip) next()
+                    onError(IllegalStateException("empty"))
+                    return@launch
+                }
+                withController { c ->
+                    // Пока подбирали, пользователь мог переключить трек сам — тогда очередь не трогаем.
+                    if (c.currentMediaItem?.mediaId != from.id) return@withController
+                    val index = c.currentMediaItemIndex
+                    val oldCount = c.mediaItemCount
+                    // Сначала источник и новая порция, потом удаление хвоста: сервис не должен успеть увидеть
+                    // «последний трек не волны» и подгрузить продолжение сам.
+                    sources.set(QueueSource.WaveSource(settings))
+                    c.shuffleModeEnabled = false
+                    c.addMediaItems(items.create(batch))
+                    if (oldCount > index + 1) c.removeMediaItems(index + 1, oldCount)
+                    if (skip) c.seekToNextMediaItem()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (skip) next()
                 onError(e)
             } finally {
                 _state.update { it.copy(waveLoading = false) }

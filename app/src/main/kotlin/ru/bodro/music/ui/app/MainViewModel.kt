@@ -107,6 +107,10 @@ class MainViewModel @Inject constructor(
             val before = reactionRepository.reactionOf(song)
             if (before == Reaction.Disliked) return@launch
             // Дизлайк снимает лайк; PlaybackCoordinator видит новый дизлайк и переключает волну на следующий трек.
+            // Вне волны (трек из чартов, поиска, альбома) — просто следующий трек очереди: волну от трека, который
+            // не понравился, не подбираем. Очередь кончилась — сервис сам продолжит волной.
+            val state = player.state.value
+            if (!state.source.isWave && state.currentSong?.id == song.id && state.hasNext) player.next()
             reactionRepository.setReaction(song, Reaction.Disliked)
             _messages.trySend(
                 UiMessage(context.getString(R.string.message_removed_from_wave), context.getString(R.string.action_undo)) {
@@ -117,15 +121,23 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /** Волна (режим, микс, «по треку»): подбирается от трека, который сейчас в плеере, — переход без скачка. */
     override fun startWave(settings: WaveSettings) {
-        player.startWave(settings) { error ->
-            val text = if (error is IllegalStateException) {
-                context.getString(R.string.wave_empty)
-            } else {
-                context.getString(error.toUiError().message)
-            }
-            showMessage(text)
+        player.startWave(settings, from = player.state.value.currentSong, onError = ::showWaveError)
+    }
+
+    /** Главная: «следующий» вне волны — очередь переходит на волну от текущего трека. */
+    override fun continueWithWave(song: Song, skip: Boolean) {
+        player.continueWithWave(song, skip, onError = ::showWaveError)
+    }
+
+    private fun showWaveError(error: Throwable) {
+        val text = if (error is IllegalStateException) {
+            context.getString(R.string.wave_empty)
+        } else {
+            context.getString(error.toUiError().message)
         }
+        showMessage(text)
     }
 
     override fun playSimilar(song: Song) {

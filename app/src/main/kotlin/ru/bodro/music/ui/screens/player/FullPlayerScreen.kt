@@ -95,7 +95,6 @@ import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.RepeatMode
 import ru.bodro.music.core.model.Song
-import ru.bodro.music.core.model.WaveSeed
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.app.LocalAppActions
@@ -189,7 +188,7 @@ fun FullPlayerScreen(
                     palette,
                     onCollapse = onCollapse,
                     onSleep = { sheet = PlayerSheet.Sleep },
-                    onWave = { actions.startWave(WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))) },
+                    onWave = { actions.startWave(WaveSettings.byTrack(song)) },
                     onSongActions = { actions.showSongMenu(song) },
                     onQueue = { sheet = PlayerSheet.Queue },
                 )
@@ -751,12 +750,14 @@ private fun Color.compositeOver(background: Color): Color {
     )
 }
 
+/** Откуда играет очередь — для шапки плеера и подписи на главной. */
 @Composable
-private fun sourceTitle(source: QueueSource): String = when (source) {
+internal fun sourceTitle(source: QueueSource): String = when (source) {
     is QueueSource.AlbumSource -> source.title
     is QueueSource.PlaylistSource -> source.title
     is QueueSource.ArtistSource -> source.title
     QueueSource.LikedSource -> stringResource(R.string.liked_title)
-    is QueueSource.WaveSource -> stringResource(R.string.wave_title)
+    is QueueSource.WaveSource -> source.settings.trackSeed?.let { stringResource(R.string.wave_by_track, it.title) }
+        ?: stringResource(R.string.wave_title)
     is QueueSource.CustomSource -> source.title ?: stringResource(R.string.player_now_playing)
 }

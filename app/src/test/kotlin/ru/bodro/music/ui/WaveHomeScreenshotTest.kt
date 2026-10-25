@@ -5,13 +5,18 @@ import android.graphics.Canvas
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.mockk
 import java.io.File
@@ -26,6 +31,9 @@ import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.downloads.DiscoverTrack
 import ru.bodro.music.core.downloads.WaveModeInfo
+import ru.bodro.music.core.downloads.WaveReport
+import ru.bodro.music.core.downloads.WaveReportFailure
+import ru.bodro.music.core.downloads.WaveReportMode
 import ru.bodro.music.core.model.Artist
 import ru.bodro.music.core.model.Playlist
 import ru.bodro.music.core.model.QueueSource
@@ -50,8 +58,10 @@ import ru.bodro.music.ui.screens.player.PlayerExtrasUi
 import ru.bodro.music.ui.screens.player.PlayerPalette
 import ru.bodro.music.ui.screens.player.playerExtras
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
+import ru.bodro.music.ui.screens.settings.WaveReportContent
 import ru.bodro.music.ui.theme.BodroTheme
 import ru.bodro.music.ui.theme.LocalPlayerColors
+import ru.bodro.music.ui.theme.NeutralGlow
 import ru.bodro.music.ui.theme.PlayerColors
 import ru.bodro.music.ui.util.UiError
 
@@ -121,6 +131,68 @@ class WaveHomeScreenshotTest {
     @Test
     fun `unfolded - wave playing`() = shoot("home-unfolded", "w841dp-h764dp-land-xhdpi", playing, AppSettings())
 
+    /** Задание 034: длинные и написанные капсом имена — без наложения строк, сначала мельче, потом многоточие. */
+    @Test
+    fun `long artist names do not overlap`() {
+        listOf(
+            "artist-caps" to "Обе Две, ПАВЛОВА",
+            "artist-short" to "Scorpions",
+            "artist-three" to "Баста, Скриптонит, Ёлка и Йорш",
+            "artist-allcaps" to "ЁЛКА Й ЙОРШ ÁNGEL ÉDITH",
+            "artist-very-long" to "The Ultimate Very Long Latin Artist Name Orchestra Featuring Somebody Else",
+        ).forEach { (name, artist) ->
+            val track = song.copy(artist = artist)
+            shoot("home-$name", "w411dp-h891dp-port-xxhdpi", playing.copy(currentSong = track, queue = listOf(track)), AppSettings())
+        }
+    }
+
+    @Test
+    fun `track from charts - home shows it and the wave by track`() = shoot(
+        "home-outside-wave",
+        "w411dp-h891dp-port-xxhdpi",
+        playing.copy(source = QueueSource.CustomSource("Чарт Яндекса")),
+        AppSettings(waveModeId = "energetic"),
+    )
+
+    @Test
+    fun `loud mode without cover - background takes the mode color`() = shoot(
+        "home-loud-no-cover",
+        "w411dp-h891dp-port-xxhdpi",
+        playing.copy(source = QueueSource.WaveSource(WaveSettings(preset = "loud"))),
+        AppSettings(waveModeId = "loud"),
+        colors = PlayerColors(Color(0xFF222222), Color(0xFFFFB627), Color.White, glow = NeutralGlow),
+    )
+
+    /** Задание 034: «Настройки → Волна» — отчёт словами, с причинами неудач и настроениями. */
+    @Test
+    fun `wave report - plain words`() = render("settings-wave-report", "w411dp-h891dp-port-xxhdpi") {
+        val report = WaveReport(
+            library = 8396,
+            analyzed = 8389,
+            failed = 7,
+            excluded = 2,
+            pending = 0,
+            failures = listOf(WaveReportFailure("ffmpeg: Invalid data found when processing input", 5)),
+            loudnessEstimated = 77,
+            noMood = 2100,
+            modeList = listOf(
+                WaveReportMode("energetic", "Бодрое", 2400, mood = true),
+                WaveReportMode("calm", "Спокойное", 1900, mood = true),
+                WaveReportMode("happy", "Весёлое", 2200, mood = true),
+                WaveReportMode("sad", "Грустное", 1500, mood = true),
+                WaveReportMode("loud", "Пошумим", 600, mood = true),
+                WaveReportMode("popular", "Популярное", 1300),
+                WaveReportMode("new", "Новое", 0),
+                WaveReportMode("instrumental", "Без слов", 520),
+            ),
+            features = mapOf("bpm" to 8389, "loudness" to 8389),
+            languages = mapOf("ru" to 3108, "en" to 4911, "none" to 377),
+        )
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { WaveReportContent(report) }
+        }
+    }
+
     @Test
     fun `player extras - similar, popular, playlists`() = render("player-extras", "w411dp-h891dp-port-xxhdpi") {
         val palette = PlayerPalette(Color(0xFF3B2A6B), Color.White, Color(0xFFFFB627))
@@ -187,7 +259,8 @@ class WaveHomeScreenshotTest {
         player: PlayerUiState,
         settings: AppSettings,
         text: Section<List<String>> = blurbs,
-    ) = render(name, qualifiers) {
+        colors: PlayerColors = coverGlow,
+    ) = render(name, qualifiers, colors) {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
             WaveHome(
                 player = player,
@@ -204,7 +277,7 @@ class WaveHomeScreenshotTest {
         }
     }
 
-    private fun render(name: String, qualifiers: String, content: @Composable () -> Unit) {
+    private fun render(name: String, qualifiers: String, colors: PlayerColors = coverGlow, content: @Composable () -> Unit) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         // Как системная «Отключить анимацию»: мерцание скелетонов и фон статичны, иначе цикл кадров не кончается.
         android.provider.Settings.Global.putFloat(
@@ -213,7 +286,7 @@ class WaveHomeScreenshotTest {
             0f,
         )
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        activity.setContent { Providers(content) }
+        activity.setContent { Providers(colors, content) }
         shadowOf(Looper.getMainLooper()).idle()
         val root = activity.window.decorView
         assertTrue(root.width > 0 && root.height > 0)
@@ -224,23 +297,25 @@ class WaveHomeScreenshotTest {
     }
 
     @Composable
-    private fun Providers(content: @Composable () -> Unit) {
+    private fun Providers(colors: PlayerColors, content: @Composable () -> Unit) {
         BodroTheme {
             CompositionLocalProvider(
                 LocalAppActions provides NoActions,
                 LocalNavigator provides NoNavigator,
                 LocalReactions provides ReactionState(),
                 LocalCoverArtUrls provides mockk(relaxed = true),
-                LocalPlayerColors provides PlayerColors(
-                    Color(0xFF3B2A6B),
-                    Color(0xFFFFB627),
-                    Color.White,
-                    glow = listOf(Color(0xFF13B5C8), Color(0xFF1F6FD1), Color(0xFF7AE0E8)),
-                ),
+                LocalPlayerColors provides colors,
                 content = content,
             )
         }
     }
+
+    private val coverGlow = PlayerColors(
+        Color(0xFF3B2A6B),
+        Color(0xFFFFB627),
+        Color.White,
+        glow = listOf(Color(0xFF13B5C8), Color(0xFF1F6FD1), Color(0xFF7AE0E8)),
+    )
 
     private object NoActions : AppActions {
         override fun play(songs: List<Song>, index: Int, source: QueueSource, shuffle: Boolean) = Unit
