@@ -2,7 +2,8 @@
 
 - **Дата:** 2026-10-25
 - **Версии:** приложение 0.29.0 (`versionCode 30`), bodrod 0.23.0 → 0.24.0, анализатор 0.3.0 → 0.3.1
-- **Релиз с APK:** см. раздел «Релиз» ниже
+- **Релиз с APK:** https://github.com/jappiy/BodroMusic/releases/tag/v0.29.0 (CI зелёный на `d6e723e` вместе с эмулятором,
+  Release #40227975445, `BodroMusic-0.29.0.apk` и `BodroMusic-0.29.0-debug.apk` в `dist`)
 - **bodrod / анализатор:** на NAS не установлены (ставить по `docs/DEPLOY.md`)
 - **Статус:** реализовано; unit-тесты, снимки Robolectric и pytest; на телефоне не проверено
 
