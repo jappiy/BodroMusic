@@ -101,8 +101,12 @@ FIXED = {
     "tags_fixed": "Дописаны теги",
     "covers_added": "Добавлены обложки",
     "encoding_fixed": "Исправлена кодировка тегов",
+    "lyrics_synced": "Найдены тексты с таймингами",
+    "lyrics_plain": "Найдены тексты без таймингов",
 }
 """Что исправлено: ключ статистики → заголовок для сводки."""
+LYRICS_NOT_FOUND = "lyrics_not_found"
+LYRICS_NOT_FOUND_TITLE = "Тексты песен не найдены (повтор через 7, 30, затем каждые 90 дней)"
 
 STAT_KEYS = (
     "songs",
@@ -288,6 +292,8 @@ class MaintenanceService:
         self._lock = lock or asyncio.Lock()
         self._task: asyncio.Task[Any] | None = None
         self.running = False
+        """Сбор текстов (`LyricsService`): последний шаг регламента, после снятия блокировки файлов."""
+        self.lyrics: Any = None
         store.fail_unfinished_runs()
 
     @property
@@ -365,7 +371,27 @@ class MaintenanceService:
                     await self._scan()
             finally:
                 self.running = False
-            return run.id
+        if self.lyrics is not None and not run.dry_run:
+            await self._lyrics_step(run.id)
+        return run.id
+
+    async def _lyrics_step(self, run_id: int) -> None:
+        """Тексты песен: новые треки и подошедшие повторы; итог — в статистику запуска (ночной отчёт)."""
+        try:
+            progress = await self.lyrics.nightly(
+                self._settings.lyrics_nightly_limit, self._settings.lyrics_nightly_minutes * 60
+            )
+        except Exception:  # noqa: BLE001 — регламент уже выполнен, тексты — в следующую ночь
+            log.exception("Обслуживание библиотеки: ошибка сбора текстов")
+            return
+        self._store.merge_run_stats(
+            run_id,
+            {
+                "lyrics_synced": progress.synced,
+                "lyrics_plain": progress.plain,
+                LYRICS_NOT_FOUND: progress.not_found,
+            },
+        )
 
     # region Загрузка
 
@@ -1347,6 +1373,10 @@ class MaintenanceService:
             marker.write_text("*\n", encoding="utf-8")
         stored.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(source), str(stored))
+        for suffix in (".lrc", ".txt"):  # текст песни — вместе с файлом
+            lyrics = source.with_suffix(suffix)
+            if lyrics.is_file() and not stored.with_suffix(suffix).exists():
+                shutil.move(str(lyrics), str(stored.with_suffix(suffix)))
         self._remove_empty_album(source.parent)
 
     def _remove_empty_album(self, folder: Path) -> None:
@@ -1398,6 +1428,9 @@ class MaintenanceService:
                     "mismatch": found.get(KIND_MISMATCH, 0),
                 }
             unresolved = [MaintenanceCount(key=code, title=REASONS[code], count=n) for code, n in counts.items() if n]
+            if run.stats.get(LYRICS_NOT_FOUND):
+                count = run.stats[LYRICS_NOT_FOUND]
+                unresolved.append(MaintenanceCount(key=LYRICS_NOT_FOUND, title=LYRICS_NOT_FOUND_TITLE, count=count))
         keep_ms = self._settings.quarantine_days * 24 * 3600 * 1000
         quarantine = [
             QuarantineItemOut(

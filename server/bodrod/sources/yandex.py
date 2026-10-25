@@ -56,6 +56,9 @@ class YTrack:
     cover_url: str | None = None
     artist_ids: list[str] = field(default_factory=list)
     available: bool = True
+    """Есть синхронизированный текст (LRC) / обычный текст — по `lyrics_info`; `None` — Яндекс не сообщил."""
+    lyrics_synced: bool | None = None
+    lyrics_text: bool | None = None
 
     @property
     def artist(self) -> str:
@@ -156,7 +159,14 @@ def _convert_track(t: Any, disc: int | None = None, number: int | None = None) -
         disc_no=getattr(position, "volume", None) or disc,
         cover_url=_cover(getattr(t, "cover_uri", None) or (getattr(album, "cover_uri", None) if album else None)),
         available=getattr(t, "available", True) is not False,
+        lyrics_synced=_flag(getattr(t, "lyrics_info", None), "has_available_sync_lyrics"),
+        lyrics_text=_flag(getattr(t, "lyrics_info", None), "has_available_text_lyrics"),
     )
+
+
+def _flag(info: Any, name: str) -> bool | None:
+    value = getattr(info, name, None) if info is not None else None
+    return bool(value) if value is not None else None
 
 
 def _convert_album(a: Any) -> YAlbum:
@@ -280,12 +290,18 @@ class YandexMusicApi:
 
         return await self._call(run)
 
-    async def lyrics(self, track_id: str) -> str | None:
+    async def lyrics(self, track_id: str, synced: bool = False) -> str | None:
+        """Текст песни; `synced` — в формате LRC (строки с метками времени). Нужна подписка Плюс."""
+
         def run(c: Any) -> str | None:
-            lyrics = c.tracks_lyrics(track_id, format_="TEXT")
+            lyrics = c.tracks_lyrics(track_id, format_="LRC" if synced else "TEXT")
             return lyrics.fetch_lyrics() if lyrics else None
 
         return await self._call(run)
+
+    async def tracks_info(self, ids: list[str]) -> list[YTrack]:
+        """Треки по id (пачками по 100) — с признаками наличия текста."""
+        return await self._tracks(ids)
 
     async def _tracks(self, ids: list[str]) -> list[YTrack]:
         result: list[YTrack] = []

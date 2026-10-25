@@ -21,6 +21,7 @@ SETTINGS = Settings(
     lidarr_url=LIDARR,
     lidarr_api_key="lidarr-key",
     data_dir="/tmp",
+    lyrics_enabled=False,  # сбор текстов ходит в LRCLIB с паузой — проверяется отдельно (test_lyrics.py)
 )
 
 

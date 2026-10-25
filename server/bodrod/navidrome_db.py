@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 DISLIKE_RATING = 1
 _OPTIONAL_COLUMNS = (
     "album_artist", "disc_number", "track_number", "has_cover_art", "artist_id", "album_artist_id", "tags",
-    "mbz_recording_id", "mbz_album_id", "genre", "year", "created_at",
+    "mbz_recording_id", "mbz_album_id", "genre", "year", "created_at", "lyrics",
 )  # fmt: skip
 
 
@@ -58,6 +58,8 @@ class NdSong:
     year: int | None = None
     """Когда трек появился в библиотеке (строка даты Navidrome) — режим «Новое», приоритет анализа новых."""
     created_at: str | None = None
+    """Текст в тегах файла (колонка `lyrics`, Navidrome 0.54+): "synced", "plain" или `None` — нет."""
+    embedded_lyrics: str | None = None
 
 
 @dataclass(frozen=True)
@@ -336,7 +338,24 @@ def _song(r: sqlite3.Row) -> NdSong:
         genre=r["genre"] or None,
         year=int(r["year"]) if r["year"] else None,
         created_at=str(r["created_at"]) if r["created_at"] else None,
+        embedded_lyrics=_lyrics_kind(r["lyrics"]),
     )
+
+
+def _lyrics_kind(raw: str | None) -> str | None:
+    """`[{"lang": "…", "line": [{"start": 0, "value": "…"}], "synced": true}]` → "synced" / "plain" / `None`."""
+    if not raw or raw in ("[]", "null"):
+        return None
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        return "plain" if raw.strip() else None  # Navidrome до 0.54 хранил текст строкой
+    if not isinstance(items, list):
+        return None
+    kinds = [bool(i.get("synced")) for i in items if isinstance(i, dict) and i.get("line")]
+    if not kinds:
+        return None
+    return "synced" if any(kinds) else "plain"
 
 
 def _isrc(raw: str | None) -> str | None:

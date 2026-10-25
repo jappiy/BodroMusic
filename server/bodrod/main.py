@@ -22,6 +22,7 @@ from .clients.navidrome import Credentials, NavidromeClient
 from .clients.slskd import SlskdClient
 from .config import Settings
 from .db import MaintenanceAction, MaintenanceRun, Store
+from .lyrics import LrcLib, LyricsProvider, LyricsService, YandexLyrics
 from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
 from .metadata.facts import ArtistFacts
@@ -143,6 +144,7 @@ class Services:
     facts: ArtistFacts | None = None
     wave: WaveService | None = None
     similar: SimilarTracks | None = None
+    lyrics: LyricsService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -246,6 +248,30 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         maintenance = MaintenanceService(
             settings, store, navidrome, navidrome_db, lidarr, cover_chain, tag_chain, cover_fetcher, files_lock
         )
+    lyrics = None
+    if navidrome_db and settings.lyrics_enabled:
+        # Свой экземпляр API со своей паузой: массовый сбор не ждёт в общей очереди загрузок.
+        lyrics_delay = (settings.lyrics_yandex_delay_s, settings.lyrics_yandex_delay_s * 1.5)
+        lyrics_tokens = [settings.yandex_token] + [yandex_tokens.account_token(u) for u in yandex_tokens.users]
+        lyrics_providers: list[LyricsProvider] = [
+            YandexLyrics([YandexMusicApi(t, lyrics_delay) for t in dict.fromkeys(lyrics_tokens) if t])
+        ]
+        if settings.lyrics_lrclib:
+            lyrics_providers.append(
+                LrcLib(http, f"BodroMusic/{__version__} (bodrod; https://github.com/jappiy/BodroMusic)")
+            )
+        lyrics = LyricsService(
+            store,
+            navidrome_db,
+            lyrics_providers,
+            music_dir=settings.music_dir,
+            navidrome_music_dir=settings.navidrome_music_dir,
+            skip_dirs=[settings.quarantine_path, settings.reserve_path],
+            files_lock=files_lock,
+            scan=navidrome.start_scan,
+        )
+        if maintenance is not None:
+            maintenance.lyrics = lyrics
     placer = Placer(settings, store, cover_fetcher, yandex_metadata)
     worker = Worker(
         store, settings, navidrome, slskd, lidarr, cover_fetcher=cover_fetcher, registry=registry, placer=placer
@@ -346,6 +372,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         if navidrome_db is not None and settings.wave_enabled
         else None,
         similar=SimilarTracks(lastfm, library_index.in_library, analysis, navidrome_db),
+        lyrics=lyrics,
     )
 
 
@@ -388,6 +415,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 app.state.services.pool,
                 app.state.services.charts,
                 app.state.services.analysis,
+                app.state.services.lyrics,
             ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
@@ -758,6 +786,25 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         return user
 
     Admin = Annotated[Credentials, Depends(admin_user)]
+
+    # region Тексты песен (сбор — только администраторы)
+
+    def lyrics_service(svc: Svc) -> LyricsService:
+        if svc.lyrics is None:
+            raise HTTPException(409, "Сбор текстов не настроен: нужен NAVIDROME_DB и LYRICS_ENABLED")
+        return svc.lyrics
+
+    @app.get("/api/v1/lyrics/collect")
+    async def lyrics_status(user: Admin, svc: Svc) -> dict[str, Any]:
+        return lyrics_service(svc).status()
+
+    @app.post("/api/v1/lyrics/collect", status_code=202)
+    async def lyrics_collect(user: Admin, svc: Svc) -> dict[str, Any]:
+        service = lyrics_service(svc)
+        if not service.start_full():
+            raise HTTPException(409, "Сбор текстов уже идёт")
+        log.info("%s запустил сбор текстов по всей библиотеке", user.username)
+        return service.status()
 
     @app.get("/api/v1/sources", response_model=SourcesOut, response_model_by_alias=True)
     async def sources(admin: Admin, svc: Svc) -> SourcesOut:

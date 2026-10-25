@@ -592,6 +592,15 @@ class Store:
                 (status, json.dumps(stats), error, now_ms(), run_id),
             )
 
+    def merge_run_stats(self, run_id: int, stats: dict[str, int]) -> None:
+        """Дописать в статистику завершённого запуска (шаги после основного регламента)."""
+        with self._lock:
+            row = self._conn.execute("SELECT stats FROM maintenance_runs WHERE id = ?", (run_id,)).fetchone()
+            if row is None:
+                return
+            merged = json.loads(row["stats"] or "{}") | stats
+            self._conn.execute("UPDATE maintenance_runs SET stats = ? WHERE id = ?", (json.dumps(merged), run_id))
+
     def fail_unfinished_runs(self) -> None:
         """Запуски, прерванные перезапуском сервиса."""
         with self._lock:

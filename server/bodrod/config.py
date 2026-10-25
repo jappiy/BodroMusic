@@ -157,6 +157,14 @@ class Settings:
     quarantine_days: int = 30
     """Сколько запросов к каталогу (поиск тегов и обложек) за один запуск."""
     maintenance_catalog_limit: int = 200
+    """Тексты песен (`lyrics.py`): ночной шаг регламента и разовый сбор по библиотеке. Нужен NAVIDROME_DB."""
+    lyrics_enabled: bool = True
+    """Пауза между запросами к Яндексу при сборе текстов (с) — отдельно от загрузок."""
+    lyrics_yandex_delay_s: float = 1.0
+    lyrics_lrclib: bool = True
+    """Ночной шаг: не больше стольких треков и минут."""
+    lyrics_nightly_limit: int = 300
+    lyrics_nightly_minutes: int = 40
     """Короче этого (секунды) — подозрительно короткий файл."""
     maintenance_min_track_s: int = 10
 
@@ -357,6 +365,11 @@ class Settings:
             quarantine_dir=_opt("QUARANTINE_DIR"),
             quarantine_days=_int("QUARANTINE_DAYS", 30),
             maintenance_catalog_limit=_int("MAINTENANCE_CATALOG_LIMIT", 200),
+            lyrics_enabled=_bool("LYRICS_ENABLED", True),
+            lyrics_yandex_delay_s=float(_opt("LYRICS_YANDEX_DELAY_S") or 1.0),
+            lyrics_lrclib=_bool("LYRICS_LRCLIB", True),
+            lyrics_nightly_limit=_int("LYRICS_NIGHTLY_LIMIT", 300),
+            lyrics_nightly_minutes=_int("LYRICS_NIGHTLY_MINUTES", 40),
             maintenance_min_track_s=_int("MAINTENANCE_MIN_TRACK_S", 10),
             sources_order=_list("SOURCES_ORDER", DEFAULT_SOURCES_ORDER),
             sources_disabled=_list("SOURCES_DISABLED", ()),
