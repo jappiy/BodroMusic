@@ -159,7 +159,8 @@ internal class NebulaRhythm {
         val target = if (playing) frame.energy else 0f
         energy += (target - energy) * smoothing(dt, if (target > energy) ATTACK_S else RELEASE_S)
         beat *= exp(-dt / BEAT_TAU_S)
-        if (lastBeats >= 0 && frame.beats > lastBeats && playing && pulse) beat = 1f
+        val newBeat = lastBeats >= 0 && frame.beats > lastBeats
+        if (newBeat && playing && pulse) beat = 1f
         if (frame.beats != 0 || lastBeats < 0) lastBeats = frame.beats
         val targetSpeed = if (playing) PLAY_SPEED + ENERGY_SPEED * energy else PAUSE_SPEED
         speed += (targetSpeed - speed) * smoothing(dt, SPEED_TAU_S)

@@ -115,8 +115,8 @@ class BeatTracker(sampleRate: Int = 44_100) {
                 variance += d * d
             }
             val threshold = mean + SIGMAS * sqrt(variance / n)
-            val audible = bass > peak * MIN_BASS_SHARE
-            if (rise > threshold && rise > MIN_RISE_DB && audible && sinceBeat >= REFRACTORY_S) {
+            val strong = rise > maxOf(threshold, MIN_RISE_DB) && bass > peak * MIN_BASS_SHARE
+            if (strong && sinceBeat >= REFRACTORY_S) {
                 beats++
                 sinceBeat = 0f
             }
