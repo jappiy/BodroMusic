@@ -86,6 +86,8 @@ class Candidate:
     """Название семени — чтобы не отсеять лайв, если само семя лайв."""
     seed_title: str = ""
     ids: dict[str, str] = field(default_factory=dict)
+    """Исполнитель, на которого похож кандидат, — для подводки «часто слушают вместе с X»."""
+    seed: str = ""
 
 
 @dataclass
@@ -99,6 +101,7 @@ class Scored:
     score: float
     sources: list[str]
     new_artist: bool
+    seed: str | None = None
 
 
 class SourceAdapter(Protocol):
@@ -160,7 +163,7 @@ class LastFmAdapter:
                 if artist and title:
                     result.append(
                         Candidate(artist, title, self.name, float(raw.get("match") or 0.5), seed.weight,
-                                  seed_title=seed.title)
+                                  seed_title=seed.title, seed=seed.artist)
                     )  # fmt: skip
         snapshot = await self._library.snapshot()
         artist_weight: dict[str, tuple[str, float]] = {}
@@ -179,7 +182,7 @@ class LastFmAdapter:
                 tops = await self._call("artist.getTopTracks", artist=similar, limit=4, autocorrect=1)
                 for track in _items((tops.get("toptracks") or {}).get("track"))[:4]:
                     if track.get("name"):
-                        result.append(Candidate(similar, track["name"], self.name, match * 0.8, weight))
+                        result.append(Candidate(similar, track["name"], self.name, match * 0.8, weight, seed=name))
             tag_body = await self._call("artist.getTopTags", artist=name, autocorrect=1)
             for raw in _items((tag_body.get("toptags") or {}).get("tag"))[:3]:
                 if raw.get("name"):
@@ -252,6 +255,7 @@ class DeezerAdapter:
             cover_url=album.get("cover_xl") or album.get("cover_big"),
             seed_title=seed.title,
             ids={"deezer": str(raw.get("id"))},
+            seed=seed.artist,
         )
 
 
@@ -299,7 +303,9 @@ class ListenBrainzAdapter:
             for seed in list(artists.values())[: self._seeds_limit]:
                 body = await self._get("/explore/lb-radio", prompt=f"artist:({seed.artist})", mode="easy")
                 for artist, title in self._jspf(body):
-                    result.append(Candidate(artist, title, self.name, 0.55, seed.weight, seed_title=seed.title))
+                    result.append(
+                        Candidate(artist, title, self.name, 0.55, seed.weight, seed_title=seed.title, seed=seed.artist)
+                    )
         lb_user = self._users.get(username)
         if lb_user:
             body = await self._get(f"/user/{lb_user}/playlists/createdfor", count=10)
@@ -608,9 +614,11 @@ class CandidateEngine:
             akey = artist_key(first.artist)
             if akey in penalized:
                 score *= ARTIST_PENALTY
+            seeded = [c for c in items if c.seed]
+            seed = max(seeded, key=lambda c: c.similarity * c.seed_weight).seed if seeded else None
             scored.append(
                 Scored(key, first.artist, first.title, first.album, first.duration_ms, first.cover_url,
-                       round(score, 5), sorted(best_by_source), akey not in snapshot.artists)
+                       round(score, 5), sorted(best_by_source), akey not in snapshot.artists, seed)
             )  # fmt: skip
         scored.sort(key=lambda s: -s.score)
         return _pick(scored, limit, new_share)

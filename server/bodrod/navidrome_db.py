@@ -178,6 +178,19 @@ class NavidromeDb:
             result.extend(_song(r) for r in rows)
         return result
 
+    def album_songs(self, album_ids: list[str]) -> list[NdSong]:
+        """Все треки альбомов (место трека в альбоме, «самый энергичный трек альбома»)."""
+        result: list[NdSong] = []
+        with self._connect() as conn:
+            for start in range(0, len(album_ids), 500):
+                chunk = album_ids[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"{self._select(conn)} WHERE mf.album_id IN ({marks}) AND {self._not_missing(conn)}", chunk
+                ).fetchall()
+                result.extend(_song(r) for r in rows)
+        return result
+
     def present_ids(self, ids: list[str]) -> set[str]:
         """Какие из треков есть в библиотеке (не удалены и не помечены сканером как пропавшие)."""
         with self._connect() as conn:

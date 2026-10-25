@@ -432,6 +432,23 @@ class ArtistFactsOut(ApiModel):
     source: str | None = None
 
 
+class BlurbsIn(ApiModel):
+    """Треки волны по порядку (последние — ближе к текущему): антиповтор типов считается по этому порядку."""
+
+    ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+class BlurbOut(ApiModel):
+    id: str
+    text: str
+    """context / personal / story / sound / album_energy / position / anniversary / year / tags / listeners / llm."""
+    type: str
+
+
+class BlurbsOut(ApiModel):
+    items: list[BlurbOut] = Field(default_factory=list)
+
+
 class PlaylistAuditEntry(ApiModel):
     id: str
     name: str

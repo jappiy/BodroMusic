@@ -45,12 +45,11 @@ def test_abbreviations_do_not_split_sentences():
 
 
 def test_templates_are_russian_and_fit():
-    found = template_variants("Ghost", "Meliora", 2015, ["heavy metal", "seen live"], 1_234_567, 110)
-    assert found == [
-        "Трек из альбома «Meliora» (2015)",
-        "Жанр — хеви-метал",
-        "У Ghost больше 1,2 млн слушателей на Last.fm",
-    ]
+    found = template_variants("Ghost", "Meliora", 2015, ["heavy metal", "seen live"], 1_234_567, 110, "Cirice")
+    assert found == ["Жанр — хеви-метал", "У Ghost больше 1,2 млн слушателей на Last.fm"]
+    # «Трек из альбома» — только без других фактов и не для сингла (альбом = название трека).
+    assert template_variants("Ghost", "Meliora", 2015, [], None, 110, "Cirice") == ["Трек из альбома «Meliora» (2015)"]
+    assert template_variants("Ghost", "Cirice", 2015, [], None, 110, "Cirice") == []
     assert template_variants("X", "Singles", None, [], None, 110) == []
 
 
@@ -92,8 +91,8 @@ def test_wikipedia_first_then_templates_and_cache(tmp_path):
     result = asyncio.run(facts.facts("Кино", "Группа крови", "Группа крови", 1988))
     assert result["fact"] == "«Кино» — советская рок-группа, основанная в 1981 году."
     assert result["source"] == "wikipedia"
-    assert "Трек из альбома «Группа крови» (1988)" in result["variants"]
-    assert "Жанр — русский рок" in result["variants"]
+    # Есть настоящий текст — шаблонов нет; альбом совпадает с названием — «Трек из альбома» не бывает вовсе.
+    assert not any(v.startswith("Трек из альбома") or v.startswith("Жанр") for v in result["variants"])
     assert all("Soviet" not in v for v in result["variants"])
     count = len(calls)
     asyncio.run(facts.facts("кино", "группа крови", "Группа крови", 1988))

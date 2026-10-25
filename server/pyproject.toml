@@ -1,8 +1,12 @@
 [project]
 name = "bodrod"
-version = "0.22.0"
+version = "0.23.0"
 description = "Сервис загрузок BodroMusic: Яндекс Музыка + slskd + YouTube Music + Lidarr + Navidrome"
 requires-python = ">=3.12"
+
+[project.optional-dependencies]
+# BLURB_LLM_PROVIDER=anthropic: подводки к трекам через Claude. В requirements.txt не входит — нужна новая база образа.
+llm = ["anthropic"]
 
 [tool.ruff]
 line-length = 120

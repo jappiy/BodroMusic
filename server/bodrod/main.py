@@ -38,6 +38,9 @@ from .models import (
     ArtistPopular,
     BlockEntryOut,
     BlocklistPage,
+    BlurbOut,
+    BlurbsIn,
+    BlurbsOut,
     ChartEntryOut,
     ChartOut,
     CleanupUser,
@@ -88,6 +91,7 @@ from .models import (
 from .navidrome_db import NavidromeDb, NdSong
 from .playlist_audit import build_audit
 from .reco.analysis import AnalysisService
+from .reco.blurbs import BlurbService, LlmWriter
 from .reco.charts import ChartsService, ChartTrack, build_sources
 from .reco.engine import (
     CandidateEngine,
@@ -145,6 +149,7 @@ class Services:
     wave: WaveService | None = None
     similar: SimilarTracks | None = None
     lyrics: LyricsService | None = None
+    blurbs: BlurbService | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -295,6 +300,7 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
     pool.wake_worker = worker.wake
     pool.cancel_request = worker.cancel
     engine = None
+    blurbs_ref: list[BlurbService] = []  # подводки создаются ниже, а движку нужна ссылка
     if settings.engine_enabled:
         adapters = [
             LastFmAdapter(lastfm, library_index),
@@ -310,6 +316,8 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
                     owner, item.artist, item.title, album=item.album, duration_ms=item.duration_ms,
                     cover_url=item.cover_url, source=",".join(item.sources), score=item.score,
                 )  # fmt: skip
+                if blurbs_ref:
+                    blurbs_ref[0].remember_reason(owner, item.key, ",".join(item.sources), item.seed)
 
             return await engine.refill(user, count, enqueue)
 
@@ -322,6 +330,31 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         ]
 
     analysis = AnalysisService(store, settings, navidrome_db) if settings.analyzer_token else None
+    facts = ArtistFacts(lastfm, http=http, yandex=lambda: yandex_tokens.api(yandex_tokens.resolve(None)), store=store)
+    blurbs = None
+    if navidrome_db is not None:
+        llm = None
+        if settings.blurb_llm_provider in ("anthropic", "ollama"):
+            llm = LlmWriter(
+                settings.blurb_llm_provider,
+                http=http,
+                model=settings.blurb_llm_model,
+                api_key=settings.anthropic_api_key,
+                url=settings.blurb_llm_url,
+            )
+            log.info("Подводки: живой текст через %s", settings.blurb_llm_provider)
+
+        async def blurb_info(song: NdSong) -> dict[str, Any]:
+            return await facts.facts(song.artist, song.title, song.album, song.year, 90)
+
+        blurbs = BlurbService(
+            store,
+            navidrome_db,
+            features=analysis.features if analysis is not None else None,
+            info=blurb_info if facts.available else None,
+            llm=llm,
+        )
+        blurbs_ref.append(blurbs)
     pool.analysis = analysis
     chart_sources = build_sources(http, lastfm, yandex_chart, settings.deezer_enabled)
     charts = ChartsService(store, settings, chart_sources, library_index, pool)
@@ -365,14 +398,13 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         charts=charts,
         analysis=analysis,
         yandex_links=yandex_links,
-        facts=ArtistFacts(
-            lastfm, http=http, yandex=lambda: yandex_tokens.api(yandex_tokens.resolve(None)), store=store
-        ),
+        facts=facts,
         wave=WaveService(store, navidrome_db, analysis, pool_prefix, settings.wave_modes_file, lastfm)
         if navidrome_db is not None and settings.wave_enabled
         else None,
         similar=SimilarTracks(lastfm, library_index.in_library, analysis, navidrome_db),
         lyrics=lyrics,
+        blurbs=blurbs,
     )
 
 
@@ -416,6 +448,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 app.state.services.charts,
                 app.state.services.analysis,
                 app.state.services.lyrics,
+                app.state.services.blurbs,
             ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
@@ -544,6 +577,14 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
     ) -> list[TrackCandidate]:
         """«Похожие треки» в плеере: Last.fm (с пометкой «есть в библиотеке») и похожие по звучанию."""
         return await svc.similar.similar(artist, title, song_id) if svc.similar is not None else []
+
+    @app.post("/api/v1/blurbs", response_model=BlurbsOut, response_model_by_alias=True)
+    async def blurbs(user: User, svc: Svc, body: BlurbsIn) -> BlurbsOut:
+        """Подводки к трекам волны: постоянные факты (кэш) + личная история + причина попадания в волну."""
+        if svc.blurbs is None or not body.ids:
+            return BlurbsOut()
+        chosen = await svc.blurbs.for_user(user.username, body.ids)
+        return BlurbsOut(items=[BlurbOut(id=i, text=v.text, type=v.group) for i, v in chosen.items()])
 
     @app.get("/api/v1/artists/facts", response_model=ArtistFactsOut, response_model_by_alias=True)
     async def artist_facts(

@@ -165,6 +165,13 @@ class Settings:
     """Ночной шаг: не больше стольких треков и минут."""
     lyrics_nightly_limit: int = 300
     lyrics_nightly_minutes: int = 40
+    """Подводки к трекам (`reco/blurbs.py`): ИИ для живого текста — `none` (шаблоны), `anthropic` или `ollama`."""
+    blurb_llm_provider: str = "none"
+    blurb_llm_model: str | None = None
+    """Адрес Ollama (по умолчанию http://ollama:11434)."""
+    blurb_llm_url: str | None = None
+    """Ключ Anthropic (или файл `/secrets/anthropic_api_key`); для `anthropic` нужен пакет `anthropic` в образе."""
+    anthropic_api_key: str | None = None
     """Короче этого (секунды) — подозрительно короткий файл."""
     maintenance_min_track_s: int = 10
 
@@ -370,6 +377,10 @@ class Settings:
             lyrics_lrclib=_bool("LYRICS_LRCLIB", True),
             lyrics_nightly_limit=_int("LYRICS_NIGHTLY_LIMIT", 300),
             lyrics_nightly_minutes=_int("LYRICS_NIGHTLY_MINUTES", 40),
+            blurb_llm_provider=(_opt("BLURB_LLM_PROVIDER") or "none").lower(),
+            blurb_llm_model=_opt("BLURB_LLM_MODEL"),
+            blurb_llm_url=_opt("BLURB_LLM_URL"),
+            anthropic_api_key=_secret("ANTHROPIC_API_KEY", os.path.join(SECRETS_DIR, "anthropic_api_key")),
             maintenance_min_track_s=_int("MAINTENANCE_MIN_TRACK_S", 10),
             sources_order=_list("SOURCES_ORDER", DEFAULT_SOURCES_ORDER),
             sources_disabled=_list("SOURCES_DISABLED", ()),

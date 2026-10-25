@@ -206,18 +206,30 @@ def _count(n: int) -> str:
     return str(n)
 
 
+def is_single(title: str | None, album: str | None) -> bool:
+    """Сингл: альбома нет, это сборник «Синглы» или альбом называется как трек."""
+    return not album or normalize(album) in LOOSE_ALBUMS or normalize(album) == normalize(title)
+
+
 def template_variants(
-    artist: str, album: str | None, year: int | None, tags: list[str], listeners: int | None, max_chars: int
+    artist: str,
+    album: str | None,
+    year: int | None,
+    tags: list[str],
+    listeners: int | None,
+    max_chars: int,
+    title: str | None = None,
 ) -> list[str]:
-    """Шаблонные фразы по фактам метаданных и Last.fm (как «Ведущий сингл альбома «Meliora» (2015)»)."""
+    """Шаблонные фразы по фактам метаданных и Last.fm. «Трек из альбома X» — только когда других фактов нет
+    и это не сингл (альбом не совпадает с названием трека)."""
     result: list[str] = []
-    if album and normalize(album) not in LOOSE_ALBUMS:
-        result.append(f"Трек из альбома «{album}» ({year})" if year else f"Трек из альбома «{album}»")
     genres = [GENRES_RU[t.lower()] for t in tags if t.lower() in GENRES_RU][:2]
     if genres:
         result.append("Жанр — " + " и ".join(genres))
     if listeners and listeners >= 1000:
         result.append(f"У {artist} больше {_count(listeners)} слушателей на Last.fm")
+    if not result and not is_single(title, album):
+        result.append(f"Трек из альбома «{album}» ({year})" if year else f"Трек из альбома «{album}»")
     return [r for r in result if len(r) <= max_chars]
 
 
@@ -337,12 +349,15 @@ class ArtistFacts:
                 listeners = int(((info.get("stats") or {}).get("listeners")) or 0) or None
             except (TypeError, ValueError):
                 listeners = None
-        add("template", template_variants(artist, album or lastfm_album, year, tags, listeners, max_chars))
+        if not variants:  # шаблоны — только когда настоящего текста нет
+            add("template", template_variants(artist, album or lastfm_album, year, tags, listeners, max_chars, title))
         chosen = variants[:MAX_VARIANTS]
         return {
             "fact": chosen[0][1] if chosen else None,
             "variants": [v for _, v in chosen],
+            "sources": [src for src, _ in chosen],
             "tags": tags,
+            "listeners": listeners,
             "source": chosen[0][0] if chosen else None,
         }
 
