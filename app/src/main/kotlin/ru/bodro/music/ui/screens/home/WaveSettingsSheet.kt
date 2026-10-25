@@ -23,6 +23,7 @@ import ru.bodro.music.R
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
 import ru.bodro.music.data.settings.AppSettings
+import ru.bodro.music.ui.screens.settings.selectedCharacter
 import ru.bodro.music.ui.screens.settings.waveCharacterLabel
 
 /** Настройки волны (кнопка слева сверху): характер и настроение — сочетаются с режимом. */
@@ -43,9 +44,9 @@ fun WaveSettingsSheet(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 WaveCharacter.entries.forEach { character ->
                     FilterChip(
-                        selected = settings.waveCharacter == character,
+                        selected = selectedCharacter(settings.waveCharacter, settings.waveDiscoveryShare) == character,
                         onClick = { onCharacter(character) },
-                        label = { Text(stringResource(waveCharacterLabel(character))) },
+                        label = { Text(stringResource(waveCharacterLabel(character)), maxLines = 1, softWrap = false) },
                     )
                 }
             }

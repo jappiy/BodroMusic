@@ -6,6 +6,9 @@ import ru.bodro.music.core.model.Song
 import ru.bodro.music.core.model.WaveSettings
 import ru.bodro.music.data.repository.ReactionState
 
+/** Сообщение в снекбаре; с [actionLabel] — кнопка действия (например, «Отменить»). */
+data class UiMessage(val text: String, val actionLabel: String? = null, val onAction: (() -> Unit)? = null)
+
 /** Контекст, из которого открыто меню трека (например, плейлист — чтобы показать «Удалить из плейлиста»). */
 data class SongMenuContext(val playlistId: String? = null, val indexInPlaylist: Int? = null, val onRemoved: (() -> Unit)? = null)
 
@@ -20,6 +23,9 @@ interface AppActions {
     fun toggleLike(song: Song)
 
     fun toggleDislike(song: Song)
+
+    /** «Не нравится» на главной: трек убирается из волны (сразу следующий), в снекбаре — «Отменить». */
+    fun dislikeFromWave(song: Song) = toggleDislike(song)
 
     fun startWave(settings: WaveSettings)
 

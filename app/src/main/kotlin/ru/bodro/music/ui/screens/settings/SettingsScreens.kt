@@ -1,5 +1,10 @@
 package ru.bodro.music.ui.screens.settings
 
+import kotlin.math.abs
+import androidx.compose.ui.unit.Dp
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -386,6 +391,27 @@ private fun waveMoodLabel(mood: WaveMood): Int = when (mood) {
     WaveMood.Sad -> R.string.wave_mood_sad
 }
 
+/** Чипы с переносом на следующую строку: на узком экране и крупном шрифте ничего не сжимается. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WaveChips(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) { content() }
+}
+
+@Composable
+private fun WaveHint(text: Int, top: Dp = 8.dp) {
+    Text(
+        stringResource(text),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = top, bottom = 24.dp),
+    )
+}
+
 fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
     WaveCharacter.Favorites -> R.string.wave_character_favorites
     WaveCharacter.Mix -> R.string.wave_character_mix
@@ -393,63 +419,73 @@ fun waveCharacterLabel(character: WaveCharacter): Int = when (character) {
     WaveCharacter.Popular -> R.string.wave_character_popular
 }
 
+/** Доля «открытий», которую выставляет пресет характера (та же, что доля пула «На пробу»), шаг 5 %. */
+internal fun WaveCharacter.discoveryPreset(): Float = (poolShare * 20).roundToInt() / 20f
+
+/** Чип характера выделен, только если слайдер стоит на его значении: ручное значение снимает выделение. */
+internal fun selectedCharacter(character: WaveCharacter, share: Float): WaveCharacter? =
+    character.takeIf { abs(it.discoveryPreset() - share) < 0.001f }
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val selected = selectedCharacter(settings.waveCharacter, settings.waveDiscoveryShare)
     Scaffold(topBar = { BodroTopBar(stringResource(R.string.settings_wave), onBack) }) { padding ->
-        Column(Modifier.padding(padding).padding(16.dp)) {
+        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text(stringResource(R.string.settings_wave_character), style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            WaveChips(Modifier.padding(top = 8.dp)) {
                 WaveCharacter.entries.forEach { character ->
                     FilterChip(
-                        selected = settings.waveCharacter == character,
-                        onClick = { viewModel.update { it.copy(waveCharacter = character) } },
-                        label = { Text(stringResource(waveCharacterLabel(character))) },
+                        selected = selected == character,
+                        onClick = {
+                            viewModel.update { it.copy(waveCharacter = character, waveDiscoveryShare = character.discoveryPreset()) }
+                        },
+                        label = { Text(stringResource(waveCharacterLabel(character)), maxLines = 1, softWrap = false) },
                         modifier = Modifier.testTag("wave-character-${character.name}"),
                     )
                 }
             }
-            Text(
-                stringResource(R.string.settings_wave_character_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 24.dp),
-            )
+            WaveHint(R.string.settings_wave_character_hint)
             Text(stringResource(R.string.settings_wave_mood), style = MaterialTheme.typography.titleMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            WaveChips(Modifier.padding(top = 8.dp)) {
                 WaveMood.entries.forEach { mood ->
                     FilterChip(
                         selected = settings.waveMood == mood,
                         onClick = { viewModel.update { it.copy(waveMood = mood) } },
-                        label = { Text(stringResource(waveMoodLabel(mood))) },
+                        label = { Text(stringResource(waveMoodLabel(mood)), maxLines = 1, softWrap = false) },
                         modifier = Modifier.testTag("wave-mood-${mood.name}"),
                     )
                 }
             }
-            Text(
-                stringResource(R.string.settings_wave_mood_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 24.dp),
-            )
-            Text(stringResource(R.string.settings_wave_discovery), style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(R.string.settings_wave_discovery_value, (settings.waveDiscoveryShare * 100).roundToInt()),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            WaveHint(R.string.settings_wave_mood_hint)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.settings_wave_discovery),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    stringResource(R.string.settings_wave_discovery_value, (settings.waveDiscoveryShare * 100).roundToInt()),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
             Slider(
                 value = settings.waveDiscoveryShare,
-                onValueChange = { v -> viewModel.update { it.copy(waveDiscoveryShare = (v * 20).roundToInt() / 20f) } },
+                onValueChange = { v ->
+                    val share = (v * 20).roundToInt() / 20f
+                    // Значение пресета — выбрать его характер; иначе характер остаётся, а чип гаснет.
+                    val preset = WaveCharacter.entries.firstOrNull { abs(it.discoveryPreset() - share) < 0.001f }
+                    viewModel.update { it.copy(waveDiscoveryShare = share, waveCharacter = preset ?: it.waveCharacter) }
+                },
                 valueRange = 0f..0.6f,
-                steps = 11,
-                modifier = Modifier.testTag("discovery-slider"),
+                track = { state -> SliderDefaults.Track(sliderState = state, drawStopIndicator = null, thumbTrackGapSize = 0.dp) },
+                modifier = Modifier.padding(top = 4.dp).testTag("discovery-slider"),
             )
-            Text(
-                stringResource(R.string.settings_wave_discovery_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = viewModel::resetSkipStats, modifier = Modifier.padding(top = 24.dp)) {
+            WaveHint(R.string.settings_wave_discovery_hint, top = 0.dp)
+            OutlinedButton(onClick = viewModel::resetSkipStats) {
                 Text(stringResource(R.string.settings_wave_reset_skips))
             }
             if (settings.skipStatsResetAt > 0) {

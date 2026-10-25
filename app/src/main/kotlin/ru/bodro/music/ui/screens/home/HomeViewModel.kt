@@ -21,6 +21,7 @@ import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.playback.PlayerConnection
 import ru.bodro.music.playback.PlayerUiState
+import ru.bodro.music.ui.screens.settings.discoveryPreset
 
 /** «Главная» — «Моя волна»: плеер, режимы, короткий текст о треке. */
 @HiltViewModel
@@ -85,7 +86,9 @@ class HomeViewModel @Inject constructor(
     }
 
     fun setCharacter(character: WaveCharacter) {
-        viewModelScope.launch { settingsRepository.update { it.copy(waveCharacter = character) } }
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(waveCharacter = character, waveDiscoveryShare = character.discoveryPreset()) }
+        }
     }
 
     fun setMood(mood: WaveMood) {

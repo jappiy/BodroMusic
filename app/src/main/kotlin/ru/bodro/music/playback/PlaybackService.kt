@@ -145,32 +145,42 @@ class PlaybackService : MediaLibraryService() {
         return PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    @Suppress("DEPRECATION")
-    private fun likeButton(): CommandButton {
-        val liked = currentReaction == Reaction.Liked
-        return CommandButton.Builder()
-            .setDisplayName(getString(if (liked) R.string.action_unlike else R.string.action_like))
-            .setIconResId(if (liked) R.drawable.ic_heart_filled else R.drawable.ic_heart)
-            .setSessionCommand(LIKE_COMMAND)
+    /**
+     * Кнопки реакций в уведомлении и на экране блокировки: «Не нравится» слева от «Назад», ♡ справа от «Вперёд».
+     * Слоты — пожелание: окончательно раскладывает системная оболочка (Android 13+ ставит свои кнопки после ⏭).
+     */
+    private fun reactionButtons(): ImmutableList<CommandButton> {
+        val reaction = currentReaction ?: return ImmutableList.of()
+        val liked = reaction == Reaction.Liked
+        val disliked = reaction == Reaction.Disliked
+        val dislike = CommandButton.Builder(if (disliked) CommandButton.ICON_THUMB_DOWN_FILLED else CommandButton.ICON_THUMB_DOWN_UNFILLED)
+            .setDisplayName(getString(if (disliked) R.string.action_undislike else R.string.action_dislike))
+            .setCustomIconResId(R.drawable.ic_heart_broken)
+            .setSessionCommand(DISLIKE_COMMAND)
+            .setSlots(CommandButton.SLOT_BACK_SECONDARY, CommandButton.SLOT_OVERFLOW)
             .build()
+        val like = CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
+            .setDisplayName(getString(if (liked) R.string.action_unlike else R.string.action_like))
+            .setCustomIconResId(if (liked) R.drawable.ic_heart_filled else R.drawable.ic_heart)
+            .setSessionCommand(LIKE_COMMAND)
+            .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
+            .build()
+        return ImmutableList.of(dislike, like)
     }
 
-    @Suppress("DEPRECATION")
     private fun updateLayout() {
-        val layout: ImmutableList<CommandButton> = if (currentReaction == null) ImmutableList.of() else ImmutableList.of(likeButton())
-        session?.setCustomLayout(layout)
+        session?.setMediaButtonPreferences(reactionButtons())
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
-        @Suppress("DEPRECATION")
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(LIKE_COMMAND)
+                .add(DISLIKE_COMMAND)
                 .build()
-            val layout: ImmutableList<CommandButton> = if (currentReaction == null) ImmutableList.of() else ImmutableList.of(likeButton())
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
-                .setCustomLayout(layout)
+                .setMediaButtonPreferences(reactionButtons())
                 .build()
         }
 
@@ -180,11 +190,14 @@ class PlaybackService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == ACTION_LIKE) {
-                val song = coordinator.currentSong
-                if (song != null) scope.launch { deps.reactions.toggleLike(song) }
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            val song = coordinator.currentSong
+            when (customCommand.customAction) {
+                ACTION_LIKE -> if (song != null) scope.launch { deps.reactions.toggleLike(song) }
+                // Тот же путь, что в приложении: дизлайк → правило волны в PlaybackCoordinator (следующий трек).
+                ACTION_DISLIKE -> if (song != null) scope.launch { deps.reactions.toggleDislike(song) }
+                else -> return super.onCustomCommand(session, controller, customCommand, args)
             }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             return super.onCustomCommand(session, controller, customCommand, args)
         }
 
@@ -252,6 +265,8 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         const val ACTION_LIKE = "ru.bodro.music.LIKE"
         val LIKE_COMMAND = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
+        const val ACTION_DISLIKE = "ru.bodro.music.DISLIKE"
+        val DISLIKE_COMMAND = SessionCommand(ACTION_DISLIKE, Bundle.EMPTY)
         private const val ROOT_ID = "root"
         private const val START_BUFFER_MS = 500
         private const val REBUFFER_MS = 2_000

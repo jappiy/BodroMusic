@@ -74,7 +74,7 @@ class MainViewModel @Inject constructor(
     private val _playlistPicker = MutableStateFlow<PlaylistPickerState?>(null)
     val playlistPicker: StateFlow<PlaylistPickerState?> = _playlistPicker.asStateFlow()
 
-    private val _messages = Channel<String>(Channel.BUFFERED)
+    private val _messages = Channel<UiMessage>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
 
     fun connectPlayer() = player.connect()
@@ -99,6 +99,21 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val result = reactionRepository.toggleDislike(song)
             if (result == Reaction.Disliked) showMessage(context.getString(R.string.message_disliked))
+        }
+    }
+
+    override fun dislikeFromWave(song: Song) {
+        viewModelScope.launch {
+            val before = reactionRepository.reactionOf(song)
+            if (before == Reaction.Disliked) return@launch
+            // Дизлайк снимает лайк; PlaybackCoordinator видит новый дизлайк и переключает волну на следующий трек.
+            reactionRepository.setReaction(song, Reaction.Disliked)
+            _messages.trySend(
+                UiMessage(context.getString(R.string.message_removed_from_wave), context.getString(R.string.action_undo)) {
+                    // Трек уже пропущен — назад не перематываем, только возвращаем прежнюю реакцию.
+                    viewModelScope.launch { reactionRepository.setReaction(song, before) }
+                },
+            )
         }
     }
 
@@ -192,7 +207,7 @@ class MainViewModel @Inject constructor(
     }
 
     override fun showMessage(message: String) {
-        _messages.trySend(message)
+        _messages.trySend(UiMessage(message))
     }
 
     // Команды плеера для UI.

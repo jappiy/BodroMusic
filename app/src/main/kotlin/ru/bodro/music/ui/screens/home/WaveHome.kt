@@ -62,6 +62,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -92,7 +93,7 @@ import ru.bodro.music.ui.theme.WaveTitleStyle
 /**
  * Главная — только «Моя волна» на весь экран, без прокрутки к другому контенту (остальное — во вкладке «Чарты»).
  * Сверху вниз: настройки волны, заголовок или чип режима, поиск; крупное имя исполнителя и обложка (свайп —
- * следующий / предыдущий трек); play/pause, «таблетка» с названием и прогрессом (тап — плеер), лайк; короткий
+ * следующий / предыдущий трек); «Не нравится», play/pause, «таблетка» с названием и прогрессом (тап — плеер), лайк; короткий
  * текст о треке; карусель режимов-куполов. Фон — живое свечение в цветах обложки ([GlowBackground]).
  */
 @Composable
@@ -110,9 +111,10 @@ fun WaveHome(
     modifier: Modifier = Modifier,
     lowCoverage: Boolean = false,
     onFindMore: () -> Unit = {},
+    /** Фон рисует корень приложения ([HomeBackdrop]) — под нижним меню и системными панелями. */
+    drawBackground: Boolean = true,
 ) {
     val actions = LocalAppActions.current
-    val colors = LocalPlayerColors.current
     val wavePlaying = player.source.isWave && player.hasMedia
     val active = settings.waveModeId.ifBlank { null }?.let { id ->
         modes.firstOrNull { it.id == id } ?: ModeCard(id, id, Color.Gray, Icons.Rounded.AutoAwesome)
@@ -128,13 +130,8 @@ fun WaveHome(
     // Сброс режима: волна играет — сразу «Моя волна» без режима; не играет — только снять режим.
     val reset: () -> Unit = { if (wavePlaying) start(null) else onSelectMode(null) }
 
-    Box(modifier.fillMaxSize().background(Color.Black).testTag("wave-home")) {
-        GlowBackground(
-            colors = if (wavePlaying) colors?.glow ?: NeutralGlow else NeutralGlow,
-            animate = settings.backgroundAnimation,
-            playing = wavePlaying && player.isPlaying,
-            modifier = Modifier.matchParentSize(),
-        )
+    Box(modifier.fillMaxSize().then(if (drawBackground) Modifier.background(Color.Black) else Modifier).testTag("wave-home")) {
+        if (drawBackground) HomeBackdrop(player, settings, Modifier.matchParentSize())
         BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
             val compact = maxHeight < COMPACT_HEIGHT
             val content: @Composable ColumnScope.(scrollable: Boolean) -> Unit = { scrollable ->
@@ -156,6 +153,21 @@ fun WaveHome(
                 Column(Modifier.fillMaxSize()) { content(false) }
             }
         }
+    }
+}
+
+/** Фон главной: чёрный и живая туманность в цветах обложки. Корень рисует его на весь экран, edge-to-edge. */
+@Composable
+fun HomeBackdrop(player: PlayerUiState, settings: AppSettings, modifier: Modifier = Modifier) {
+    val colors = LocalPlayerColors.current
+    val wavePlaying = player.source.isWave && player.hasMedia
+    Box(modifier.background(Color.Black)) {
+        GlowBackground(
+            colors = if (wavePlaying) colors?.glow ?: NeutralGlow else NeutralGlow,
+            animate = settings.backgroundAnimation,
+            playing = wavePlaying && player.isPlaying,
+            modifier = Modifier.matchParentSize(),
+        )
     }
 }
 
@@ -328,7 +340,16 @@ private fun ControlRow(player: PlayerUiState, song: Song, onTogglePlay: () -> Un
         tween(PROGRESS_MS, easing = LinearEasing),
         label = "wave-progress",
     )
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+    // По логике приложения: «Не нравится» слева, ♡ справа. Сужается только «таблетка», кнопки — не меньше 48 dp.
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { actions.dislikeFromWave(song) }, modifier = Modifier.testTag("wave-dislike")) {
+            Icon(
+                painterResource(R.drawable.ic_heart_broken),
+                contentDescription = stringResource(R.string.action_dislike),
+                tint = Color.White.copy(alpha = 0.85f),
+            )
+        }
+        Spacer(Modifier.size(2.dp))
         Surface(onClick = onTogglePlay, shape = CircleShape, color = BodroYellow, modifier = Modifier.size(56.dp).testTag("wave-play")) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(

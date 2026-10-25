@@ -48,6 +48,7 @@ fun HomeScreen(onOpenSearch: () -> Unit = {}, viewModel: HomeViewModel = hiltVie
         modifier = Modifier.fillMaxSize().testTag("home-screen"),
         lowCoverage = coverage?.let { it.lowCoverage && it.mode == settings.waveModeId } == true,
         onFindMore = { viewModel.findMore { ok -> if (ok) actions.showMessage(findMoreStarted) } },
+        drawBackground = false,
     )
     if (waveSettings) {
         WaveSettingsSheet(

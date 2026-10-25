@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -187,15 +186,22 @@ fun rememberModeCards(server: List<WaveModeInfo>?, artistCovers: Map<String, Str
  * перекрываются, крайние уходят за край экрана. Прокрутка примагничивается к центру; по пологой дуге
  * центральный купол выше и крупнее, боковые ниже, меньше и прозрачнее — плавно, прямо во время свайпа.
  * Выбранный режим — в центре (и чипом в шапке); при выбранном режиме первый купол — «Назад к привычному».
+ * Карусель бесконечная в обе стороны (…, 9, 10, 1, 2, …): элементов [LOOPS] × n, старт — в середине, купол — `i % n`.
  */
 @Composable
 fun ModeDomes(cards: List<ModeCard>, active: ModeCard?, onPick: (ModeCard?) -> Unit, modifier: Modifier = Modifier) {
     val back = ModeCard("back", stringResource(R.string.wave_back_to_usual), BackColor, Icons.Rounded.Replay)
     val items = if (active != null) listOf(back) + cards else cards
     val activeIndex = active?.let { a -> items.indexOfFirst { it.id == a.id } }?.takeIf { it >= 0 } ?: 0
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = activeIndex)
+    val n = items.size.coerceAtLeast(1)
+    val total = n * LOOPS
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = loopIndex(total / 2, activeIndex, n))
     val scope = rememberCoroutineScope()
-    LaunchedEffect(active?.id) { state.animateScrollToItem(activeIndex) }
+    // Выбор режима (и смена набора куполов — «Назад» появился или исчез): к ближайшей копии нужного купола.
+    LaunchedEffect(active?.id, n) {
+        val target = loopIndex(centerIndex(state) ?: state.firstVisibleItemIndex, activeIndex, n)
+        if (abs(target - state.firstVisibleItemIndex) > n * 2) state.scrollToItem(target) else state.animateScrollToItem(target)
+    }
 
     BoxWithConstraints(modifier.fillMaxWidth().testTag("wave-modes")) {
         val side = ((maxWidth - DOME_WIDTH) / 2).coerceAtLeast(0.dp)
@@ -206,7 +212,8 @@ fun ModeDomes(cards: List<ModeCard>, active: ModeCard?, onPick: (ModeCard?) -> U
             flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
             modifier = Modifier.fillMaxWidth().height(DOME_ITEM_HEIGHT + ARC_DROP * 2),
         ) {
-            itemsIndexed(items, key = { _, card -> card.id }) { index, card ->
+            items(total) { index ->
+                val card = items[index % n]
                 // Центральный — поверх соседей; zIndex меняется, только когда купол проходит середину.
                 val rank by remember(index) { derivedStateOf { (abs(distanceFromCenter(state, index)) * 2).toInt() } }
                 Dome(
@@ -229,6 +236,19 @@ fun ModeDomes(cards: List<ModeCard>, active: ModeCard?, onPick: (ModeCard?) -> U
             }
         }
     }
+}
+
+/** Индекс копии купола [item] (0 until [n]), ближайшей к позиции [near]. */
+internal fun loopIndex(near: Int, item: Int, n: Int): Int {
+    val base = near - Math.floorMod(near, n) + item
+    return listOf(base - n, base, base + n).minBy { abs(it - near) }.coerceAtLeast(0)
+}
+
+/** Индекс купола, ближайшего к центру карусели (`null` — ещё не разложена). */
+private fun centerIndex(state: androidx.compose.foundation.lazy.LazyListState): Int? {
+    val info = state.layoutInfo
+    val center = (info.viewportStartOffset + info.viewportEndOffset) / 2f
+    return info.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - center) }?.index
 }
 
 /** Насколько купол [index] далёк от центра карусели, в ширинах купола (знак — сторона). */
@@ -392,3 +412,6 @@ private val ARC_DROP = 12.dp
 private const val MAX_DISTANCE = 3f
 private const val SCALE_STEP = 0.1f
 private const val FADE_STEP = 0.35f
+
+/** Сколько раз повторяется набор куполов: «бесконечно» в обе стороны от середины. */
+private const val LOOPS = 1_000

@@ -236,6 +236,8 @@
     <string name="message_added_to_playlist">Добавлено в «%1$s»</string>
     <string name="message_removed_from_playlist">Удалено из плейлиста</string>
     <string name="message_disliked">Больше не будет в «Моей волне»</string>
+    <string name="message_removed_from_wave">Убрано из волны</string>
+    <string name="action_undo">Отменить</string>
 
     <!-- Плеер -->
     <string name="player_queue">Очередь</string>
@@ -288,7 +290,7 @@
     <string name="settings_scrobble_threshold">Порог засчитывания прослушивания</string>
     <string name="settings_scrobble_threshold_summary">50% трека или 4 минуты — что раньше; треки короче 30 с не учитываются</string>
     <string name="settings_wave_character">Характер волны</string>
-    <string name="settings_wave_character_hint">Сколько в волне новых треков из пула «На пробу»: Любимое — нисколько, Микс — четверть, Незнакомое — половина. Понравившиеся (лайк, два полных прослушивания или добавление в плейлист) переходят в библиотеку.</string>
+    <string name="settings_wave_character_hint">Сколько в волне новых треков из пула «На пробу»: Любимое — нисколько, Микс — четверть, Незнакомое — половина. Популярное — сначала то, что чаще всего слушают все пользователи сервера, новинок около 10 %. Выбор характера выставляет долю «открытий» ниже; своё значение снимает выделение. Понравившиеся новинки (лайк, два полных прослушивания или добавление в плейлист) переходят в библиотеку.</string>
     <string name="wave_character_favorites">Любимое</string>
     <string name="wave_character_mix">Микс</string>
     <string name="wave_character_discover">Незнакомое</string>
