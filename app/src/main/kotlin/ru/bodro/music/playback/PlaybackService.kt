@@ -59,6 +59,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private lateinit var coordinator: PlaybackCoordinator
     private var prefetcher: StreamPrefetcher? = null
+    private var latencyProbe: OutputLatencyProbe? = null
     private var currentReaction: Reaction? = null
 
     override fun onCreate() {
@@ -104,6 +105,7 @@ class PlaybackService : MediaLibraryService() {
         }
         coordinator.start()
         prefetcher = StreamPrefetcher(player, dataSources, scope).also(player::addListener)
+        latencyProbe = OutputLatencyProbe(player, scope).also { it.start() }
     }
 
     /** Старт после 0,5 с буфера вместо 2,5 с по умолчанию: новый трек начинает играть почти сразу. */
@@ -128,6 +130,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         prefetcher?.release()
+        latencyProbe?.release()
         coordinator.release()
         session?.run {
             player.release()

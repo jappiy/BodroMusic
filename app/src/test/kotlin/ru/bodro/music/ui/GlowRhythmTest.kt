@@ -10,31 +10,46 @@ import ru.bodro.music.data.reco.TrackInfoRepository
 import ru.bodro.music.playback.AudioSpectrum
 import ru.bodro.music.playback.SpectrumFrame
 import ru.bodro.music.ui.screens.home.firstFitting
-import ru.bodro.music.ui.screens.wave.BeatFollower
+import ru.bodro.music.ui.screens.wave.NebulaRhythm
 
-/** Задание 025: ритм свечения «Моей волны», подбор короткого текста под три строки, только русский текст. */
+/** Задания 025, 033: ритм туманности на главной, подбор короткого текста под три строки, только русский текст. */
 class GlowRhythmTest {
-    private fun frame(level: Float, bass: Float) = SpectrumFrame(FloatArray(AudioSpectrum.BANDS), level, bass)
+    private fun frame(energy: Float, beats: Int = 0) = SpectrumFrame(FloatArray(AudioSpectrum.BANDS), energy, energy = energy, beats = beats)
 
     @Test
     fun `energy rises fast and falls slowly`() {
-        val beat = BeatFollower()
-        repeat(6) { beat.update(frame(level = 0.9f, bass = 0.5f), 1 / 60f) } // 100 мс громко
-        val peak = beat.energy
+        val rhythm = NebulaRhythm()
+        repeat(6) { rhythm.update(frame(0.9f), 1 / 60f, playing = true) } // 100 мс громко
+        val peak = rhythm.energy
         assertTrue("за 100 мс подъём почти полный: $peak", peak > 0.6f)
-        repeat(6) { beat.update(frame(level = 0f, bass = 0f), 1 / 60f) } // 100 мс тишины
-        assertTrue("спад медленнее подъёма: ${beat.energy}", beat.energy > peak * 0.6f)
-        repeat(120) { beat.update(frame(level = 0f, bass = 0f), 1 / 60f) } // 2 с паузы
-        assertTrue("на паузе пульсация затухает", beat.energy < 0.01f)
+        repeat(6) { rhythm.update(frame(0f), 1 / 60f, playing = true) } // 100 мс тишины
+        assertTrue("спад медленнее подъёма: ${rhythm.energy}", rhythm.energy > peak * 0.6f)
+        repeat(120) { rhythm.update(frame(0f), 1 / 60f, playing = false) } // 2 с паузы
+        assertTrue("на паузе пульсация затухает", rhythm.energy < 0.01f)
     }
 
     @Test
-    fun `bass kick above its average gives a breath, steady bass does not`() {
-        val beat = BeatFollower()
-        repeat(180) { beat.update(frame(level = 0.8f, bass = 0.5f), 1 / 60f) } // ровный бас 3 с
-        assertTrue("ровный бас — без вдохов: ${beat.pulse}", beat.pulse < 0.05f)
-        repeat(4) { beat.update(frame(level = 0.85f, bass = 0.75f), 1 / 60f) } // удар бочки
-        assertTrue("удар — вдох: ${beat.pulse}", beat.pulse > 0.5f)
+    fun `beat pulse jumps on a new beat and decays with tau 180 ms`() {
+        val rhythm = NebulaRhythm()
+        rhythm.update(frame(0.5f, beats = 3), 1 / 60f, playing = true)
+        assertTrue("первый кадр — только запоминаем счётчик", rhythm.beat == 0f)
+        rhythm.update(frame(0.5f, beats = 4), 1 / 60f, playing = true)
+        assertEquals(1f, rhythm.beat, 0.001f)
+        repeat(11) { rhythm.update(frame(0.5f, beats = 4), 1 / 60f, playing = true) } // ~183 мс
+        assertEquals(0.37f, rhythm.beat, 0.05f)
+        rhythm.update(frame(0.5f, beats = 5), 1 / 60f, playing = true, pulse = false)
+        assertTrue("экономный режим — без пульсации", rhythm.beat < 0.37f)
+    }
+
+    @Test
+    fun `flow is faster when loud and slow on pause`() {
+        val loud = NebulaRhythm()
+        val paused = NebulaRhythm()
+        repeat(300) {
+            loud.update(frame(1f), 1 / 60f, playing = true)
+            paused.update(frame(0f), 1 / 60f, playing = false)
+        }
+        assertTrue("громко: ${loud.phase}, пауза: ${paused.phase}", loud.phase - 7f > (paused.phase - 7f) * 5)
     }
 
     @Test

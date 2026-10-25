@@ -84,7 +84,7 @@ import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.components.shimmerAlpha
-import ru.bodro.music.ui.screens.wave.GlowBackground
+import ru.bodro.music.ui.screens.wave.NebulaBackground
 import ru.bodro.music.ui.theme.BodroYellow
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.theme.NeutralGlow
@@ -94,7 +94,7 @@ import ru.bodro.music.ui.theme.WaveTitleStyle
  * Главная — только «Моя волна» на весь экран, без прокрутки к другому контенту (остальное — во вкладке «Чарты»).
  * Сверху вниз: настройки волны, заголовок или чип режима, поиск; крупное имя исполнителя и обложка (свайп —
  * следующий / предыдущий трек); «Не нравится», play/pause, «таблетка» с названием и прогрессом (тап — плеер), лайк; короткий
- * текст о треке; карусель режимов-куполов. Фон — живое свечение в цветах обложки ([GlowBackground]).
+ * текст о треке; карусель режимов-куполов. Фон — туманность в цветах обложки ([NebulaBackground]).
  */
 @Composable
 fun WaveHome(
@@ -162,9 +162,9 @@ fun HomeBackdrop(player: PlayerUiState, settings: AppSettings, modifier: Modifie
     val colors = LocalPlayerColors.current
     val wavePlaying = player.source.isWave && player.hasMedia
     Box(modifier.background(Color.Black)) {
-        GlowBackground(
+        NebulaBackground(
             colors = if (wavePlaying) colors?.glow ?: NeutralGlow else NeutralGlow,
-            animate = settings.backgroundAnimation,
+            mode = settings.backgroundAnimation,
             playing = wavePlaying && player.isPlaying,
             modifier = Modifier.matchParentSize(),
         )

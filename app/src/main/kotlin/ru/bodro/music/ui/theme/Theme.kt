@@ -110,8 +110,8 @@ data class PlayerColors(
     val glow: List<Color> = listOf(accent),
 )
 
-/** Свечение без обложки (или с выключенными цветами обложки) — нейтральное тёплое из палитры приложения. */
-val NeutralGlow = listOf(Color(0xFFC0702E), BodroOrange, Color(0xFF8E3B2E))
+/** Без обложки — фиолетовая туманность, как в «Моей волне» Яндекса. */
+val NeutralGlow = listOf(Color(0xFF7A3FD0), Color(0xFF5B2BB0), Color(0xFFB08AF0))
 
 val LocalPlayerColors = staticCompositionLocalOf<PlayerColors?> { null }
 

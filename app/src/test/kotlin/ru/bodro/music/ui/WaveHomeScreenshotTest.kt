@@ -22,6 +22,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
+import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.downloads.DiscoverTrack
@@ -190,7 +191,7 @@ class WaveHomeScreenshotTest {
         Surface(Modifier.fillMaxSize(), color = Color.Black) {
             WaveHome(
                 player = player,
-                settings = settings.copy(backgroundAnimation = false),
+                settings = settings.copy(backgroundAnimation = BackgroundAnimation.Off),
                 blurbs = text,
                 modes = rememberModeCards(modes),
                 onTogglePlay = {},

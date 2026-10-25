@@ -29,6 +29,9 @@ import ru.bodro.music.di.AppScope
 
 enum class ThemeMode { System, Light, Dark }
 
+/** Анимированный фон главной: полный (60 кадров/с), экономный (30 кадров/с, без пульсации) или выключен. */
+enum class BackgroundAnimation { Full, Eco, Off }
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
     val coverColors: Boolean = true,
@@ -51,8 +54,8 @@ data class AppSettings(
     val chartsHidden: Set<String> = emptySet(),
     /** Пропуски раньше этого момента не учитываются волной («Сбросить статистику пропусков»). */
     val skipStatsResetAt: Long = 0,
-    /** Анимированный фон «Моей волны» (эквалайзер в цветах обложки). */
-    val backgroundAnimation: Boolean = true,
+    /** Анимированный фон главной (туманность в цветах обложки, реагирует на звук). */
+    val backgroundAnimation: BackgroundAnimation = BackgroundAnimation.Full,
     /** Выбранный режим волны на главной (id режима, пусто — «Моя волна»). Свой у каждой учётки. */
     val waveModeId: String = "",
     /** Язык волны: `ru`, `en`, `none` (без слов) или пусто — любой. Свой у каждой учётки. */
@@ -99,7 +102,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.resume] = updated.resumeOnStart
             prefs[Keys.downloadLiked] = updated.downloadLiked
             prefs[Keys.logLevel] = updated.logLevel.name
-            prefs[Keys.backgroundAnimation] = updated.backgroundAnimation
+            prefs[Keys.backgroundMode] = updated.backgroundAnimation.name
             // Волна и чарты — свои у каждой учётки: пишутся под той учёткой, для которой были прочитаны
             // (при переключении учётки значения старой не попадают в новую).
             if (updated.activeAccountId == before.activeAccountId) {
@@ -133,7 +136,11 @@ class SettingsRepository @Inject constructor(
             resumeOnStart = this[Keys.resume] ?: true,
             downloadLiked = this[Keys.downloadLiked] ?: false,
             logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
-            backgroundAnimation = this[Keys.backgroundAnimation] ?: true,
+            // До 0.28.0 — переключатель вкл/выкл (ключ background_animation).
+            backgroundAnimation = enumOr(
+                this[Keys.backgroundMode],
+                if (this[Keys.backgroundAnimation] == false) BackgroundAnimation.Off else BackgroundAnimation.Full,
+            ),
             waveDiscoveryShare = perAccount(Keys.discovery) ?: AppSettings.DEFAULT_DISCOVERY,
             waveCharacter = enumOr(perAccount(Keys.character), WaveCharacter.Mix),
             waveMood = enumOr(perAccount(Keys.mood), WaveMood.Any),
@@ -167,6 +174,7 @@ class SettingsRepository @Inject constructor(
         val skipReset = PerAccount(longPreferencesKey("skip_stats_reset_at"), ::longPreferencesKey)
         val activeAccount = longPreferencesKey("active_account")
         val backgroundAnimation = booleanPreferencesKey("background_animation")
+        val backgroundMode = stringPreferencesKey("background_mode")
         val waveMode = PerAccount(stringPreferencesKey("wave_mode"), ::stringPreferencesKey)
         val waveLanguage = PerAccount(stringPreferencesKey("wave_language"), ::stringPreferencesKey)
 

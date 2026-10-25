@@ -83,6 +83,7 @@ import ru.bodro.music.core.domain.player.StreamQuality
 import ru.bodro.music.core.domain.player.TranscodeCodec
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveMood
+import ru.bodro.music.data.settings.BackgroundAnimation
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.ThemeMode
 import ru.bodro.music.ui.components.BodroTopBar
@@ -583,11 +584,20 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                 settings.coverColors,
                 { v -> viewModel.update { it.copy(coverColors = v) } },
             )
-            SwitchRow(
-                stringResource(R.string.settings_background_animation),
+            ChoiceGroup(stringResource(R.string.settings_background_animation), BackgroundAnimation.entries, settings.backgroundAnimation, { mode ->
+                stringResource(
+                    when (mode) {
+                        BackgroundAnimation.Full -> R.string.background_animation_full
+                        BackgroundAnimation.Eco -> R.string.background_animation_eco
+                        BackgroundAnimation.Off -> R.string.background_animation_off
+                    },
+                )
+            }) { mode -> viewModel.update { it.copy(backgroundAnimation = mode) } }
+            Text(
                 stringResource(R.string.settings_background_animation_summary),
-                settings.backgroundAnimation,
-                { v -> viewModel.update { it.copy(backgroundAnimation = v) } },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
             SwitchRow(
                 stringResource(R.string.settings_dynamic_color),

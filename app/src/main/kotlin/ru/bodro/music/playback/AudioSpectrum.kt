@@ -24,9 +24,16 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Кадр спектра: [bands] — уровни полос 0..1 от низких частот к высоким, [level] — общая громкость (RMS) 0..1,
- * [bass] — энергия низких частот (40–160 Гц: бочка и бас) 0..1 — по ней фон «вдыхает» на сильных долях.
+ * [bass] — энергия низких частот (40–160 Гц: бочка и бас) 0..1. [energy] — громкость, нормированная по максимуму
+ * за ~10 с ([BeatTracker]); [beats] — счётчик долей с начала воспроизведения (новая доля — счётчик вырос).
  */
-class SpectrumFrame(val bands: FloatArray, val level: Float, val bass: Float = 0f) {
+class SpectrumFrame(
+    val bands: FloatArray,
+    val level: Float,
+    val bass: Float = 0f,
+    val energy: Float = level,
+    val beats: Int = 0,
+) {
     companion object {
         val Silent = SpectrumFrame(FloatArray(AudioSpectrum.BANDS), 0f)
     }
@@ -42,10 +49,24 @@ object AudioSpectrum {
     const val BANDS = 16
 
     /**
-     * PCM приходит в процессор раньше, чем в динамик, — на размер буфера `AudioTrack` (у DefaultAudioSink для PCM
-     * не меньше 250 мс). Фон берёт кадр с этой задержкой ([frameAt]), чтобы «вдох» совпадал с ударом, который слышно.
+     * PCM приходит в процессор раньше, чем в динамик, — на буфер `AudioTrack` и задержку устройства вывода
+     * (Bluetooth — 200+ мс). Фон берёт кадр с этой задержкой ([frameAt]), чтобы «вдох» совпадал с ударом, который
+     * слышно. Пока задержка не измерена ([OutputLatencyProbe]) — [OUTPUT_LATENCY_MS].
      */
     const val OUTPUT_LATENCY_MS = 250L
+
+    /** Измеренная задержка вывода: обработано процессором минус проиграно плеером (медиавремя). */
+    @Volatile
+    var outputLatencyMs: Long = OUTPUT_LATENCY_MS
+
+    /** Сколько звука (мкс) прошло через процессор с последнего сброса и номер сброса — для [OutputLatencyProbe]. */
+    @Volatile
+    var processedUs: Long = 0L
+        internal set
+
+    @Volatile
+    var flushes: Int = 0
+        internal set
     private const val HISTORY = 64
     private val listeners = AtomicInteger(0)
     private val _frames = MutableStateFlow(SpectrumFrame.Silent)
@@ -74,9 +95,9 @@ object AudioSpectrum {
         }
     }
 
-    /** Кадр, который звучит в динамике сейчас: опубликованный [OUTPUT_LATENCY_MS] назад (или самый старый из есть). */
+    /** Кадр, который звучит в динамике сейчас: опубликованный [outputLatencyMs] назад (или самый старый из есть). */
     fun frameAt(nowNanos: Long = System.nanoTime()): SpectrumFrame {
-        val target = nowNanos - OUTPUT_LATENCY_MS * 1_000_000
+        val target = nowNanos - outputLatencyMs * 1_000_000
         synchronized(history) {
             if (history.isEmpty()) return SpectrumFrame.Silent
             // Звук давно не приходил (пауза, перемотка) — тишина, а не застывший последний кадр.
@@ -109,6 +130,8 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
     private var bandEdges = edges(DEFAULT_RATE)
     private var bassFrom = bin(BASS_LOW_HZ, DEFAULT_RATE)
     private var bassTo = bin(BASS_HIGH_HZ, DEFAULT_RATE) + 1
+    private val beats = BeatTracker(DEFAULT_RATE)
+    private var processedFrames = 0L
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) throw UnhandledAudioFormatException(inputAudioFormat)
@@ -118,6 +141,7 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
         bandEdges = edges(sampleRate)
         bassFrom = bin(BASS_LOW_HZ, sampleRate)
         bassTo = bin(BASS_HIGH_HZ, sampleRate) + 1
+        beats.configure(sampleRate)
         return inputAudioFormat
     }
 
@@ -125,6 +149,8 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
         val size = inputBuffer.remaining()
         if (size == 0) return
         if (AudioSpectrum.isListening) analyze(inputBuffer)
+        processedFrames += size / (2 * channels)
+        AudioSpectrum.processedUs = processedFrames * 1_000_000L / sampleRate
         replaceOutputBuffer(size).put(inputBuffer).flip()
     }
 
@@ -132,6 +158,10 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
         ringPos = 0
         sinceFrame = 0
         ring.fill(0f)
+        beats.reset()
+        processedFrames = 0
+        AudioSpectrum.processedUs = 0
+        AudioSpectrum.flushes++
     }
 
     /** Читает отсчёты по абсолютным индексам — позиция буфера не меняется. */
@@ -143,10 +173,13 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
             var sum = 0
             val base = start + f * frameBytes
             for (c in 0 until channels) sum += buffer.getShort(base + 2 * c).toInt()
-            ring[ringPos] = sum / (channels * SHORT_SCALE)
+            val mono = sum / (channels * SHORT_SCALE)
+            ring[ringPos] = mono
+            beats.add(mono)
             ringPos = (ringPos + 1) % FFT_SIZE
             if (++sinceFrame >= hop) {
                 sinceFrame = 0
+                beats.endHop()
                 AudioSpectrum.publish(spectrum())
             }
         }
@@ -178,6 +211,8 @@ class SpectrumAudioProcessor : BaseAudioProcessor() {
             bands,
             ((rmsDb - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f),
             ((bassDb - FLOOR_DB) / -FLOOR_DB).coerceIn(0f, 1f),
+            energy = beats.energy,
+            beats = beats.beats,
         )
     }
 

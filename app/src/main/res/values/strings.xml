@@ -111,8 +111,11 @@
     <string name="wave_start">Запустить волну</string>
     <string name="wave_start_hint">Музыка под вас — по лайкам и прослушиваниям</string>
     <string name="wave_more_settings">Жанры, эпохи и миксы →</string>
-    <string name="settings_background_animation">Анимация фона</string>
-    <string name="settings_background_animation_summary">Эквалайзер в цветах обложки на главной «Моя волна», реагирует на звук</string>
+    <string name="settings_background_animation">Анимированный фон</string>
+    <string name="settings_background_animation_summary">Туманность в цветах обложки на главной: течёт и пульсирует в ритм музыки. Экономный — 30 кадров в секунду и без пульсации (так же при включённом энергосбережении).</string>
+    <string name="background_animation_full">Полный</string>
+    <string name="background_animation_eco">Экономный</string>
+    <string name="background_animation_off">Выкл</string>
     <string name="wave_empty">Не удалось собрать волну: мало данных. Послушайте что-нибудь и поставьте лайки.</string>
     <string name="wave_group_mood">Настроение</string>
     <string name="wave_group_genre">Жанр</string>
