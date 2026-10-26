@@ -65,3 +65,15 @@ def test_validation(tmp_path):
         artist = client.post("/api/v1/requests", json={"kind": "artist", "artist": "Трофим"}, headers=auth())
         assert artist.status_code == 201
         assert artist.json()["title"] is None
+
+
+def test_batch_requests_skip_active_and_blank(tmp_path):
+    with make_client(FakeWorld(), tmp_path) as client:
+        one = {"kind": "track", "artist": "Трофим", "title": "Город Сочи"}
+        first = client.post("/api/v1/requests", json=one, headers=auth()).json()
+        items = [one, {"kind": "track", "artist": "Земфира", "title": "Хочешь"}, {"kind": "track", "artist": "X"}]
+        body = client.post("/api/v1/requests/batch", json={"items": items}, headers=auth())
+        assert body.status_code == 200
+        ids = [r["id"] for r in body.json()]
+        assert len(ids) == 2 and ids[0] == first["id"]
+        assert client.get("/api/v1/info", headers=auth()).json()["likesImport"] is False

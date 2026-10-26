@@ -49,6 +49,7 @@ import ru.bodro.music.core.downloads.FeedbackEvent
 import ru.bodro.music.core.downloads.FeedbackResult
 import ru.bodro.music.core.downloads.HarvestStatus
 import ru.bodro.music.core.downloads.LibraryCheck
+import ru.bodro.music.core.downloads.LikesImportStatus
 import ru.bodro.music.core.downloads.MaintenanceStatus
 import ru.bodro.music.core.downloads.MaintenanceSummary
 import ru.bodro.music.core.downloads.PoolHidden
@@ -136,6 +137,34 @@ class DownloadsRepository @Inject constructor(
         remember(client.downloadTrack(track, chartId, chartPosition))
 
     suspend fun downloadArtist(artist: DiscoverArtist): DownloadRequest = remember(client.downloadArtist(artist))
+
+    /** Пачка треков («Скачать недостающие», «Скачать все»): активные не дублируются, упавшие уходят заново. */
+    suspend fun downloadTracks(tracks: List<Pair<DiscoverTrack, Int?>>, chartId: String? = null): List<DownloadRequest> {
+        val created = client.downloadTracks(tracks, chartId)
+        if (created.isNotEmpty()) {
+            val ids = created.map { it.id }.toSet()
+            _requests.value = created + _requests.value.filterNot { it.id in ids }
+            val known = knownStatuses().orEmpty()
+            saveKnownStatuses(known + created.filter { it.id !in known }.associate { it.id to it.status })
+            scheduler.watch()
+        }
+        return created
+    }
+
+    // region Перенос лайков из Яндекс Музыки
+
+    suspend fun likesImport(): LikesImportStatus = client.likesImport()
+
+    suspend fun runLikesImport(): LikesImportStatus = client.runLikesImport()
+
+    suspend fun downloadLikesMissing(ids: List<String>? = null): LikesImportStatus =
+        client.downloadLikesMissing(ids).also { scheduler.watch() }
+
+    // endregion
+
+    suspend fun artistImage(name: String): String? = client.artistImage(name)
+
+    suspend fun trackImage(artist: String, title: String): String? = client.trackImage(artist, title)
 
     /** Активную заявку отменяет, завершённую убирает из списка. */
     suspend fun delete(request: DownloadRequest) {

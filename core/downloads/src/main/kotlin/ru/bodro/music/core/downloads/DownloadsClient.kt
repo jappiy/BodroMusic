@@ -114,6 +114,53 @@ class DownloadsClient(
         ),
     )
 
+    /**
+     * Пачка треков одним запросом (bodrod 0.26.0+): уже стоящие в очереди и качающиеся сервер возвращает как есть,
+     * упавшие ставит заново. Старый сервер (404/405) — по одной заявке.
+     */
+    suspend fun downloadTracks(tracks: List<Pair<DiscoverTrack, Int?>>, chartId: String? = null): List<DownloadRequest> {
+        if (tracks.isEmpty()) return emptyList()
+        val bodies = tracks.map { (t, position) ->
+            CreateRequestBody(
+                kind = RequestKind.Track,
+                artist = t.artist,
+                title = t.title,
+                album = t.album,
+                durationMs = t.durationMs,
+                coverUrl = t.coverUrl,
+                chartId = chartId?.takeIf { position != null },
+                chartPosition = position,
+            )
+        }
+        return try {
+            post(listOf("api", "v1", "requests", "batch"), CreateRequestsBody(bodies))
+        } catch (e: DownloadsException) {
+            val status = (e.error as? DownloadsError.Http)?.status
+            if (status != HTTP_NOT_FOUND && status != HTTP_METHOD_NOT_ALLOWED) throw e
+            bodies.mapNotNull { body -> runCatching { create(body) }.getOrNull() }
+        }
+    }
+
+    // region Перенос лайков из Яндекс Музыки (bodrod 0.26.0+)
+
+    suspend fun likesImport(): LikesImportStatus = get(listOf("api", "v1", "yandex", "likes"))
+
+    suspend fun runLikesImport(): LikesImportStatus = postEmpty(listOf("api", "v1", "yandex", "likes", "run"))
+
+    /** Ненайденные — в загрузку (`ids = null` — все); лайк сервер поставит, когда трек появится в Navidrome. */
+    suspend fun downloadLikesMissing(ids: List<String>? = null): LikesImportStatus =
+        post(listOf("api", "v1", "yandex", "likes", "download"), LikesDownloadBody(ids))
+
+    // endregion
+
+    /** Фото исполнителя: Deezer → Last.fm (bodrod 0.26.0+); `null` — нигде нет. */
+    suspend fun artistImage(name: String): String? =
+        get<ImageUrl>(listOf("api", "v1", "images", "artist"), listOf("name" to name)).url
+
+    /** Обложка трека не из библиотеки: Deezer → Last.fm (bodrod 0.26.0+). */
+    suspend fun trackImage(artist: String, title: String): String? =
+        get<ImageUrl>(listOf("api", "v1", "images", "track"), listOf("artist" to artist, "title" to title)).url
+
     suspend fun downloadArtist(artist: DiscoverArtist): DownloadRequest =
         create(CreateRequestBody(kind = RequestKind.Artist, artist = artist.name, coverUrl = artist.coverUrl))
 
@@ -370,6 +417,8 @@ class DownloadsClient(
         val JSON = "application/json; charset=utf-8".toMediaType()
         val EMPTY = ByteArray(0).toRequestBody(null)
         const val MAX_DETAIL = 200
+        const val HTTP_NOT_FOUND = 404
+        const val HTTP_METHOD_NOT_ALLOWED = 405
     }
 }
 

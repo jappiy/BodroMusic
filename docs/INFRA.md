@@ -298,6 +298,9 @@ bodrod 0.24.0 (честные «Популярное»/«Новое», отчё�
 bodrod 0.25.0 (обложки папкам Lidarr из общей цепочки `COVER_PROVIDERS`, если в Cover Art Archive нет; аудит обложек
 `GET /api/v1/library/covers`; только код, база `9f5de2f` не менялась, новых переменных нет) —
 [`043-cover-audit.md`](history/043-cover-audit.md).
+bodrod 0.26.0 (перенос лайков из Яндекса `/api/v1/yandex/likes*`, пачка заявок `/api/v1/requests/batch`, картинки
+`/api/v1/images/*` из Deezer и Last.fm; только код, база `9f5de2f` не менялась, новых переменных нет; код скопирован на
+NAS 2026-10-26, «Остановить» → «Создать» — за владельцем) — [`044-yandex-likes-import.md`](history/044-yandex-likes-import.md).
 
 ---
 

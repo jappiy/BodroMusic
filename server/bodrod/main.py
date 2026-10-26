@@ -22,10 +22,12 @@ from .clients.navidrome import Credentials, NavidromeClient
 from .clients.slskd import SlskdClient
 from .config import Settings
 from .db import MaintenanceAction, MaintenanceRun, Store
+from .likes_import import LikesImport, LikesImportError
 from .lyrics import LrcLib, LyricsProvider, LyricsService, YandexLyrics
 from .maintenance import MaintenanceError, MaintenanceService
 from .metadata.discover import DiscoverService
 from .metadata.facts import ArtistFacts
+from .metadata.images import ImageLookup
 from .metadata.lastfm import LastFmClient, LastFmProvider
 from .metadata.lookup import build_chain
 from .metadata.providers import DeezerProvider, MetadataProvider, YandexMusicProvider
@@ -45,6 +47,7 @@ from .models import (
     ChartOut,
     CleanupUser,
     CreateRequest,
+    CreateRequestsBatch,
     DeleteSongResult,
     DeleteSongsRequest,
     DiscoverResponse,
@@ -150,6 +153,8 @@ class Services:
     similar: SimilarTracks | None = None
     lyrics: LyricsService | None = None
     blurbs: BlurbService | None = None
+    likes: LikesImport | None = None
+    images: ImageLookup | None = None
 
 
 COVER_MAX_BYTES = 8 * 1024 * 1024
@@ -376,6 +381,32 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
             "Архив Яндекса: аккаунты %s",
             ", ".join(f"{login} → {harvester.owner(login) or 'не привязан'}" for login in accounts),
         )
+    images = ImageLookup(http, lastfm, settings.deezer_enabled)
+    likes = None
+    if navidrome_db is not None:
+
+        async def yandex_likes(user: str) -> list:
+            ref = yandex_tokens.resolve(user, fallback=False)
+            if ref is None:
+                raise LikesImportError(
+                    "Не задан токен Яндекса: привяжите аккаунт в «Рекомендации» → «Архив Яндекса» или YANDEX_USERS"
+                )
+            check = await yandex_tokens.check(ref)
+            if check is not None and check.state == "invalid":
+                raise LikesImportError("Токен Яндекса недействителен или истёк")
+            return await yandex_tokens.api(ref).liked_tracks()
+
+        reserve = _remap(settings.reserve_path, settings.music_dir, settings.navidrome_music_dir)
+        likes = LikesImport(
+            store,
+            navidrome_db,
+            yandex_likes,
+            navidrome.star,
+            path_map=lambda path: _remap(path, settings.music_dir, settings.navidrome_music_dir),
+            skip_prefixes=[reserve] if reserve else [],
+            can_download=lambda user: worker.registry.usable(RequestKind.TRACK, user),
+            wake_worker=worker.wake,
+        )
     return Services(
         settings=settings,
         store=store,
@@ -402,9 +433,11 @@ def build_services(settings: Settings, http: httpx.AsyncClient) -> Services:
         wave=WaveService(store, navidrome_db, analysis, pool_prefix, settings.wave_modes_file, lastfm)
         if navidrome_db is not None and settings.wave_enabled
         else None,
-        similar=SimilarTracks(lastfm, library_index.in_library, analysis, navidrome_db),
+        similar=SimilarTracks(lastfm, library_index.in_library, analysis, navidrome_db, images),
         lyrics=lyrics,
         blurbs=blurbs,
+        likes=likes,
+        images=images,
     )
 
 
@@ -449,6 +482,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
                 app.state.services.analysis,
                 app.state.services.lyrics,
                 app.state.services.blurbs,
+                app.state.services.likes,
             ):
                 if extra is not None:
                     tasks.append(asyncio.create_task(extra.run_forever()))
@@ -483,6 +517,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         cached = svc.auth_cache.get(key)
         now = time.time()
         if cached and cached[1] > now:
+            if svc.likes is not None:
+                svc.likes.remember(creds)
             return creds
         try:
             ok = await svc.navidrome.check_user(creds)
@@ -494,6 +530,8 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         if len(svc.auth_cache) > 10_000:
             svc.auth_cache.clear()
         svc.auth_cache[key] = (creds.username, now + AUTH_CACHE_TTL_S)
+        if svc.likes is not None:
+            svc.likes.remember(creds)
         return creds
 
     User = Annotated[Credentials, Depends(current_user)]
@@ -519,6 +557,7 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             pool=svc.pool is not None,
             analysis=svc.analysis is not None,
             wave=svc.wave is not None,
+            likes_import=svc.likes is not None,
         )
 
     @app.get("/api/v1/discover", response_model=DiscoverResponse, response_model_by_alias=True)
@@ -578,6 +617,23 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         """«Похожие треки» в плеере: Last.fm (с пометкой «есть в библиотеке») и похожие по звучанию."""
         return await svc.similar.similar(artist, title, song_id) if svc.similar is not None else []
 
+    @app.get("/api/v1/images/artist")
+    async def artist_image(
+        user: User, svc: Svc, name: Annotated[str, Query(min_length=1, max_length=200)]
+    ) -> dict[str, str | None]:
+        """Фото исполнителя, если у Navidrome его нет: Deezer → Last.fm; `url: null` — нигде нет."""
+        return {"url": await svc.images.artist_image(name) if svc.images is not None else None}
+
+    @app.get("/api/v1/images/track")
+    async def track_image(
+        user: User,
+        svc: Svc,
+        artist: Annotated[str, Query(min_length=1, max_length=200)],
+        title: Annotated[str, Query(min_length=1, max_length=300)],
+    ) -> dict[str, str | None]:
+        """Обложка трека не из библиотеки: Deezer → Last.fm; `url: null` — нигде нет."""
+        return {"url": await svc.images.track_cover(artist, title) if svc.images is not None else None}
+
     @app.post("/api/v1/blurbs", response_model=BlurbsOut, response_model_by_alias=True)
     async def blurbs(user: User, svc: Svc, body: BlurbsIn) -> BlurbsOut:
         """Подводки к трекам волны: постоянные факты (кэш) + личная история + причина попадания в волну."""
@@ -623,6 +679,32 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             raise HTTPException(409, "Не настроено: задайте NAVIDROME_DB")
         return await asyncio.to_thread(db.cover_stats)
 
+    def require_likes(svc: Services) -> LikesImport:
+        if svc.likes is None:
+            raise HTTPException(409, "Перенос лайков не настроен: нужен NAVIDROME_DB")
+        return svc.likes
+
+    @app.get("/api/v1/yandex/likes")
+    async def likes_status(user: User, svc: Svc) -> dict[str, Any]:
+        """Перенос лайков из Яндекса: прогресс, итог последнего запуска, конфликты и ненайденные."""
+        likes = require_likes(svc)
+        await likes.settle(user.username)
+        return likes.status(user.username)
+
+    @app.post("/api/v1/yandex/likes/run", status_code=202)
+    async def likes_run(user: User, svc: Svc) -> dict[str, Any]:
+        """Запустить перенос лайков пользователя (идемпотентно: повтор докидывает новое, ничего не снимает)."""
+        return await require_likes(svc).start(user)
+
+    @app.post("/api/v1/yandex/likes/download")
+    async def likes_download(user: User, svc: Svc, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Поставить ненайденные треки (все или `ids`) в загрузку; лайк поставится, когда трек появится."""
+        ids = [str(i) for i in (body or {}).get("ids") or []] or None
+        try:
+            return await require_likes(svc).download_missing(user.username, ids)
+        except LikesImportError as e:
+            raise HTTPException(409, str(e)) from e
+
     @app.get("/api/v1/requests", response_model=list[DownloadRequestOut], response_model_by_alias=True)
     async def list_requests(
         user: User, svc: Svc, limit: Annotated[int, Query(ge=1, le=500)] = 100
@@ -658,6 +740,37 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         return JSONResponse(
             request.to_api().model_dump(by_alias=True, mode="json"), status_code=201 if created else 200
         )
+
+    @app.post("/api/v1/requests/batch", response_model=list[DownloadRequestOut], response_model_by_alias=True)
+    async def create_requests(user: User, svc: Svc, body: CreateRequestsBatch) -> list[DownloadRequestOut]:
+        """Пачка заявок на треки: уже стоящие в очереди и качающиеся возвращаются как есть, упавшие — заново.
+        Трек без названия или из чёрного списка пропускается (его нет в ответе)."""
+        if not await svc.worker.registry.usable(RequestKind.TRACK, user.username):
+            raise HTTPException(409, "Нет доступных источников, которые скачивают треки")
+        result: list[DownloadRequestOut] = []
+        created = 0
+        for item in body.items:
+            if item.kind != RequestKind.TRACK or not (item.title and item.title.strip()):
+                continue
+            if svc.store.is_blocked(item.artist, item.title):
+                continue
+            request, new = svc.store.create(
+                username=user.username,
+                kind=RequestKind.TRACK,
+                artist=item.artist,
+                title=item.title,
+                album=item.album,
+                duration_ms=item.duration_ms,
+                cover_url=item.cover_url,
+            )
+            if item.chart_id and item.chart_position and svc.charts is not None:
+                svc.charts.link_request(item.chart_id, item.chart_position, request.id)
+            created += new
+            result.append(request.to_api())
+        if result:
+            svc.worker.wake()
+        log.info("%s: пачка заявок — %s, новых %s", user.username, len(result), created)
+        return result
 
     @app.get("/api/v1/requests/{request_id}", response_model=DownloadRequestOut, response_model_by_alias=True)
     async def get_request(user: User, svc: Svc, request_id: str) -> DownloadRequestOut:

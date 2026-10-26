@@ -107,7 +107,9 @@ import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
+import ru.bodro.music.ui.theme.Contrast
 import ru.bodro.music.ui.theme.LocalPlayerColors
+import ru.bodro.music.ui.theme.lerpColor
 import ru.bodro.music.ui.util.formatMs
 
 private enum class PlayerSheet { None, Queue, Lyrics, Sleep }
@@ -140,11 +142,9 @@ fun FullPlayerScreen(
     val actions = LocalAppActions.current
     val colors = LocalPlayerColors.current
     val background = colors?.background ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val palette = PlayerPalette(
-        background = background,
-        content = colors?.onBackground ?: MaterialTheme.colorScheme.onSurface,
-        accent = colors?.accent ?: MaterialTheme.colorScheme.primary,
-    )
+    val preferredContent = colors?.onBackground ?: MaterialTheme.colorScheme.onSurface
+    val accentColor = colors?.accent ?: MaterialTheme.colorScheme.primary
+    val palette = remember(background, preferredContent, accentColor) { PlayerPalette.over(background, preferredContent, accentColor) }
     var sheet by rememberSaveable { mutableStateOf(PlayerSheet.None) }
     val collapseOnPull = rememberCollapseOnPull(onCollapse)
     val navigator = LocalNavigator.current
@@ -182,7 +182,7 @@ fun FullPlayerScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(background, Color.Black.copy(alpha = 0.92f).compositeOver(background))))
+            .background(Brush.verticalGradient(listOf(palette.background, palette.bottom)))
             .testTag("full-player"),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp)) {
@@ -298,7 +298,71 @@ fun FullPlayerScreen(
 
 /** Цвета плеера из обложки. */
 @Immutable
-data class PlayerPalette(val background: Color, val content: Color, val accent: Color)
+data class PlayerPalette(val background: Color, val content: Color, val accent: Color, val bottom: Color = background) {
+    /** Фон под элементами плеера: весь градиент сверху донизу — блоки под плеером прокручиваются по всей высоте. */
+    private val surfaces = Contrast.gradient(background, bottom)
+
+    /** Подписи (альбом, время, источник): приглушённые, но не ниже 4,5:1 по всему градиенту. */
+    val secondary: Color = Contrast.muted(content, surfaces, Contrast.TEXT, SECONDARY_ALPHA)
+
+    /** Неактивные иконки (повтор, перемешивание, дизлайк): не ниже 3:1. */
+    val muted: Color = Contrast.muted(content, surfaces, Contrast.ICON, MUTED_ALPHA)
+
+    /** Акцент как цвет текста (исполнитель, кнопки-ссылки): 4,5:1, иначе цвет текста. */
+    val accentText: Color = if (Contrast.worst(accent, surfaces) >= Contrast.TEXT) accent else content
+
+    /** Акцент как цвет иконки (активный повтор, текст есть): 3:1, иначе цвет текста. */
+    val accentIcon: Color = if (Contrast.worst(accent, surfaces) >= Contrast.ICON) accent else content
+
+    /** Иконка на кнопке цвета акцента («Играть», плашка «Новое»). */
+    val onAccent: Color = Contrast.pick(background, listOf(accent), Contrast.TEXT)
+
+    companion object {
+        private const val SECONDARY_ALPHA = 0.7f
+        private const val MUTED_ALPHA = 0.6f
+
+        /**
+         * Палитра над вертикальным градиентом от [top] вниз. Цвет текста и иконок проверяется по фактическому фону
+         * во всех точках градиента (а не только по верху): [preferredContent], если контраст ≥ 4,5:1 везде, иначе
+         * светлый или тёмный. Тёмный верх темнеет к низу (светлому тексту контраст только растёт), светлый —
+         * темнеет ровно настолько, чтобы тёмный текст оставался читаемым.
+         */
+        fun over(top: Color, preferredContent: Color, accent: Color): PlayerPalette {
+            val base = readableTop(top)
+            val bottom = gradientBottom(base)
+            val content = Contrast.pick(preferredContent, Contrast.gradient(base, bottom), Contrast.TEXT)
+            return PlayerPalette(base, content, accent, bottom)
+        }
+
+        /** Средний тон, на котором ни светлый, ни тёмный текст не дают 4,5:1, дотемняется до читаемого. */
+        private fun readableTop(top: Color): Color {
+            var current = top
+            var t = 0f
+            while (maxOf(Contrast.ratio(Contrast.Light, current), Contrast.ratio(Contrast.Dark, current)) < Contrast.TEXT && t < 1f) {
+                t += LIGHT_BOTTOM_STEP
+                current = lerpColor(top, Color.Black, t)
+            }
+            return current
+        }
+
+        fun gradientBottom(top: Color): Color {
+            if (Contrast.ratio(Contrast.Light, top) >= Contrast.ratio(Contrast.Dark, top)) {
+                return Color.Black.copy(alpha = DARK_BOTTOM).compositeOver(top)
+            }
+            var t = LIGHT_BOTTOM_MAX
+            while (t > 0f) {
+                val candidate = lerpColor(top, Color.Black, t)
+                if (Contrast.ratio(Contrast.Dark.copy(alpha = SECONDARY_ALPHA), candidate) >= Contrast.TEXT) return candidate
+                t -= LIGHT_BOTTOM_STEP
+            }
+            return top
+        }
+
+        private const val DARK_BOTTOM = 0.92f
+        private const val LIGHT_BOTTOM_MAX = 0.3f
+        private const val LIGHT_BOTTOM_STEP = 0.05f
+    }
+}
 
 /** Раскладка плеера под размер окна. */
 data class PlayerLayout(val twoPane: Boolean, val coverSize: Dp)
@@ -371,7 +435,7 @@ private fun PlayerHeader(
         Text(
             sourceTitle(state.source),
             style = MaterialTheme.typography.labelLarge,
-            color = palette.content.copy(alpha = 0.75f),
+            color = palette.secondary,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -444,7 +508,7 @@ private fun PlayerInfo(song: Song, isNew: Boolean, palette: PlayerPalette) {
             Text(
                 stringResource(R.string.player_new_badge),
                 style = MaterialTheme.typography.labelMedium,
-                color = palette.background,
+                color = palette.onAccent,
                 modifier = Modifier
                     .padding(bottom = 6.dp)
                     .background(palette.accent, MaterialTheme.shapes.small)
@@ -463,7 +527,7 @@ private fun PlayerInfo(song: Song, isNew: Boolean, palette: PlayerPalette) {
         Text(
             song.artist.orEmpty(),
             style = MaterialTheme.typography.titleMedium,
-            color = palette.accent,
+            color = palette.accentText,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.clickable(enabled = song.artistId != null) { song.artistId?.let(navigator::openArtist) },
@@ -472,7 +536,7 @@ private fun PlayerInfo(song: Song, isNew: Boolean, palette: PlayerPalette) {
             Text(
                 album,
                 style = MaterialTheme.typography.bodyMedium,
-                color = palette.content.copy(alpha = 0.7f),
+                color = palette.secondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clickable(enabled = song.albumId != null) { song.albumId?.let(navigator::openAlbum) },
@@ -490,16 +554,16 @@ private fun PlayerSeek(state: PlayerUiState, palette: PlayerPalette, onSeek: (Lo
             positionMs = state.positionMs,
             durationMs = state.durationMs,
             onSeek = onSeek,
-            activeColor = palette.accent,
+            activeColor = palette.accentIcon,
             inactiveColor = palette.content.copy(alpha = 0.22f),
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(formatMs(state.positionMs), style = MaterialTheme.typography.labelMedium, color = palette.content.copy(alpha = 0.75f))
+            Text(formatMs(state.positionMs), style = MaterialTheme.typography.labelMedium, color = palette.secondary)
             Spacer(Modifier.weight(1f))
             Text(
                 "−" + formatMs((state.durationMs - state.positionMs).coerceAtLeast(0)),
                 style = MaterialTheme.typography.labelMedium,
-                color = palette.content.copy(alpha = 0.75f),
+                color = palette.secondary,
             )
         }
     }
@@ -517,7 +581,7 @@ private fun PlayerControls(state: PlayerUiState, palette: PlayerPalette, viewMod
             active = disliked,
             onClick = { actions.toggleDislike(song) },
             description = stringResource(if (disliked) R.string.action_undislike else R.string.action_dislike),
-            content = content,
+            content = palette.muted,
             buttonTag = "player-dislike",
             activeColor = DislikeBlue,
             iconTag = if (disliked) "icon-disliked" else "icon-not-disliked",
@@ -539,11 +603,11 @@ private fun PlayerControls(state: PlayerUiState, palette: PlayerPalette, viewMod
             modifier = Modifier.size(80.dp).testTag("player-play"),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                if (state.isBuffering) CircularProgressIndicator(Modifier.size(72.dp), color = palette.background, strokeWidth = 2.dp)
+                if (state.isBuffering) CircularProgressIndicator(Modifier.size(72.dp), color = palette.onAccent, strokeWidth = 2.dp)
                 Icon(
                     if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription = stringResource(if (state.isPlaying) R.string.action_pause else R.string.action_play),
-                    tint = palette.background,
+                    tint = palette.onAccent,
                     modifier = Modifier.size(44.dp),
                 )
             }
@@ -566,7 +630,7 @@ private fun PlayerControls(state: PlayerUiState, palette: PlayerPalette, viewMod
             active = liked,
             onClick = { actions.toggleLike(song) },
             description = stringResource(if (liked) R.string.action_unlike else R.string.action_like),
-            content = content,
+            content = palette.muted,
             buttonTag = "player-like",
             activeColor = LikeRed,
             iconTag = if (liked) "icon-liked" else "icon-not-liked",
@@ -604,7 +668,7 @@ private fun PlayerMiniBar(state: PlayerUiState, palette: PlayerPalette, onToggle
             )
             Text(
                 song.artist.orEmpty(),
-                color = palette.content.copy(alpha = 0.7f),
+                color = palette.secondary,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
             )
@@ -650,7 +714,7 @@ private fun PlayerBottomBar(
         BottomAction(
             if (state.repeatMode == RepeatMode.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             stringResource(R.string.action_repeat),
-            content,
+            palette,
             active = state.repeatMode != RepeatMode.Off,
             tag = "player-repeat",
             onClick = onRepeat,
@@ -658,16 +722,16 @@ private fun PlayerBottomBar(
         BottomAction(
             Icons.Rounded.Shuffle,
             stringResource(R.string.action_shuffle),
-            content,
+            palette,
             active = state.shuffle,
             tag = "player-shuffle",
             onClick = onShuffle,
         )
-        LyricsAction(lyrics, content, onClick = onLyrics)
+        LyricsAction(lyrics, palette, onClick = onLyrics)
         BottomAction(
             Icons.AutoMirrored.Rounded.QueueMusic,
             stringResource(R.string.player_queue),
-            content,
+            palette,
             tag = "open-queue",
             onClick = onQueue,
         )
@@ -678,14 +742,14 @@ private fun PlayerBottomBar(
 private fun BottomAction(
     icon: ImageVector,
     label: String,
-    tint: Color,
+    palette: PlayerPalette,
     active: Boolean = false,
     tag: String? = null,
     onClick: () -> Unit,
 ) {
-    val accent = LocalPlayerColors.current?.accent ?: MaterialTheme.colorScheme.primary
+    // Неактивная — приглушённая, но не ниже 3:1 по фону в этом месте (раньше тёмные иконки терялись на тёмном низу).
     IconButton(onClick = onClick, modifier = if (tag != null) Modifier.testTag(tag) else Modifier) {
-        Icon(icon, contentDescription = label, tint = if (active) accent else tint.copy(alpha = 0.6f))
+        Icon(icon, contentDescription = label, tint = if (active) palette.accentIcon else palette.muted)
     }
 }
 
@@ -694,8 +758,8 @@ private fun BottomAction(
  * нет — приглушённая и перечёркнутая; ищем — приглушённая без черты (статично, без мигания).
  */
 @Composable
-private fun LyricsAction(lyrics: LyricsAvailability, tint: Color, onClick: () -> Unit) {
-    val accent = LocalPlayerColors.current?.accent ?: MaterialTheme.colorScheme.primary
+private fun LyricsAction(lyrics: LyricsAvailability, palette: PlayerPalette, onClick: () -> Unit) {
+    val accent = palette.accentIcon
     val (label, state) = when (lyrics) {
         is LyricsAvailability.Available -> R.string.player_lyrics_available to "available"
         LyricsAvailability.Missing -> R.string.player_lyrics_missing to "missing"
@@ -705,8 +769,8 @@ private fun LyricsAction(lyrics: LyricsAvailability, tint: Color, onClick: () ->
     val missing = lyrics is LyricsAvailability.Missing
     val color = when {
         available -> accent
-        missing -> tint.copy(alpha = 0.32f)
-        else -> tint.copy(alpha = 0.55f)
+        // «Нет текста» отличается чертой, а не еле видным цветом: контраст иконки — не ниже 3:1.
+        else -> palette.muted
     }
     IconButton(onClick = onClick, modifier = Modifier.testTag("open-lyrics").semantics { stateDescription = state }) {
         Box(
@@ -749,7 +813,7 @@ private fun ReactionButton(
             .testTag(buttonTag),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.testTag(iconTag)) { icon(if (active) activeColor else content.copy(alpha = 0.8f), description) }
+        Box(Modifier.testTag(iconTag)) { icon(if (active) activeColor else content, description) }
     }
 }
 

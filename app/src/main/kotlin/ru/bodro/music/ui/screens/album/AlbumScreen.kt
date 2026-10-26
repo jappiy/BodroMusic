@@ -70,6 +70,7 @@ import ru.bodro.music.ui.components.SongRow
 import ru.bodro.music.ui.components.heroCoverSize
 import ru.bodro.music.ui.image.CoverColors
 import ru.bodro.music.ui.image.CoverPaletteRepository
+import ru.bodro.music.ui.theme.Contrast
 import ru.bodro.music.ui.util.toUiError
 import ru.bodro.music.ui.util.totalDurationText
 import ru.bodro.music.ui.util.tracksText
@@ -128,15 +129,28 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
     val liked = LocalReactions.current.albumLiked(album.id, album.starred)
     val source = QueueSource.AlbumSource(album.id, album.name)
     val gradientTop = colors?.background ?: MaterialTheme.colorScheme.surfaceContainerHigh
+    // Шапка — градиент от цвета обложки к фону темы: кнопка «назад» стоит на верхнем цвете, текст и кнопки — в нижней
+    // части. Цвета считаются по фону именно там (тёмная обложка в светлой теме больше не прячет тёмные иконки).
+    val gradientBottom = MaterialTheme.colorScheme.background
+    val topSurfaces = Contrast.gradient(gradientTop, gradientBottom, 0f, TOP_ZONE)
+    val lowerSurfaces = Contrast.gradient(gradientTop, gradientBottom, LOWER_ZONE, 1f)
+    val topContent = Contrast.pick(MaterialTheme.colorScheme.onSurface, topSurfaces, Contrast.TEXT)
+    val lowerContent = Contrast.pick(MaterialTheme.colorScheme.onSurface, lowerSurfaces, Contrast.TEXT)
+    val lowerSecondary = Contrast.pick(MaterialTheme.colorScheme.onSurfaceVariant, lowerSurfaces, Contrast.TEXT)
+    val lowerAccent = MaterialTheme.colorScheme.primary.let { if (Contrast.worst(it, lowerSurfaces) >= Contrast.TEXT) it else lowerContent }
     val multiDisc = songs.mapNotNull { it.discNumber }.distinct().size > 1
 
     LazyColumn(Modifier.fillMaxSize().testTag("album-screen"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") {
-            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(gradientTop, MaterialTheme.colorScheme.background)))) {
+            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(gradientTop, gradientBottom)))) {
                 Column(Modifier.fillMaxWidth().statusBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(Modifier.fillMaxWidth()) {
                         IconButton(onClick = onBack, modifier = Modifier.testTag("back")) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back),
+                                tint = topContent,
+                            )
                         }
                     }
                     CoverImage(album.coverArt, Modifier.size(heroCoverSize(240.dp)), sizeHint = 600.dp, shape = RoundedCornerShape(20.dp))
@@ -144,6 +158,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                     Text(
                         album.name,
                         style = MaterialTheme.typography.headlineMedium,
+                        color = lowerContent,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 24.dp).testTag("album-title"),
                     )
@@ -151,7 +166,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                         Text(
                             artist,
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = lowerAccent,
                             modifier = Modifier.clickable(enabled = album.artistId != null) {
                                 album.artistId?.let(navigator::openArtist)
                             }.padding(4.dp),
@@ -165,7 +180,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                             totalDurationText(album.duration),
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = lowerSecondary,
                     )
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +188,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                             Icon(
                                 if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                 contentDescription = stringResource(if (liked) R.string.action_unlike else R.string.action_like),
-                                tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                tint = if (liked) lowerAccent else lowerContent,
                             )
                         }
                         Button(onClick = { actions.play(songs, 0, source) }, modifier = Modifier.testTag("album-play")) {
@@ -185,7 +200,11 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
                             Text(stringResource(R.string.action_shuffle))
                         }
                         IconButton(onClick = { actions.addToPlaylist(songs) }) {
-                            Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.menu_add_to_playlist))
+                            Icon(
+                                Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                contentDescription = stringResource(R.string.menu_add_to_playlist),
+                                tint = lowerContent,
+                            )
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -207,3 +226,7 @@ private fun AlbumContent(details: AlbumDetails, colors: CoverColors?, onBack: ()
         }
     }
 }
+
+/** Доли высоты шапки альбома: «назад» — верхние 15 %, название, исполнитель и кнопки — ниже 55 %. */
+private const val TOP_ZONE = 0.15f
+private const val LOWER_ZONE = 0.55f

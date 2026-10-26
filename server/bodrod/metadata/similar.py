@@ -1,7 +1,8 @@
 """«Похожие треки» для полноэкранного плеера: Last.fm `track.getSimilar` и похожие по звучанию из библиотеки.
 
 Треки Last.fm сопоставляются с библиотекой (`LibraryIndex.in_library`): найденные получают `library_song_id` и сразу
-играют, остальные приложение предлагает скачать по обычной цепочке источников. Похожие по звучанию (эмбеддинги
+играют, остальные приложение предлагает скачать по обычной цепочке источников; им подбирается обложка
+(`ImageLookup`: Deezer → Last.fm). Похожие по звучанию (эмбеддинги
 анализатора) — только из библиотеки, они добавляются после Last.fm, без повторов. Нет Last.fm или анализа — блок из
 того, что есть; нет ничего — пустой список (приложение блок прячет).
 """
@@ -17,6 +18,7 @@ from typing import Any
 from ..models import TrackCandidate
 from ..navidrome_db import NavidromeDb
 from ..reco.keys import track_key
+from .images import ImageLookup
 from .lastfm import LastFmClient, LastFmError, LastFmProvider, _items
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ class SimilarTracks:
         in_library: Callable[[str, str], Any] | None,
         analysis: Any = None,
         db: NavidromeDb | None = None,
+        images: ImageLookup | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._lastfm = lastfm
@@ -41,6 +44,7 @@ class SimilarTracks:
         self._in_library = in_library
         self._analysis = analysis
         self._db = db
+        self._images = images
         self._clock = clock
         self._cache: dict[tuple[str, str, str], tuple[float, list[TrackCandidate]]] = {}
 
@@ -77,6 +81,12 @@ class SimilarTracks:
         if self._in_library is not None:
             ids = await asyncio.gather(*(self._in_library(t.artist, t.title) for t in tracks))
             tracks = [t.model_copy(update={"library_song_id": i}) if i else t for t, i in zip(tracks, ids, strict=True)]
+        if self._images is not None:
+            # Обложка трека не из библиотеки: Deezer → Last.fm (у Last.fm в похожих картинки почти всегда пустые).
+            missing = [t for t in tracks if not t.library_song_id and not t.cover_url]
+            covers = await asyncio.gather(*(self._images.track_cover(t.artist, t.title) for t in missing))
+            found = {id(t): c for t, c in zip(missing, covers, strict=True) if c}
+            tracks = [t.model_copy(update={"cover_url": found[id(t)]}) if id(t) in found else t for t in tracks]
         return tracks
 
     async def _sound_similar(self, song_id: str | None) -> list[TrackCandidate]:

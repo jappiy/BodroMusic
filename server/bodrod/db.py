@@ -840,6 +840,21 @@ class Store:
             ).fetchall()
         return [r["path"] for r in rows]
 
+    def source_paths(self, source: str, source_ids: list[str]) -> dict[str, list[str]]:
+        """id источника → пути положенных bodrod файлов (сопоставление лайков Яндекса с библиотекой)."""
+        result: dict[str, list[str]] = {}
+        for start in range(0, len(source_ids), 500):
+            chunk = source_ids[start : start + 500]
+            marks = ",".join("?" for _ in chunk)
+            with self._lock:
+                rows = self._conn.execute(
+                    f"SELECT source_id, path FROM library_files WHERE source = ? AND source_id IN ({marks})",
+                    (source, *chunk),
+                ).fetchall()
+            for r in rows:
+                result.setdefault(r["source_id"], []).append(r["path"])
+        return result
+
     def library_file(self, path: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute("SELECT * FROM library_files WHERE path = ?", (path,)).fetchone()

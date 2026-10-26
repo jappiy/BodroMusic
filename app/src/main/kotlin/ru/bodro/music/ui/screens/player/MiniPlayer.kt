@@ -48,6 +48,7 @@ import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.image.coverChain
+import ru.bodro.music.ui.theme.Contrast
 import ru.bodro.music.ui.theme.LocalPlayerColors
 
 /**
@@ -69,8 +70,19 @@ fun MiniPlayer(
     val song = state.currentSong ?: return
     val colors = LocalPlayerColors.current
     val background = colors?.background ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val content = colors?.onBackground ?: MaterialTheme.colorScheme.onSurface
-    val accent = colors?.accent ?: MaterialTheme.colorScheme.primary
+    val surfaces = listOf(background)
+    val content = Contrast.pick(colors?.onBackground ?: MaterialTheme.colorScheme.onSurface, surfaces, Contrast.TEXT)
+    // Акцент (лайк, прогресс, индикатор) — не ниже 3:1 к фону мини-плеера, иначе цвет текста.
+    val accent = (colors?.accent ?: MaterialTheme.colorScheme.primary).let {
+        if (Contrast.worst(it, surfaces) >=
+            Contrast.ICON
+        ) {
+            it
+        } else {
+            content
+        }
+    }
+    val secondary = Contrast.muted(content, surfaces, Contrast.TEXT, 0.7f)
     var dragX by remember { mutableFloatStateOf(0f) }
     var dragY by remember { mutableFloatStateOf(0f) }
 
@@ -125,7 +137,7 @@ fun MiniPlayer(
                 )
                 Text(
                     song.artist.orEmpty(),
-                    color = content.copy(alpha = 0.7f),
+                    color = secondary,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

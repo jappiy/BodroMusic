@@ -157,13 +157,34 @@ fun rememberPlayerColors(cover: CoverColors?, enabled: Boolean): PlayerColors {
     val targetAccent = if (enabled && cover != null) adjustAccent(cover.accent, dark) else scheme.primary
     val background by animateColorAsState(targetBackground, tween(600), label = "playerBackground")
     val accent by animateColorAsState(targetAccent, tween(600), label = "playerAccent")
-    val onBackground = if (background.luminance() > 0.5f) Color(0xFF15130F) else Color(0xFFF7F3EC)
+    // Светлый или тёмный текст — у кого контраст с фоном выше (раньше порог 0,5 по яркости давал на средних
+    // тонах светлый текст с контрастом меньше 3:1).
+    val onBackground = Contrast.pick(Contrast.Light, listOf(background), Contrast.TEXT)
     val glow = if (enabled && cover != null && cover.glow.isNotEmpty()) cover.glow else NeutralGlow
     return PlayerColors(background, accent, onBackground, glow)
 }
 
 private fun adjustBackground(color: Color, dark: Boolean): Color =
-    if (dark) lerpColor(color, Color.Black, 0.35f) else lerpColor(color, Color.White, 0.55f)
+    readable(if (dark) lerpColor(color, Color.Black, 0.35f) else lerpColor(color, Color.White, 0.55f), dark)
+
+/**
+ * Фон, на котором светлый (тёмная тема) или тёмный (светлая) текст даёт не меньше 4,5:1 и с прозрачностью 0,7 —
+ * средние тона палитры дотемняются или осветляются.
+ */
+private fun readable(color: Color, dark: Boolean): Color {
+    val text = if (dark) Contrast.Light else Contrast.Dark
+    val target = if (dark) Color.Black else Color.White
+    var t = 0f
+    var current = color
+    while (t < 1f && Contrast.ratio(text.copy(alpha = READABLE_ALPHA), current) < Contrast.TEXT) {
+        t += READABLE_STEP
+        current = lerpColor(color, target, t)
+    }
+    return current
+}
+
+private const val READABLE_ALPHA = 0.7f
+private const val READABLE_STEP = 0.05f
 
 private fun adjustAccent(color: Color, dark: Boolean): Color =
     if (dark && color.luminance() < 0.25f) lerpColor(color, Color.White, 0.45f) else color

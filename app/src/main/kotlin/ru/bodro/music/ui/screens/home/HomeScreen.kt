@@ -27,7 +27,8 @@ fun HomeScreen(onOpenSearch: () -> Unit = {}, viewModel: HomeViewModel = hiltVie
     val serverModes by viewModel.modes.collectAsStateWithLifecycle()
     val artistCovers by viewModel.artistCovers.collectAsStateWithLifecycle()
     val coverage by viewModel.coverage.collectAsStateWithLifecycle()
-    val modeCards = rememberModeCards(serverModes, artistCovers)
+    val styleCards by viewModel.styleCards.collectAsStateWithLifecycle()
+    val modeCards = rememberModeCards(serverModes, artistCovers, styleCards)
     val findMoreStarted = stringResource(R.string.wave_find_more_started)
     val actions = LocalAppActions.current
     var waveSettings by rememberSaveable { mutableStateOf(false) }

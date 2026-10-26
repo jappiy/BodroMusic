@@ -63,6 +63,22 @@ class ChartsRepository @Inject constructor(
         chartPosition = entry.position,
     )
 
+    /** «Скачать недостающие»: все позиции одной пачкой, каждая привязана к своей позиции чарта. */
+    suspend fun downloadAll(chartId: String, entries: List<ChartEntry>) = downloads.downloadTracks(
+        entries.map { entry -> entry.asTrack() to entry.position },
+        chartId = chartId,
+    )
+
+    private fun ChartEntry.asTrack() = DiscoverTrack(
+        title = title,
+        artist = artist,
+        album = album,
+        durationMs = durationMs,
+        coverUrl = coverUrl,
+        source = "chart",
+        sourceId = "$artist — $title",
+    )
+
     suspend fun saveOrder(order: List<String>, hidden: Set<String>) {
         settings.update { it.copy(chartsOrder = order, chartsHidden = hidden) }
     }

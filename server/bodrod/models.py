@@ -89,6 +89,12 @@ class CreateRequest(ApiModel):
     chart_position: int | None = None
 
 
+class CreateRequestsBatch(ApiModel):
+    """Несколько треков за раз («Скачать недостающие» чарта, «Скачать все» похожих)."""
+
+    items: list[CreateRequest] = Field(max_length=500)
+
+
 class AttemptOut(ApiModel):
     """Попытка источника цепочки: `ok` — скачано, `fail` — не нашёл или не отдал, `skip` — выключен или недоступен."""
 
@@ -140,6 +146,8 @@ class ServiceInfo(ApiModel):
     analysis: bool = False
     """Подбор «Моей волны» на сервере: режимы и темпоритм (bodrod 0.19.0+)."""
     wave: bool = False
+    """Перенос лайков из Яндекс Музыки (bodrod 0.26.0+)."""
+    likes_import: bool = False
 
 
 class CleanupUser(ApiModel):

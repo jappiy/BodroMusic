@@ -1,5 +1,6 @@
 package ru.bodro.music.ui.screens.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -217,7 +220,12 @@ class SourcesViewModel @Inject constructor(
 }
 
 @Composable
-fun SourcesScreen(onBack: () -> Unit, onOpenArtists: () -> Unit, viewModel: SourcesViewModel = hiltViewModel()) {
+fun SourcesScreen(
+    onBack: () -> Unit,
+    onOpenArtists: () -> Unit,
+    onOpenLikesImport: () -> Unit = {},
+    viewModel: SourcesViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
     val context = LocalContext.current
@@ -228,8 +236,17 @@ fun SourcesScreen(onBack: () -> Unit, onOpenArtists: () -> Unit, viewModel: Sour
         val sources = state.sources
         when {
             state.loading -> LoadingState(Modifier.padding(padding))
-            error != null && sources == null -> ErrorState(error, onRetry = viewModel::load, modifier = Modifier.padding(padding))
+            // Цепочка источников — только администраторам; перенос лайков — каждому пользователю для себя.
+            error != null && sources == null -> Column(Modifier.fillMaxSize().padding(padding)) {
+                LikesImportEntry(onOpenLikesImport)
+                HorizontalDivider()
+                ErrorState(error, onRetry = viewModel::load, modifier = Modifier.weight(1f))
+            }
             sources != null -> LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("sources-screen")) {
+                item(key = "likes") {
+                    LikesImportEntry(onOpenLikesImport)
+                    HorizontalDivider()
+                }
                 item(key = "hint") {
                     Text(
                         stringResource(R.string.sources_hint),
@@ -291,6 +308,17 @@ fun SourcesScreen(onBack: () -> Unit, onOpenArtists: () -> Unit, viewModel: Sour
             }
         }
     }
+}
+
+@Composable
+private fun LikesImportEntry(onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.likes_import_entry)) },
+        supportingContent = { Text(stringResource(R.string.likes_import_entry_summary)) },
+        leadingContent = { Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
+        modifier = Modifier.clickable(onClick = onClick).testTag("sources-likes-import"),
+    )
 }
 
 @Composable

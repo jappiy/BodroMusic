@@ -6,13 +6,16 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -49,14 +52,19 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import ru.bodro.music.R
 import ru.bodro.music.core.domain.player.SleepTimerOption
 import ru.bodro.music.core.domain.player.SleepTimerState
+import ru.bodro.music.core.model.Lyrics
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
@@ -192,6 +200,28 @@ fun QueueSheet(
     }
 }
 
+/**
+ * Размер текста песни от ширины окна (как классы ширины WindowSizeClass: compact < 600 dp, medium < 840 dp,
+ * expanded): кегль и интерлиньяж растут вместе с экраном, колонка текста — не шире комфортной длины строки
+ * ([maxWidth]) и стоит по центру листа. Синхронизированный текст на широком экране — по центру строки.
+ */
+internal data class LyricsLayout(
+    val syncedSize: TextUnit,
+    val plainSize: TextUnit,
+    val lineHeight: Float,
+    val maxWidth: Dp,
+    val centered: Boolean,
+    val sidePadding: Dp,
+) {
+    companion object {
+        fun of(width: Dp): LyricsLayout = when {
+            width < 600.dp -> LyricsLayout(24.sp, 17.sp, 1.3f, width, centered = false, sidePadding = 20.dp)
+            width < 840.dp -> LyricsLayout(30.sp, 20.sp, 1.32f, 560.dp, centered = true, sidePadding = 32.dp)
+            else -> LyricsLayout(36.sp, 22.sp, 1.35f, 680.dp, centered = true, sidePadding = 48.dp)
+        }
+    }
+}
+
 /** Текст песни: синхронизированный (LRC/OpenSubsonic) с автопрокруткой, иначе обычный. */
 @Composable
 fun LyricsSheet(viewModel: PlayerViewModel, positionMs: Long, onSeek: (Long) -> Unit, onDismiss: () -> Unit) {
@@ -201,73 +231,103 @@ fun LyricsSheet(viewModel: PlayerViewModel, positionMs: Long, onSeek: (Long) -> 
         viewModel.onLyricsVisible(true)
         onDispose { viewModel.onLyricsVisible(false) }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.testTag("lyrics-sheet")) {
-        Text(
-            stringResource(R.string.player_lyrics),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-        )
-        when (val s = lyricsState) {
-            LyricsState.Loading -> Text(stringResource(R.string.loading), Modifier.padding(20.dp))
-            LyricsState.Missing -> Text(
-                stringResource(R.string.lyrics_missing),
-                Modifier.padding(20.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            is LyricsState.Loaded -> {
-                val lyrics = s.lyrics
-                val listState = rememberLazyListState()
-                val active = lyrics.activeLineIndex(positionMs)
-                // Пользователь листает сам — автопрокрутка замирает и через LYRICS_IDLE_MS после последнего
-                // касания плавно возвращается к текущей строке.
-                val dragging by listState.interactionSource.collectIsDraggedAsState()
-                var touchedAt by remember { mutableLongStateOf(0L) }
-                LaunchedEffect(dragging) {
-                    if (dragging) {
-                        touchedAt = Long.MAX_VALUE
-                    } else if (touchedAt !=
-                        0L
-                    ) {
-                        touchedAt = System.currentTimeMillis()
-                    }
+    // Лист — во всю ширину окна (по умолчанию M3 ограничивает его 640 dp), колонку текста ограничивает LyricsLayout.
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetMaxWidth = Dp.Unspecified,
+        modifier = Modifier.testTag("lyrics-sheet"),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val layout = LyricsLayout.of(maxWidth)
+            Column(
+                Modifier.align(Alignment.TopCenter).widthIn(max = layout.maxWidth + layout.sidePadding * 2).fillMaxWidth(),
+            ) {
+                Text(
+                    stringResource(R.string.player_lyrics),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = layout.sidePadding, vertical = 8.dp),
+                )
+                when (val s = lyricsState) {
+                    LyricsState.Loading -> Text(stringResource(R.string.loading), Modifier.padding(layout.sidePadding))
+                    LyricsState.Missing -> Text(
+                        stringResource(R.string.lyrics_missing),
+                        Modifier.padding(layout.sidePadding),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    is LyricsState.Loaded -> LyricsLines(s.lyrics, positionMs, layout, onSeek)
                 }
-                LaunchedEffect(active, touchedAt) {
-                    if (active < 0 || touchedAt == Long.MAX_VALUE) return@LaunchedEffect
-                    val wait = touchedAt + LYRICS_IDLE_MS - System.currentTimeMillis()
-                    if (wait > 0) delay(wait)
-                    listState.animateScrollToItem((active - 2).coerceAtLeast(0))
-                }
-                LazyColumn(state = listState, modifier = Modifier.fillMaxHeight(0.85f), contentPadding = PaddingValues(20.dp)) {
-                    itemsIndexed(lyrics.lines) { index, line ->
-                        val isActive = index == active
-                        Text(
-                            line.text.ifBlank { "♪" },
-                            style = if (lyrics.synced) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
-                            color = when {
-                                !lyrics.synced -> MaterialTheme.colorScheme.onSurface
-                                isActive -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsLines(lyrics: Lyrics, positionMs: Long, layout: LyricsLayout, onSeek: (Long) -> Unit) {
+    val listState = rememberLazyListState()
+    val active = lyrics.activeLineIndex(positionMs)
+    // Пользователь листает сам — автопрокрутка замирает и через LYRICS_IDLE_MS после последнего
+    // касания плавно возвращается к текущей строке.
+    val dragging by listState.interactionSource.collectIsDraggedAsState()
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(dragging) {
+        if (dragging) {
+            touchedAt = Long.MAX_VALUE
+        } else if (touchedAt != 0L) {
+            touchedAt = System.currentTimeMillis()
+        }
+    }
+    LaunchedEffect(active, touchedAt) {
+        if (active < 0 || touchedAt == Long.MAX_VALUE) return@LaunchedEffect
+        val wait = touchedAt + LYRICS_IDLE_MS - System.currentTimeMillis()
+        if (wait > 0) delay(wait)
+        // Текущая строка — около вертикального центра видимой области (а не у верхнего края).
+        val info = listState.layoutInfo
+        val viewport = info.viewportEndOffset - info.viewportStartOffset
+        val itemSize = info.visibleItemsInfo.firstOrNull { it.index == active }?.size
+            ?: info.visibleItemsInfo.map { it.size }.average().takeIf { !it.isNaN() }?.roundToInt()
+            ?: 0
+        listState.animateScrollToItem(active, -(viewport / 2 - itemSize / 2).coerceAtLeast(0))
+    }
+    val style = if (lyrics.synced) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.bodyLarge
+    val size = if (lyrics.synced) layout.syncedSize else layout.plainSize
+    val textStyle = style.copy(fontSize = size, lineHeight = size * layout.lineHeight)
+    val align = if (lyrics.synced && layout.centered) TextAlign.Center else TextAlign.Start
+    BoxWithConstraints(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+        // Поля сверху и снизу по половине высоты: первую и последнюю строку тоже можно поставить в центр.
+        val edge = if (lyrics.synced) maxHeight / 2 else 20.dp
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag("lyrics-lines"),
+            contentPadding = PaddingValues(horizontal = layout.sidePadding, vertical = edge),
+        ) {
+            itemsIndexed(lyrics.lines) { index, line ->
+                val isActive = index == active
+                Text(
+                    line.text.ifBlank { "♪" },
+                    style = textStyle,
+                    textAlign = align,
+                    fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
+                    color = when {
+                        !lyrics.synced -> MaterialTheme.colorScheme.onSurface
+                        isActive -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = if (lyrics.synced) 6.dp else 2.dp)
+                        .then(
+                            if (lyrics.synced && line.startMs != null) {
+                                // Перемотка к строке; пауза остаётся паузой (seekTo не трогает playWhenReady).
+                                Modifier.clickable {
+                                    touchedAt = 0L
+                                    onSeek(line.startMs!!)
+                                }
+                            } else {
+                                Modifier
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = if (lyrics.synced) 6.dp else 2.dp)
-                                .then(
-                                    if (lyrics.synced &&
-                                        line.startMs != null
-                                    ) {
-                                        // Перемотка к строке; пауза остаётся паузой (seekTo не трогает playWhenReady).
-                                        Modifier.clickable {
-                                            touchedAt = 0L
-                                            onSeek(line.startMs!!)
-                                        }
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        )
-                    }
-                }
+                        ),
+                )
             }
         }
     }

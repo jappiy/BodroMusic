@@ -35,6 +35,7 @@ import ru.bodro.music.ui.screens.settings.AppearanceScreen
 import ru.bodro.music.ui.screens.settings.BlocklistScreen
 import ru.bodro.music.ui.screens.settings.CleanupScreen
 import ru.bodro.music.ui.screens.settings.ExportArtistsScreen
+import ru.bodro.music.ui.screens.settings.LikesImportScreen
 import ru.bodro.music.ui.screens.settings.LogDetailScreen
 import ru.bodro.music.ui.screens.settings.LogsScreen
 import ru.bodro.music.ui.screens.settings.MaintenanceScreen
@@ -147,7 +148,14 @@ fun BodroNavHost(navController: NavHostController, modifier: Modifier = Modifier
         composable<MaintenanceRoute> { MaintenanceScreen(onBack = back) }
         composable<PlaylistAuditRoute> { PlaylistAuditScreen(onBack = back) }
         composable<SourcesRoute> {
-            SourcesScreen(onBack = back, onOpenArtists = { navController.navigate(ExportArtistsRoute) })
+            SourcesScreen(
+                onBack = back,
+                onOpenArtists = { navController.navigate(ExportArtistsRoute) },
+                onOpenLikesImport = { navController.navigate(LikesImportRoute) },
+            )
+        }
+        composable<LikesImportRoute> {
+            LikesImportScreen(onBack = back)
         }
         composable<ExportArtistsRoute> { ExportArtistsScreen(onBack = back) }
         composable<PoolRoute> { PoolScreen(onBack = back) }

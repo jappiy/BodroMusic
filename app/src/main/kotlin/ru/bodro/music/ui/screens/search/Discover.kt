@@ -413,7 +413,14 @@ private fun ArtistBubble(artist: DiscoverArtist, onClick: () -> Unit) {
 }
 
 @Composable
-fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, canDownload: Boolean, callbacks: DiscoverCallbacks) {
+fun DiscoverTrackRow(
+    track: DiscoverTrack,
+    request: DownloadRequest?,
+    canDownload: Boolean,
+    callbacks: DiscoverCallbacks,
+    /** Подпись «· В библиотеке» у трека из библиотеки; в разделённых списках плеера она не нужна. */
+    showLibraryMark: Boolean = true,
+) {
     val librarySongId = track.librarySongId ?: request?.songId?.takeIf { request.status == RequestStatus.Completed }
     val activeOrDone = request != null && (request.status.isActive || request.status == RequestStatus.Completed)
     val onClick: (() -> Unit)? = when {
@@ -451,6 +458,7 @@ fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, canDownloa
         Column(Modifier.weight(1f)) {
             Text(track.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val details = when {
+                librarySongId != null && !showLibraryMark -> track.artist
                 track.librarySongId != null -> stringResource(R.string.similar_artist_in_library, track.artist)
                 request != null && request.status != RequestStatus.Cancelled -> statusText(request)
                 else -> listOfNotNull(
@@ -507,6 +515,10 @@ fun RequestProgress(request: DownloadRequest, size: Dp = 24.dp) {
         CircularProgressIndicator(modifier = Modifier.size(size), strokeWidth = 3.dp)
     }
 }
+
+/** Заявка упала, потому что трек не нашёлся ни в одном источнике (а не из-за ошибки). */
+val DownloadRequest.isNotFound: Boolean
+    get() = status == RequestStatus.Failed && message.orEmpty().startsWith("Не нашли")
 
 @Composable
 fun statusText(request: DownloadRequest): String {

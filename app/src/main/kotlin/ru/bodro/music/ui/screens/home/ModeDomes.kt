@@ -91,6 +91,8 @@ data class ModeCard(
     val category: String? = null,
     val avatar: String? = null,
     val count: Int? = null,
+    /** Фото исполнителя не из Navidrome (Deezer / Last.fm) — если у Navidrome своего нет. */
+    val avatarUrl: String? = null,
 ) {
     /** Миксы и пресеты с телефона — по [WavePreset]; режимы сервера — `preset` = id режима. */
     val settings: WaveSettings get() = WavePreset.of(id)?.settings() ?: WaveSettings(preset = id)
@@ -147,7 +149,11 @@ private fun mixCards(): List<ModeCard> = listOf(
  * сам. Миксы — в конце. [artistCovers] — обложки исполнителей библиотеки по имени (в нижнем регистре).
  */
 @Composable
-fun rememberModeCards(server: List<WaveModeInfo>?, artistCovers: Map<String, String> = emptyMap()): List<ModeCard> {
+fun rememberModeCards(
+    server: List<WaveModeInfo>?,
+    artistCovers: Map<String, String> = emptyMap(),
+    style: List<StyleCard> = emptyList(),
+): List<ModeCard> {
     val mixes = mixCards()
     val styleOf = stringResource(R.string.wave_mode_style_of)
     val newRelease = stringResource(R.string.wave_mode_new_release)
@@ -160,7 +166,7 @@ fun rememberModeCards(server: List<WaveModeInfo>?, artistCovers: Map<String, Str
         WavePreset.Favorites to R.string.wave_mode_favorites,
         WavePreset.Popular to R.string.wave_mode_popular,
     ).map { (preset, title) -> visualOf(preset.id).let { (color, icon) -> ModeCard(preset.id, stringResource(title), color, icon) } }
-    return remember(server, mixes, local, artistCovers) {
+    return remember(server, mixes, local, artistCovers, style) {
         val fromServer = server?.map { mode ->
             val (color, icon) = visualOf(mode.id)
             val artist = artistOf(mode.id, mode.title)
@@ -179,8 +185,26 @@ fun rememberModeCards(server: List<WaveModeInfo>?, artistCovers: Map<String, Str
                 else -> ModeCard(mode.id, mode.title, color, icon, count = mode.count)
             }
         }
-        (fromServer ?: local) + mixes
+        (fromServer?.let { withStyleCards(it, style, styleOf) } ?: local) + mixes
     }
+}
+
+/**
+ * Карточки «В стиле X» телефона (артист текущего трека и топ за 2 недели) вместо статичных серверных — на их месте
+ * в карусели. Сервер их режим понимает по имени (`artist:<имя>`). Нет своих — остаются серверные.
+ */
+private fun withStyleCards(cards: List<ModeCard>, style: List<StyleCard>, styleOf: String): List<ModeCard> {
+    if (style.isEmpty()) return cards
+    val at = cards.indexOfFirst { it.id.startsWith("artist:") }.takeIf { it >= 0 }
+        ?: cards.indexOfFirst { it.id.startsWith("release:") }.takeIf { it >= 0 }
+        ?: cards.size
+    val own = style.map { s ->
+        val id = "artist:${s.artist}"
+        val (color, icon) = visualOf(id)
+        ModeCard(id, s.artist, color, icon, category = styleOf, avatar = s.photo.coverArt, avatarUrl = s.photo.url)
+    }
+    val rest = cards.filterNot { it.id.startsWith("artist:") }
+    return rest.take(at.coerceAtMost(rest.size)) + own + rest.drop(at.coerceAtMost(rest.size))
 }
 
 /**
@@ -338,8 +362,17 @@ private fun DomeIcon(card: ModeCard, modifier: Modifier) {
             modifier.size(ICON_SIZE).clip(CircleShape).background(lerp(card.color, Color.Black, 0.35f)),
             contentAlignment = Alignment.Center,
         ) {
-            if (card.avatar != null) {
-                CoverImage(card.avatar, Modifier.size(ICON_SIZE), sizeHint = 112.dp, shape = CircleShape, kind = CoverKind.Artist)
+            if (card.avatar != null || card.avatarUrl != null) {
+                // Внешнее фото важнее: обложка Navidrome без фото — заглушка, а не ошибка, на неё цепочка не перейдёт.
+                val ids = if (card.avatarUrl != null) emptyList() else listOfNotNull(card.avatar)
+                CoverImage(
+                    ids,
+                    Modifier.size(ICON_SIZE),
+                    sizeHint = 112.dp,
+                    shape = CircleShape,
+                    kind = CoverKind.Artist,
+                    remoteUrl = card.avatarUrl,
+                )
             } else {
                 Text(
                     artist.take(1).uppercase(),

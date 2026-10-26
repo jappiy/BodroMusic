@@ -150,7 +150,50 @@ data class ServiceInfo(
     val analysis: Boolean = false,
     /** Подбор «Моей волны» на сервере: режимы по звучанию и темпоритм (bodrod 0.19.0+). */
     val wave: Boolean = false,
+    /** Перенос лайков из Яндекс Музыки (bodrod 0.26.0+). */
+    val likesImport: Boolean = false,
 )
+
+/** Трек из Яндекса в отчёте переноса лайков. [download] — none / queued / downloading / done / notFound / failed. */
+@Serializable
+data class LikedTrack(
+    val id: String,
+    val artist: String,
+    val title: String,
+    val album: String? = null,
+    val durationMs: Long? = null,
+    val coverUrl: String? = null,
+    val songId: String? = null,
+    val requestId: String? = null,
+    val download: String = "none",
+)
+
+@Serializable
+data class LikesImportReport(
+    val total: Int = 0,
+    val already: Int = 0,
+    val starred: Int = 0,
+    val conflicts: Int = 0,
+    val notFound: Int = 0,
+)
+
+/** Перенос лайков: [state] — idle / running / finished / failed; [done] из [total] — прогресс текущего шага. */
+@Serializable
+data class LikesImportStatus(
+    val state: String = "idle",
+    val message: String? = null,
+    val done: Int = 0,
+    val total: Int = 0,
+    val lastRunAt: Long? = null,
+    val report: LikesImportReport? = null,
+    val conflicts: List<LikedTrack> = emptyList(),
+    val notFound: List<LikedTrack> = emptyList(),
+) {
+    val running: Boolean get() = state == "running"
+}
+
+@Serializable
+data class ImageUrl(val url: String? = null)
 
 /** Источник загрузки. [state]: `ok` — работает, `disabled` — выключен, `unavailable` — не может работать ([reason]). */
 @Serializable
@@ -670,6 +713,12 @@ internal data class ExportSelectBody(val selected: List<String>)
 
 @Serializable
 internal data class IdsBody(val ids: List<String>)
+
+@Serializable
+internal data class CreateRequestsBody(val items: List<CreateRequestBody>)
+
+@Serializable
+internal data class LikesDownloadBody(val ids: List<String>? = null)
 
 @Serializable
 internal data class CreateRequestBody(

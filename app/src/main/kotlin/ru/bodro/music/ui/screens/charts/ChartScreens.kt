@@ -27,21 +27,29 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,6 +88,7 @@ import ru.bodro.music.ui.image.librarySongCover
 import ru.bodro.music.ui.screens.search.RemoteImage
 import ru.bodro.music.ui.util.UiError
 import ru.bodro.music.ui.util.formatTime
+import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
 /** Карточка чарта на главной: коллаж из четырёх обложек, название и дата обновления. */
@@ -120,7 +129,13 @@ data class ChartUi(
 ) {
     /** Доступные треки по порядку чарта. */
     val playable: List<Song> get() = entries.mapNotNull { e -> e.songId?.let { songs[it] } }
+
+    /** Чего нет в библиотеке и что не качается сейчас (упавшие ранее — тоже): «Скачать недостающие». */
+    val missing: List<ChartEntry> get() = entries.filter { it.isMissing }
 }
+
+/** Трека нет и он не в очереди / не качается / не ждёт скана; упавшая заявка — снова «недостающий». */
+val ChartEntry.isMissing: Boolean get() = state == "unavailable" && !isReady
 
 @HiltViewModel
 class ChartViewModel @Inject constructor(savedState: SavedStateHandle, private val charts: ChartsRepository) : ViewModel() {
@@ -197,6 +212,34 @@ class ChartViewModel @Inject constructor(savedState: SavedStateHandle, private v
         }
     }
 
+    /** Все недостающие — одной пачкой в очередь bodrod; активные заявки сервер не дублирует, упавшие ставит заново. */
+    fun downloadMissing(onDone: (Int) -> Unit, onError: (Throwable) -> Unit) {
+        val missing = _state.value.missing
+        if (missing.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { charts.downloadAll(route.id, missing) }
+                .onSuccess { created ->
+                    val positions = missing.map { it.position }.toSet()
+                    val byKey = created.associateBy { it.key }
+                    _state.update { s ->
+                        s.copy(
+                            entries = s.entries.map { e ->
+                                val request = byKey[ru.bodro.music.core.downloads.requestKey(e.artist, e.title)]
+                                if (e.position in positions && request != null) {
+                                    e.copy(state = "queued", requestId = request.id, requestStatus = "queued")
+                                } else {
+                                    e
+                                }
+                            },
+                        )
+                    }
+                    schedulePoll(_state.value.entries)
+                    onDone(created.size)
+                }
+                .onFailure(onError)
+        }
+    }
+
     private companion object {
         const val POLL_MS = 10_000L
     }
@@ -207,7 +250,27 @@ class ChartViewModel @Inject constructor(savedState: SavedStateHandle, private v
 fun ChartScreen(onBack: () -> Unit, viewModel: ChartViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val actions = LocalAppActions.current
+    val context = LocalContext.current
     val source = QueueSource.CustomSource(viewModel.title)
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    if (confirm) {
+        val count = state.missing.size
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(stringResource(R.string.chart_download_missing_title)) },
+            text = { Text(pluralStringResource(R.plurals.chart_download_missing_text, count, count)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = false
+                    viewModel.downloadMissing(
+                        onDone = { actions.showMessage(context.getString(R.string.player_download_all_queued, it)) },
+                        onError = { actions.showMessage(it.toUiError().text(context)) },
+                    )
+                }, modifier = Modifier.testTag("chart-download-confirm")) { Text(stringResource(R.string.download_action)) }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
     LifecycleResumeEffect(viewModel) {
         viewModel.onResume()
         onPauseOrDispose { viewModel.onPause() }
@@ -240,6 +303,19 @@ fun ChartScreen(onBack: () -> Unit, viewModel: ChartViewModel = hiltViewModel())
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+                val missing = state.missing.size
+                if (missing > 0) {
+                    item(key = "download-missing") {
+                        OutlinedButton(
+                            onClick = { confirm = true },
+                            modifier = Modifier.padding(horizontal = 16.dp).testTag("chart-download-missing"),
+                        ) {
+                            Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.chart_download_missing, missing))
+                        }
                     }
                 }
                 itemsIndexed(state.entries, key = { _, e -> e.position }) { _, entry ->

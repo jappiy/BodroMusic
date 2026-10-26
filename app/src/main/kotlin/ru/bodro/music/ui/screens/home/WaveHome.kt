@@ -87,6 +87,7 @@ import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.screens.player.sourceTitle
 import ru.bodro.music.ui.screens.wave.NebulaBackground
 import ru.bodro.music.ui.theme.BodroYellow
+import ru.bodro.music.ui.theme.Contrast
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.theme.NeutralGlow
 import ru.bodro.music.ui.theme.WaveTitleStyle
@@ -384,7 +385,9 @@ private fun NowPlayingBlock(
 private fun ControlRow(player: PlayerUiState, song: Song, onTogglePlay: () -> Unit, onOpenPlayer: () -> Unit) {
     val actions = LocalAppActions.current
     val reaction = LocalReactions.current.of(song)
-    val accent = LocalPlayerColors.current?.accent ?: BodroYellow
+    // Акцент обложки на чёрном фоне главной: тёмный акцент (< 3:1) заменяется фирменным жёлтым.
+    val accent = (LocalPlayerColors.current?.accent ?: BodroYellow)
+        .let { if (Contrast.worst(it, HomeSurfaces) >= Contrast.ICON) it else BodroYellow }
     val progress by animateFloatAsState(
         if (player.durationMs > 0) (player.positionMs.toFloat() / player.durationMs).coerceIn(0f, 1f) else 0f,
         tween(PROGRESS_MS, easing = LinearEasing),
@@ -555,3 +558,6 @@ private val PILL_MAX_WIDTH = 640.dp
 private const val SWIPE_MS = 260
 private const val SWIPE_THRESHOLD = 56
 private const val PROGRESS_MS = 250
+
+/** Фон главной под элементами: чёрный и самые светлые места туманности за ними. */
+private val HomeSurfaces = listOf(Color.Black, Color(0xFF2E2A3A))

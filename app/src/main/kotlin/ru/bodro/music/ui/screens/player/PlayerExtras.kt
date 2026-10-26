@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -91,6 +92,8 @@ import ru.bodro.music.ui.components.rememberSystemAnimations
 import ru.bodro.music.ui.components.shimmerAlpha
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.screens.search.DiscoverTrackRow
+import ru.bodro.music.ui.screens.search.RemoteImage
+import ru.bodro.music.ui.screens.search.isNotFound
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
 
@@ -153,7 +156,8 @@ class PlayerExtrasViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val canDownload: StateFlow<Boolean> = downloads.serviceUrl
-        .transformLatest { url -> emit(url != null && runCatching { downloads.info().trackDownloads }.getOrDefault(false)) }
+        // Сбой сети при проверке не прячет «Скачать»: сервер сам ответит, если источников нет.
+        .transformLatest { url -> emit(url != null && runCatching { downloads.info().trackDownloads }.getOrDefault(true)) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
@@ -182,8 +186,9 @@ class PlayerExtrasViewModel @Inject constructor(
         }
         if (missing.isEmpty()) return
         viewModelScope.launch {
-            val queued = missing.count { runCatching { downloads.downloadTrack(it) }.isSuccess }
-            _messages.send(context.getString(R.string.player_download_all_queued, queued))
+            runCatching { downloads.downloadTracks(missing.map { it to null }) }
+                .onSuccess { _messages.send(context.getString(R.string.player_download_all_queued, it.size)) }
+                .onFailure { _messages.send(it.toUiError().text(context)) }
         }
     }
 
@@ -235,7 +240,7 @@ fun LazyListScope.playerExtras(
             Text(
                 stringResource(R.string.player_extras_none),
                 style = MaterialTheme.typography.bodyMedium,
-                color = palette.content.copy(alpha = 0.6f),
+                color = palette.secondary,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).testTag("player-extras-none"),
             )
         }
@@ -256,13 +261,13 @@ fun LazyListScope.playerExtras(
             Text(
                 blurbs.value.first(),
                 style = MaterialTheme.typography.bodyLarge,
-                color = palette.content.copy(alpha = 0.85f),
+                color = palette.content,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp).testTag("player-about"),
             )
         }
         else -> Unit
     }
-    trackSection("similar", R.string.player_similar, TrackInfoPart.Similar, extras.similar, requests, canDownload, palette, actions)
+    similarSections(extras.similar, requests, canDownload, palette, actions)
     trackSection("popular", R.string.player_popular, TrackInfoPart.Popular, extras.popular, requests, canDownload, palette, actions)
     item(key = "playlists-header") { SectionTitle(stringResource(R.string.menu_add_to_playlist), palette) }
     items(extras.playlists.take(PLAYLISTS_SHOWN), key = { "pl-${it.id}" }) { playlist ->
@@ -279,13 +284,13 @@ fun LazyListScope.playerExtras(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
-            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.player_add_here), tint = palette.accent)
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.player_add_here), tint = palette.accentIcon)
         }
     }
     item(key = "playlists-all") {
         TextButton(onClick = actions.onAllPlaylists, modifier = Modifier.padding(horizontal = 12.dp)) {
-            Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = null, tint = palette.accent)
-            Text(stringResource(R.string.player_all_playlists), color = palette.accent, modifier = Modifier.padding(start = 8.dp))
+            Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = null, tint = palette.accentIcon)
+            Text(stringResource(R.string.player_all_playlists), color = palette.accentText, modifier = Modifier.padding(start = 8.dp))
         }
     }
     item(key = "bottom") { BottomSettings(sleepActive, quality, palette, actions) }
@@ -327,14 +332,14 @@ private fun ArtistCard(artist: Artist, liked: Boolean, palette: PlayerPalette, a
             Text(
                 stringResource(R.string.player_artist_card_hint),
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.content.copy(alpha = 0.7f),
+                color = palette.secondary,
             )
         }
         IconButton(onClick = { actions.onToggleArtistLike(artist, liked) }, modifier = Modifier.testTag("player-artist-like")) {
             Icon(
                 if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 contentDescription = stringResource(if (liked) R.string.action_unlike else R.string.player_artist_favorite),
-                tint = if (liked) palette.accent else palette.content,
+                tint = if (liked) palette.accentIcon else palette.content,
             )
         }
     }
@@ -373,10 +378,10 @@ private fun LazyListScope.trackSection(
         SectionTitle(stringResource(title), palette) {
             if (canDownload && missing > 0) {
                 TextButton(onClick = { actions.onDownloadAll(tracks) }, modifier = Modifier.testTag("player-$key-download-all")) {
-                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = palette.accent, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = palette.accentIcon, modifier = Modifier.size(18.dp))
                     Text(
                         stringResource(R.string.player_download_all, missing),
-                        color = palette.accent,
+                        color = palette.accentText,
                         modifier = Modifier.padding(start = 6.dp),
                     )
                 }
@@ -395,7 +400,7 @@ private fun LazyListScope.trackSection(
                     Icon(
                         Icons.Rounded.MoreVert,
                         contentDescription = stringResource(R.string.action_more),
-                        tint = palette.content.copy(alpha = 0.7f),
+                        tint = palette.secondary,
                     )
                 }
             } else {
@@ -403,6 +408,138 @@ private fun LazyListScope.trackSection(
             }
         }
     }
+}
+
+/** Трек похожих уже можно слушать: есть в библиотеке или докачался (заявка завершена и знает песню). */
+private fun DiscoverTrack.playableId(requests: Map<String, DownloadRequest>): String? =
+    librarySongId ?: requests[key]?.takeIf { it.status == RequestStatus.Completed }?.songId
+
+/**
+ * «Похожие треки» двумя секциями: «в библиотеке» (играют сразу, подпись — только исполнитель) и «нет в библиотеке»
+ * (обложка из Deezer / Last.fm от bodrod, «Скачать» и статус заявки, «Скачать все» в шапке). Докачанный трек
+ * переезжает в первую секцию, как только заявка завершилась, — заявки опрашиваются, пока открыт плеер.
+ * Пустая секция не показывается.
+ */
+private fun LazyListScope.similarSections(
+    section: Section<List<DiscoverTrack>>,
+    requests: Map<String, DownloadRequest>,
+    canDownload: Boolean,
+    palette: PlayerPalette,
+    actions: PlayerExtrasActions,
+) {
+    if (section !is Section.Ready) {
+        trackSection("similar", R.string.player_similar, TrackInfoPart.Similar, section, requests, canDownload, palette, actions)
+        return
+    }
+    val (inLibrary, missing) = section.value.partition { it.playableId(requests) != null }
+    if (inLibrary.isNotEmpty()) {
+        item(key = "similar-lib-header") { SectionTitle(stringResource(R.string.player_similar_library), palette) }
+        items(inLibrary, key = { "similar-lib-${it.key}" }) { track ->
+            Row(Modifier.padding(start = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    OnPlayerColors(palette) {
+                        DiscoverTrackRow(track, requests[track.key], canDownload, actions.callbacks, showLibraryMark = false)
+                    }
+                }
+                IconButton(onClick = { actions.onTrackMenu(track) }) {
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        contentDescription = stringResource(R.string.action_more),
+                        tint = palette.secondary,
+                    )
+                }
+            }
+        }
+    }
+    if (missing.isNotEmpty()) {
+        item(key = "similar-missing-header") {
+            val downloadable = missing.count { requests[it.key]?.status?.isActive != true }
+            SectionTitle(stringResource(R.string.player_similar_missing), palette) {
+                if (canDownload && downloadable > 0) {
+                    TextButton(onClick = { actions.onDownloadAll(missing) }, modifier = Modifier.testTag("player-similar-download-all")) {
+                        Icon(
+                            Icons.Rounded.CloudDownload,
+                            contentDescription = null,
+                            tint = palette.accentIcon,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            stringResource(R.string.player_download_all, downloadable),
+                            color = palette.accentText,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
+                }
+            }
+        }
+        items(missing, key = { "similar-missing-${it.key}" }) { track ->
+            MissingTrackRow(track, requests[track.key], canDownload, palette) { actions.callbacks.onDownload(track) }
+        }
+    }
+}
+
+/** Похожий трек не из библиотеки: обложка из каталога, «Скачать» или статус заявки (с «Повторить» при неудаче). */
+@Composable
+private fun MissingTrackRow(
+    track: DiscoverTrack,
+    request: DownloadRequest?,
+    canDownload: Boolean,
+    palette: PlayerPalette,
+    onDownload: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+            .testTag("similar-missing-${track.sourceId}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OnPlayerColors(palette) {
+            RemoteImage(track.coverUrl, Modifier.size(48.dp), RoundedCornerShape(10.dp), Icons.Rounded.MusicNote)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(
+                track.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = palette.content,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        val secondary = palette.secondary
+        val status = request?.status
+        when {
+            status == RequestStatus.Queued -> StatusLabel(R.string.download_state_queued, secondary)
+            status?.isActive == true -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = palette.accentText, strokeWidth = 2.dp)
+                StatusLabel(R.string.download_state_downloading, secondary, Modifier.padding(start = 6.dp))
+            }
+            // Заявка завершилась, но Navidrome ещё не знает песню — ждём скана.
+            status == RequestStatus.Completed -> StatusLabel(R.string.download_state_done, secondary)
+            status == RequestStatus.Failed && canDownload -> Column(horizontalAlignment = Alignment.End) {
+                StatusLabel(if (request.isNotFound) R.string.download_state_not_found else R.string.download_state_failed, secondary)
+                TextButton(onClick = onDownload, modifier = Modifier.testTag("similar-retry-${track.sourceId}")) {
+                    Text(stringResource(R.string.download_retry), color = palette.accentText)
+                }
+            }
+            canDownload -> TextButton(onClick = onDownload, modifier = Modifier.testTag("similar-download-${track.sourceId}")) {
+                Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = palette.accentIcon, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.download_action), color = palette.accentText, modifier = Modifier.padding(start = 6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusLabel(text: Int, color: Color, modifier: Modifier = Modifier) {
+    Text(stringResource(text), style = MaterialTheme.typography.labelMedium, color = color, modifier = modifier)
 }
 
 /** «Загружаем информацию об исполнителе…» с индикатором — пока грузится хоть один блок. */
@@ -413,14 +550,14 @@ private fun LoadingStatus(palette: PlayerPalette) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (rememberSystemAnimations()) {
-            CircularProgressIndicator(Modifier.size(16.dp), color = palette.accent, strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(16.dp), color = palette.accentText, strokeWidth = 2.dp)
         } else {
-            Icon(Icons.Rounded.HourglassTop, contentDescription = null, tint = palette.accent, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.HourglassTop, contentDescription = null, tint = palette.accentIcon, modifier = Modifier.size(16.dp))
         }
         Text(
             stringResource(R.string.player_extras_loading),
             style = MaterialTheme.typography.bodyMedium,
-            color = palette.content.copy(alpha = 0.7f),
+            color = palette.secondary,
             modifier = Modifier.weight(1f).padding(start = 10.dp),
         )
     }
@@ -436,11 +573,11 @@ private fun SectionError(message: Int, palette: PlayerPalette, onRetry: () -> Un
         Text(
             stringResource(message),
             style = MaterialTheme.typography.bodyMedium,
-            color = palette.content.copy(alpha = 0.7f),
+            color = palette.secondary,
             modifier = Modifier.weight(1f),
         )
         TextButton(onClick = onRetry, modifier = Modifier.testTag("player-extras-retry")) {
-            Text(stringResource(R.string.action_retry), color = palette.accent)
+            Text(stringResource(R.string.action_retry), color = palette.accentText)
         }
     }
 }
@@ -455,7 +592,7 @@ private fun BottomSettings(sleepActive: Boolean, quality: StreamQuality, palette
             ).clickable(onClick = actions.onSleepTimer).padding(vertical = 12.dp).testTag("player-sleep-row"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = if (sleepActive) palette.accent else palette.content)
+            Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = if (sleepActive) palette.accentIcon else palette.content)
             Text(
                 stringResource(if (sleepActive) R.string.player_sleep_timer_on else R.string.player_sleep_timer),
                 color = palette.content,
@@ -486,7 +623,7 @@ private fun BottomSettings(sleepActive: Boolean, quality: StreamQuality, palette
                     colors = FilterChipDefaults.filterChipColors(
                         labelColor = palette.content,
                         selectedContainerColor = palette.accent,
-                        selectedLabelColor = palette.background,
+                        selectedLabelColor = palette.onAccent,
                         containerColor = Color.Transparent,
                     ),
                 )
@@ -502,8 +639,8 @@ private fun OnPlayerColors(palette: PlayerPalette, content: @Composable () -> Un
     MaterialTheme(
         colorScheme = scheme.copy(
             onSurface = palette.content,
-            onSurfaceVariant = palette.content.copy(alpha = 0.7f),
-            primary = palette.accent,
+            onSurfaceVariant = palette.secondary,
+            primary = palette.accentText,
             onBackground = palette.content,
         ),
     ) {

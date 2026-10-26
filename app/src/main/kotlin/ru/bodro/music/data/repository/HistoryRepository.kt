@@ -11,6 +11,7 @@ import ru.bodro.music.core.domain.scrobble.PlayContext
 import ru.bodro.music.core.domain.scrobble.PlayOutcome
 import ru.bodro.music.core.domain.scrobble.PlaySession
 import ru.bodro.music.core.domain.wave.PlayHistoryItem
+import ru.bodro.music.core.domain.wave.StyleArtists
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
@@ -70,6 +71,28 @@ class HistoryRepository @Inject constructor(
         return dao.since(accountId, sinceMs).filter { !it.skippedEarly }.mapNotNull { AppJson.decodeSong(it.songJson) }
     }
 
+    /** Прослушивания артистов с весом для карточек «В стиле»: полное — 1, частичное — ½, ранний пропуск — 0. */
+    suspend fun artistPlays(sinceMs: Long): List<StyleArtists.Play> {
+        val accountId = connection.activeAccountId ?: return emptyList()
+        return dao.since(accountId, sinceMs).mapNotNull { row ->
+            val artist = AppJson.decodeSong(row.songJson)?.artist?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val weight = when {
+                row.skippedEarly || row.outcome == PlayOutcome.EarlySkip.name -> 0.0
+                row.outcome == PlayOutcome.Partial.name -> PARTIAL_WEIGHT
+                else -> 1.0
+            }
+            StyleArtists.Play(artist, weight)
+        }
+    }
+
+    /** Последний прослушанный трек (без ранних пропусков). */
+    suspend fun lastSong(): Song? {
+        val accountId = connection.activeAccountId ?: return null
+        return dao.since(accountId, clock.now() - StyleArtists.WINDOW_MS * 2)
+            .firstOrNull { !it.skippedEarly }
+            ?.let { AppJson.decodeSong(it.songJson) }
+    }
+
     /** Недавно прослушанные треки (без повторов). */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeRecentSongs(limit: Int = 30): Flow<List<Song>> = connection.session.flatMapLatest { session ->
@@ -86,6 +109,7 @@ class HistoryRepository @Inject constructor(
 
     private companion object {
         const val MIN_LISTEN_MS = 3_000L
+        const val PARTIAL_WEIGHT = 0.5
         const val RETENTION_MS = 365L * 24 * 60 * 60 * 1000
     }
 }

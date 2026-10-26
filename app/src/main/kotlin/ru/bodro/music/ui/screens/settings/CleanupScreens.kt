@@ -238,7 +238,8 @@ fun CleanupScreen(onBack: () -> Unit, viewModel: CleanupViewModel = hiltViewMode
                     }
                 }
             }
-            if (state.canDelete && state.songs.isNotEmpty()) {
+            // Массовое удаление — только для «Не нравится всем»: в личных списках треки удаляются по одному.
+            if (state.canDelete && state.group == CleanupGroup.Everyone && state.songs.isNotEmpty()) {
                 Button(
                     onClick = { pending = PendingDelete.All(state.songs) },
                     enabled = !state.busy,

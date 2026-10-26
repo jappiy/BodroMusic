@@ -95,6 +95,8 @@
     <!-- Волна -->
     <string name="wave_title">Моя волна</string>
     <string name="player_similar">Похожие треки</string>
+    <string name="player_similar_library">Похожие треки (в библиотеке)</string>
+    <string name="player_similar_missing">Похожие — нет в библиотеке</string>
     <string name="player_popular">Популярные треки исполнителя</string>
     <string name="player_similar_source">Похожее на «%1$s»</string>
     <string name="player_download_all">Скачать все (%1$d)</string>
@@ -558,7 +560,7 @@
     <string name="downloads_attempt_skip">%1$s — пропущен</string>
     <string name="downloads_notification_album_done">Альбом скачан</string>
     <string name="sources_title">Источники загрузки</string>
-    <string name="settings_sources_summary">Яндекс Музыка, Soulseek, YouTube Music, Lidarr; выгрузка из Яндекса</string>
+    <string name="settings_sources_summary">Яндекс Музыка, Soulseek, YouTube Music, Lidarr; выгрузка и перенос лайков из Яндекса</string>
     <string name="sources_hint">Для каждого трека, альбома или исполнителя сервер пробует источники сверху вниз и останавливается на первом успешном. Порядок — перетаскиванием за ручку.</string>
     <string name="sources_chain">Цепочка</string>
     <string name="sources_drag">Перетащить</string>
@@ -651,6 +653,8 @@
     <string name="chart_state_queued">В очереди</string>
     <string name="chart_state_ready">Готово, появится после сканирования</string>
     <string name="chart_download">Скачать</string>
+    <string name="chart_download_missing">Скачать недостающие (%1$d)</string>
+    <string name="chart_download_missing_title">Скачать недостающие?</string>
     <string name="charts_settings_title">Чарты на главной</string>
     <string name="settings_charts_summary">Какие чарты показывать под «Моей волной» и в каком порядке</string>
     <string name="charts_settings_empty">Чарты появятся, когда в настройках задан сервис загрузок bodrod 0.11.0 или новее</string>
@@ -702,4 +706,37 @@
     <string name="maintenance_covers_title">Обложки в библиотеке</string>
     <string name="maintenance_covers_summary">Альбомов без обложки: %1$d из %2$d (треков: %3$d из %4$d). Исполнителей без фото: %5$d из %6$d.</string>
     <string name="maintenance_covers_folders">Больше всего — в папке «%1$s»: %2$d</string>
+    <!-- Перенос лайков из Яндекс Музыки (0.31.0) -->
+    <string name="likes_import_title">Лайки из Яндекс Музыки</string>
+    <string name="likes_import_entry">Перенести лайки из Яндекс Музыки</string>
+    <string name="likes_import_entry_summary">Для вашей учётки: лайки Яндекса ставятся тем же трекам в библиотеке</string>
+    <string name="likes_import_hint">Сервер берёт «Мне нравится» из вашего аккаунта Яндекса и ставит лайки тем же трекам в библиотеке от вашей учётки. Лайки, которых нет в Яндексе, не трогаются, ничего не снимается. Треки из «Не нравится» не лайкаются — они в конфликтах. Повторный запуск безопасен и докидывает новое.</string>
+    <string name="likes_import_run">Перенести лайки</string>
+    <string name="likes_import_run_again">Перенести ещё раз</string>
+    <string name="likes_import_progress">%1$d из %2$d</string>
+    <string name="likes_import_failed">Перенос не удался</string>
+    <string name="likes_import_last_run">Последний запуск: %1$s</string>
+    <string name="likes_import_total">Всего в Яндексе</string>
+    <string name="likes_import_already">Уже было</string>
+    <string name="likes_import_starred">Поставлено</string>
+    <string name="likes_import_conflicts">Конфликты</string>
+    <string name="likes_import_not_found">Не найдено в библиотеке</string>
+    <string name="likes_import_missing_title">Не найдено: %1$d</string>
+    <string name="likes_import_missing_hint">Скачиваются через обычную цепочку источников, пока работает Яндекс. Когда трек появится в библиотеке, лайк поставится сам.</string>
+    <string name="likes_import_download_all">Скачать все (%1$d)</string>
+    <string name="likes_import_conflicts_title">Конфликты: %1$d</string>
+    <string name="likes_import_conflicts_hint">Лайк в Яндексе, а у вас этот трек в «Не нравится» — лайк не поставлен.</string>
+    <string name="download_action">Скачать</string>
+    <string name="download_retry">Повторить</string>
+    <string name="download_state_queued">В очереди</string>
+    <string name="download_state_downloading">Качается</string>
+    <string name="download_state_done">Скачано</string>
+    <string name="download_state_not_found">Не найдено</string>
+    <string name="download_state_failed">Ошибка</string>
+    <plurals name="chart_download_missing_text">
+        <item quantity="one">%1$d трек чарта, которого нет в библиотеке, встанет в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
+        <item quantity="few">%1$d трека чарта, которых нет в библиотеке, встанут в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
+        <item quantity="many">%1$d треков чарта, которых нет в библиотеке, встанут в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
+        <item quantity="other">%1$d трека чарта, которых нет в библиотеке, встанут в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
+    </plurals>
 </resources>

@@ -100,6 +100,11 @@ class NavidromeClient:
             if not s.get("isDir")
         ]
 
+    async def star(self, creds: Credentials, song_ids: list[str]) -> None:
+        """Лайк от имени пользователя (`star?id=…&id=…`)."""
+        if song_ids:
+            await self._call("star", creds, id=song_ids)
+
     async def start_scan(self) -> None:
         await self._call("startScan", self._admin())
 
