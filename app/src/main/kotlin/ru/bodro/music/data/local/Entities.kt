@@ -1,5 +1,6 @@
 package ru.bodro.music.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -78,6 +79,11 @@ data class PlayHistoryEntity(
     val skippedEarly: Boolean,
     /** Song в JSON — для «Недавно прослушанного». */
     val songJson: String,
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
+    /** `PlayOutcome` (ранний пропуск / частично / полностью); пусто — запись до 0.30.0. */
+    @ColumnInfo(defaultValue = "") val outcome: String = "",
+    /** `PlayContext` (волна / свой плейлист или альбом / прочее); пусто — запись до 0.30.0. */
+    @ColumnInfo(defaultValue = "") val context: String = "",
 )
 
 /** Очередь учётки. Позиция хранится отдельно — её обновление раз в 5 с не переписывает весь список. */

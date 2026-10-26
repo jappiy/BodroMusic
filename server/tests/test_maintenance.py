@@ -379,3 +379,49 @@ def test_artist_popular_marks_library(tmp_path):
         popular = client.get("/api/v1/artists/popular", params={"name": "трофим"}, headers=auth()).json()
     assert popular["source"] == "yandex" and popular["artist"]["name"] == "Трофим"
     assert [(t["title"], t["librarySongId"]) for t in popular["tracks"]] == [("Город Сочи", "lib-1"), ("Новая", None)]
+
+
+def test_lidarr_folder_without_mbid_gets_cover_from_providers(tmp_path):
+    """Нет MBID (и Cover Art Archive) — `cover.jpg` из общей цепочки источников; файлы и теги не трогаются."""
+    track = yandex_track(8, "Мини", "Кто-то", 5_000)
+    track["albums"] = [{"id": 11, "title": "Singles"}]
+    world = FakeWorld(yandex_search={"tracks": {"results": [track]}})
+    world.lidarr_artists = [{"id": 1, "path": "/volume2/music/library/Кто-то"}]
+    services, music, db, covers = make(world, tmp_path, lidarr_music_dir="/volume2/music")
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE media_file SET has_cover_art = 0 WHERE id IN ('t1', 't2')")
+    conn.commit()
+    conn.close()
+    folder = music / "library/Кто-то/Singles"
+    before = (folder / "Кто-то - Мини.mp3").read_bytes()
+    run = services.store.get_run(asyncio.run(services.maintenance.run("manual")))
+    assert (folder / "cover.jpg").read_bytes() == b"\xff\xd8jpeg"
+    assert not any("coverartarchive" in url for url in covers)
+    assert (folder / "Кто-то - Мини.mp3").read_bytes() == before
+    _, actions = services.store.list_actions(run.id, None, 500, 0)
+    assert any(a.kind == "cover" and a.applied and "Lidarr" in a.details and "Яндекс" in a.details for a in actions)
+    assert run.stats["open_lidarr_cover_not_found"] == 0
+
+
+def test_cover_stats_counts_albums_without_art(tmp_path):
+    services, music, db, _ = make(catalog_world(), tmp_path)
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE album (id TEXT, embed_art_path TEXT, folder_ids TEXT, missing BOOL DEFAULT 0);
+        CREATE TABLE folder (id TEXT, image_files TEXT);
+        CREATE TABLE artist (id TEXT, small_image_url TEXT, missing BOOL DEFAULT 0);
+        INSERT INTO album VALUES ('al-Singles', '', '["f1"]', 0), ('al-Альбом', '', '["f2"]', 0);
+        INSERT INTO folder VALUES ('f1', ''), ('f2', '["cover.jpg"]');
+        INSERT INTO artist VALUES ('a1', '', 0), ('a2', 'http://x/img.jpg', 0);
+        UPDATE media_file SET has_cover_art = 0;
+        """
+    )
+    conn.commit()
+    conn.close()
+    stats = services.navidrome_db.cover_stats()
+    assert stats["albums"] == 2
+    assert stats["albumsWithoutCover"] == 1
+    assert stats["songsWithoutCover"] >= 1
+    assert stats["byFolder"].get("library", 0) >= 1
+    assert (stats["artists"], stats["artistsWithoutImage"]) == (2, 1)

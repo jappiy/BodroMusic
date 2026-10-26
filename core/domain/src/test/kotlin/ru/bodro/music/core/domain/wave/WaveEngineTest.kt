@@ -155,7 +155,7 @@ class WaveEngineTest {
     @Test
     fun `early skips lower weight of artist and genre`() {
         val candidate = WaveCandidate(library[0], WaveBucket.Neighbors)
-        val profile = WaveProfile(artistSkips = mapOf("ar-0" to 2), genreSkips = mapOf("Rock" to 1))
+        val profile = WaveProfile(artistSkips = mapOf("ar-0" to 2.0), genreSkips = mapOf("Rock" to 1.0))
         val weight = engine.adjustedWeight(candidate, profile)
         assertTrue(weight < 1.0)
         assertTrue(weight >= WaveEngine.MIN_SKIP_FACTOR * WaveEngine.MIN_SKIP_FACTOR)

@@ -69,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -83,6 +84,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -95,13 +98,14 @@ import ru.bodro.music.core.model.QueueSource
 import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.core.model.RepeatMode
 import ru.bodro.music.core.model.Song
-import ru.bodro.music.core.model.WaveSettings
+import ru.bodro.music.data.repository.LyricsAvailability
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.app.LocalAppActions
 import ru.bodro.music.ui.app.LocalNavigator
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.screens.search.DiscoverCallbacks
 import ru.bodro.music.ui.theme.LocalPlayerColors
 import ru.bodro.music.ui.util.formatMs
@@ -131,6 +135,7 @@ fun FullPlayerScreen(
     val canDownload by extrasViewModel.canDownload.collectAsStateWithLifecycle()
     val appSettings by extrasViewModel.settings.collectAsStateWithLifecycle()
     val poolIds by viewModel.poolSongIds.collectAsStateWithLifecycle()
+    val lyricsAvailability by viewModel.lyricsAvailability.collectAsStateWithLifecycle()
     val song = state.currentSong ?: return
     val actions = LocalAppActions.current
     val colors = LocalPlayerColors.current
@@ -188,7 +193,7 @@ fun FullPlayerScreen(
                     palette,
                     onCollapse = onCollapse,
                     onSleep = { sheet = PlayerSheet.Sleep },
-                    onWave = { actions.startWave(WaveSettings.byTrack(song)) },
+                    onWave = { actions.startTrackWave(song) },
                     onSongActions = { actions.showSongMenu(song) },
                     onQueue = { sheet = PlayerSheet.Queue },
                 )
@@ -216,6 +221,7 @@ fun FullPlayerScreen(
                         palette,
                         onRepeat = viewModel::cycleRepeat,
                         onShuffle = viewModel::toggleShuffle,
+                        lyrics = lyricsAvailability,
                         onLyrics = { sheet = PlayerSheet.Lyrics },
                         onQueue = { sheet = PlayerSheet.Queue },
                     )
@@ -402,7 +408,7 @@ private fun PlayerCover(
     var coverDrag by remember { mutableFloatStateOf(0f) }
     with(sharedScope) {
         CoverImage(
-            song.coverArt,
+            song.coverChain(),
             Modifier
                 .sharedElement(rememberSharedContentState("player-cover"), visibilityScope)
                 .size(size)
@@ -542,13 +548,18 @@ private fun PlayerControls(state: PlayerUiState, palette: PlayerPalette, viewMod
                 )
             }
         }
-        IconButton(onClick = viewModel::next, enabled = state.hasNext, modifier = Modifier.size(56.dp)) {
-            Icon(
-                Icons.Rounded.SkipNext,
-                contentDescription = stringResource(R.string.action_next),
-                tint = content,
-                modifier = Modifier.size(40.dp),
-            )
+        // «Следующий» доступен всегда: нет следующего трека — ждём порцию волны (индикатор) или продолжаем волной.
+        IconButton(onClick = viewModel::next, modifier = Modifier.size(56.dp).testTag("player-next")) {
+            if (state.skipPending) {
+                CircularProgressIndicator(Modifier.size(28.dp), color = content, strokeWidth = 3.dp)
+            } else {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = stringResource(R.string.action_next),
+                    tint = content,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
         }
         val liked = reaction == Reaction.Liked
         ReactionButton(
@@ -582,7 +593,7 @@ private fun PlayerMiniBar(state: PlayerUiState, palette: PlayerPalette, onToggle
             .testTag("player-mini-bar"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CoverImage(song.coverArt, Modifier.size(44.dp), sizeHint = 88.dp, shape = RoundedCornerShape(10.dp), kind = CoverKind.Song)
+        CoverImage(song.coverChain(), Modifier.size(44.dp), sizeHint = 88.dp, shape = RoundedCornerShape(10.dp), kind = CoverKind.Song)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(
                 song.title,
@@ -622,6 +633,7 @@ private fun PlayerBottomBar(
     palette: PlayerPalette,
     onRepeat: () -> Unit,
     onShuffle: () -> Unit,
+    lyrics: LyricsAvailability,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
 ) {
@@ -651,7 +663,7 @@ private fun PlayerBottomBar(
             tag = "player-shuffle",
             onClick = onShuffle,
         )
-        BottomAction(Icons.Rounded.Lyrics, stringResource(R.string.player_lyrics), content, tag = "open-lyrics", onClick = onLyrics)
+        LyricsAction(lyrics, content, onClick = onLyrics)
         BottomAction(
             Icons.AutoMirrored.Rounded.QueueMusic,
             stringResource(R.string.player_queue),
@@ -674,6 +686,45 @@ private fun BottomAction(
     val accent = LocalPlayerColors.current?.accent ?: MaterialTheme.colorScheme.primary
     IconButton(onClick = onClick, modifier = if (tag != null) Modifier.testTag(tag) else Modifier) {
         Icon(icon, contentDescription = label, tint = if (active) accent else tint.copy(alpha = 0.6f))
+    }
+}
+
+/**
+ * Кнопка текста в трёх состояниях, различимых без открытия панели: текст есть — акцентный цвет с подложкой; текста
+ * нет — приглушённая и перечёркнутая; ищем — приглушённая без черты (статично, без мигания).
+ */
+@Composable
+private fun LyricsAction(lyrics: LyricsAvailability, tint: Color, onClick: () -> Unit) {
+    val accent = LocalPlayerColors.current?.accent ?: MaterialTheme.colorScheme.primary
+    val (label, state) = when (lyrics) {
+        is LyricsAvailability.Available -> R.string.player_lyrics_available to "available"
+        LyricsAvailability.Missing -> R.string.player_lyrics_missing to "missing"
+        LyricsAvailability.Loading -> R.string.player_lyrics_loading to "loading"
+    }
+    val available = lyrics is LyricsAvailability.Available
+    val missing = lyrics is LyricsAvailability.Missing
+    val color = when {
+        available -> accent
+        missing -> tint.copy(alpha = 0.32f)
+        else -> tint.copy(alpha = 0.55f)
+    }
+    IconButton(onClick = onClick, modifier = Modifier.testTag("open-lyrics").semantics { stateDescription = state }) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .then(if (available) Modifier.background(accent.copy(alpha = 0.18f)) else Modifier)
+                .drawWithContent {
+                    drawContent()
+                    if (missing) {
+                        val inset = size.minDimension * 0.22f
+                        drawLine(color, Offset(inset, inset), Offset(size.width - inset, size.height - inset), strokeWidth = 2.dp.toPx())
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Lyrics, contentDescription = stringResource(label), tint = color)
+        }
     }
 }
 
@@ -757,7 +808,8 @@ internal fun sourceTitle(source: QueueSource): String = when (source) {
     is QueueSource.PlaylistSource -> source.title
     is QueueSource.ArtistSource -> source.title
     QueueSource.LikedSource -> stringResource(R.string.liked_title)
-    is QueueSource.WaveSource -> source.settings.trackSeed?.let { stringResource(R.string.wave_by_track, it.title) }
-        ?: stringResource(R.string.wave_title)
+    is QueueSource.WaveSource -> source.settings.trackSeed?.let {
+        stringResource(if (source.settings.soundOnly) R.string.similar_sound_title else R.string.wave_by_track, it.title)
+    } ?: stringResource(R.string.wave_title)
     is QueueSource.CustomSource -> source.title ?: stringResource(R.string.player_now_playing)
 }

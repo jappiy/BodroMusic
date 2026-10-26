@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.every
 import io.mockk.mockk
 import java.io.File
 import org.junit.Assert.assertTrue
@@ -303,7 +304,12 @@ class WaveHomeScreenshotTest {
                 LocalAppActions provides NoActions,
                 LocalNavigator provides NoNavigator,
                 LocalReactions provides ReactionState(),
-                LocalCoverArtUrls provides mockk(relaxed = true),
+                LocalCoverArtUrls provides mockk<ru.bodro.music.ui.image.CoverArtUrls>(relaxed = true) {
+                    every { server } returns kotlinx.coroutines.flow.MutableStateFlow("test:4533")
+                    every { request(any(), any()) } answers {
+                        coil3.request.ImageRequest.Builder(firstArg<android.content.Context>()).data(null).build()
+                    }
+                },
                 LocalPlayerColors provides colors,
                 content = content,
             )

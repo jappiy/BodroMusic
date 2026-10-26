@@ -92,6 +92,7 @@ import ru.bodro.music.ui.components.PlaylistCollage
 import ru.bodro.music.ui.components.SectionHeader
 import ru.bodro.music.ui.components.SongRow
 import ru.bodro.music.ui.components.heroCoverSize
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.util.toUiError
 import ru.bodro.music.ui.util.totalDurationText
 import ru.bodro.music.ui.util.tracksText
@@ -585,7 +586,7 @@ private fun ReorderRow(song: Song, canUp: Boolean, canDown: Boolean, onUp: () ->
     ListItem(
         headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text(song.artist.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingContent = { CoverImage(song.coverArt, Modifier.size(40.dp), sizeHint = 40.dp) },
+        leadingContent = { CoverImage(song.coverChain(), Modifier.size(40.dp), sizeHint = 40.dp, kind = CoverKind.Song) },
         trailingContent = {
             Row {
                 IconButton(onClick = onUp, enabled = canUp) {

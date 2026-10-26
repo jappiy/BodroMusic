@@ -82,9 +82,12 @@ import ru.bodro.music.core.downloads.artistKey
 import ru.bodro.music.core.model.Song
 import ru.bodro.music.data.downloads.DownloadsRepository
 import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.ui.components.CoverImage
+import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.components.ErrorState
 import ru.bodro.music.ui.components.LoadState
 import ru.bodro.music.ui.components.SectionHeader
+import ru.bodro.music.ui.image.librarySongCover
 import ru.bodro.music.ui.util.formatDuration
 import ru.bodro.music.ui.util.text
 import ru.bodro.music.ui.util.toUiError
@@ -431,11 +434,24 @@ fun DiscoverTrackRow(track: DiscoverTrack, request: DownloadRequest?, canDownloa
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        RemoteImage(track.coverUrl, Modifier.size(48.dp), RoundedCornerShape(10.dp), Icons.Rounded.MusicNote)
+        // Трек есть в библиотеке — обложка с сервера (своя → альбома), иначе внешняя (Яндекс, Last.fm). Раньше у
+        // похожих из Last.fm и по звучанию внешней обложки не было, и показывалась заглушка, хотя обложка есть.
+        if (librarySongId != null) {
+            CoverImage(
+                listOf(librarySongCover(librarySongId)),
+                Modifier.size(48.dp),
+                sizeHint = 48.dp,
+                shape = RoundedCornerShape(10.dp),
+                kind = CoverKind.Song,
+                remoteUrl = track.coverUrl,
+            )
+        } else {
+            RemoteImage(track.coverUrl, Modifier.size(48.dp), RoundedCornerShape(10.dp), Icons.Rounded.MusicNote)
+        }
         Column(Modifier.weight(1f)) {
             Text(track.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val details = when {
-                track.librarySongId != null -> stringResource(R.string.discover_in_library)
+                track.librarySongId != null -> stringResource(R.string.similar_artist_in_library, track.artist)
                 request != null && request.status != RequestStatus.Cancelled -> statusText(request)
                 else -> listOfNotNull(
                     track.artist,

@@ -33,15 +33,29 @@ data class WaveProfile(
     val artistDislikes: Map<String, Int> = emptyMap(),
     /** artistId → число лайкнутых треков. */
     val artistLikes: Map<String, Int> = emptyMap(),
-    /** artistId → число ранних пропусков. */
-    val artistSkips: Map<String, Int> = emptyMap(),
-    /** жанр → число ранних пропусков. */
-    val genreSkips: Map<String, Int> = emptyMap(),
+    /** artistId → взвешенное число ранних пропусков (в волне 1, в своём плейлисте 0,1 — [PlayContext.skipWeight]). */
+    val artistSkips: Map<String, Double> = emptyMap(),
+    /** жанр → взвешенное число ранних пропусков. */
+    val genreSkips: Map<String, Double> = emptyMap(),
+    /** songId → последний ранний пропуск в волне: трек не возвращается в волну [skipCooldownMs]. */
+    val lastSkippedAt: Map<String, Long> = emptyMap(),
+    /** songId → ранние пропуски без единого полного прослушивания после них. */
+    val songEarlySkips: Map<String, Int> = emptyMap(),
+    val skipCooldownMs: Long = DEFAULT_SKIP_COOLDOWN_MS,
     /** Любимые исполнители (по лайкам и прослушиваниям), по убыванию. */
     val topArtistIds: List<String> = emptyList(),
     /** Любимые жанры, по убыванию. */
     val topGenres: List<String> = emptyList(),
-)
+) {
+    companion object {
+        const val DEFAULT_SKIP_COOLDOWN_DAYS = 7
+        const val DEFAULT_SKIP_COOLDOWN_MS = DEFAULT_SKIP_COOLDOWN_DAYS * 24L * 60 * 60 * 1000
+
+        /** Столько ранних пропусков без полного прослушивания — и вес трека понижается. */
+        const val REPEATED_SKIPS = 3
+        const val REPEATED_SKIP_FACTOR = 0.3
+    }
+}
 
 data class WaveRequest(
     val settings: WaveSettings,

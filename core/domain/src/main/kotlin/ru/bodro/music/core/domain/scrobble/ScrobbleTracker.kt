@@ -8,8 +8,8 @@ data class ScrobblePolicy(
     val fraction: Double = 0.5,
     /** Абсолютный порог: 4 минуты, даже если это меньше половины трека. */
     val maxThresholdMs: Long = 240_000,
-    /** Пропуск в первые N мс — «скип» для статистики волны. */
-    val earlySkipMs: Long = 30_000,
+    /** Устарело: ранний пропуск теперь по [ListenRules] (30 с или 20 % трека). */
+    val earlySkipMs: Long = ListenRules.EARLY_SKIP_MS,
 ) {
     fun isEligible(durationMs: Long): Boolean = durationMs <= 0 || durationMs > minTrackDurationMs
 
@@ -24,8 +24,12 @@ data class PlaySession(
     val listenedMs: Long,
     val durationMs: Long,
     val submitted: Boolean,
-    val skippedEarly: Boolean,
-)
+    /** Итог для рекомендаций ([ListenRules]). */
+    val outcome: PlayOutcome = PlayOutcome.Partial,
+) {
+    /** Ранний пропуск — слабый негативный сигнал для волны. */
+    val skippedEarly: Boolean get() = outcome == PlayOutcome.EarlySkip
+}
 
 sealed interface ScrobbleEvent {
     data class NowPlaying(val songId: String) : ScrobbleEvent
@@ -111,7 +115,7 @@ class ScrobbleTracker(private val policy: ScrobblePolicy = ScrobblePolicy()) {
             listenedMs = listenedMs,
             durationMs = durationMs,
             submitted = submitted,
-            skippedEarly = skippedByUser && listenedMs < policy.earlySkipMs,
+            outcome = ListenRules.outcome(listenedMs, durationMs, skippedByUser),
         )
         songId = null
         lastPositionMs = null

@@ -573,6 +573,19 @@ data class TrackFeatures(
     val moods: Map<String, Double> = emptyMap(),
 )
 
+/** Аудит обложек (bodrod 0.25.0+, `GET /api/v1/library/covers`). */
+@Serializable
+data class CoverStats(
+    val albums: Int = 0,
+    val albumsWithoutCover: Int = 0,
+    val songs: Int = 0,
+    val songsWithoutCover: Int = 0,
+    val artists: Int = 0,
+    val artistsWithoutImage: Int = 0,
+    /** Верхняя папка библиотеки → треков без обложки, по убыванию. */
+    val byFolder: Map<String, Int> = emptyMap(),
+)
+
 @Serializable
 data class SimilarSongs(val ids: List<String> = emptyList())
 

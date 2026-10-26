@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import ru.bodro.music.core.domain.scrobble.PlayContext
+import ru.bodro.music.core.domain.scrobble.PlayOutcome
 import ru.bodro.music.core.domain.scrobble.PlaySession
 import ru.bodro.music.core.domain.wave.PlayHistoryItem
 import ru.bodro.music.core.model.Song
@@ -25,7 +27,7 @@ class HistoryRepository @Inject constructor(
 ) {
     private val dao = database.historyDao()
 
-    suspend fun record(accountId: Long, song: Song, session: PlaySession) {
+    suspend fun record(accountId: Long, song: Song, session: PlaySession, context: PlayContext = PlayContext.Other) {
         // Совсем короткие «касания» (< 3 с) без скипа не пишем.
         if (session.listenedMs < MIN_LISTEN_MS && !session.skippedEarly) return
         dao.insert(
@@ -39,6 +41,9 @@ class HistoryRepository @Inject constructor(
                 listenedMs = session.listenedMs,
                 skippedEarly = session.skippedEarly,
                 songJson = AppJson.encodeSong(song),
+                durationMs = session.durationMs,
+                outcome = session.outcome.name,
+                context = context.name,
             ),
         )
         dao.deleteOlderThan(accountId, clock.now() - RETENTION_MS)
@@ -47,7 +52,16 @@ class HistoryRepository @Inject constructor(
     suspend fun items(sinceMs: Long): List<PlayHistoryItem> {
         val accountId = connection.activeAccountId ?: return emptyList()
         return dao.since(accountId, sinceMs).map {
-            PlayHistoryItem(it.songId, it.artistId, it.genre, it.playedAt, it.skippedEarly)
+            PlayHistoryItem(
+                songId = it.songId,
+                artistId = it.artistId,
+                genre = it.genre,
+                playedAtMs = it.playedAt,
+                skippedEarly = it.skippedEarly,
+                outcome = PlayOutcome.entries.firstOrNull { o -> o.name == it.outcome }
+                    ?: if (it.skippedEarly) PlayOutcome.EarlySkip else PlayOutcome.Full,
+                context = PlayContext.entries.firstOrNull { c -> c.name == it.context } ?: PlayContext.Wave,
+            )
         }
     }
 

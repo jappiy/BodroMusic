@@ -60,6 +60,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var coordinator: PlaybackCoordinator
     private var prefetcher: StreamPrefetcher? = null
     private var latencyProbe: OutputLatencyProbe? = null
+    private lateinit var seekRescue: SeekRescue
     private var currentReaction: Reaction? = null
 
     override fun onCreate() {
@@ -104,6 +105,7 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         coordinator.start()
+        seekRescue = SeekRescue(player, dataSources, scope, deps.log)
         prefetcher = StreamPrefetcher(player, dataSources, scope).also(player::addListener)
         latencyProbe = OutputLatencyProbe(player, scope).also { it.start() }
     }
@@ -164,7 +166,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
         val like = CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
             .setDisplayName(getString(if (liked) R.string.action_unlike else R.string.action_like))
-            .setCustomIconResId(if (liked) R.drawable.ic_heart_filled else R.drawable.ic_heart)
+            .setCustomIconResId(if (liked) R.drawable.ic_heart_liked else R.drawable.ic_heart)
             .setSessionCommand(LIKE_COMMAND)
             .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
             .build()
@@ -180,6 +182,7 @@ class PlaybackService : MediaLibraryService() {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(LIKE_COMMAND)
                 .add(DISLIKE_COMMAND)
+                .add(SeekRescue.COMMAND)
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
@@ -193,15 +196,20 @@ class PlaybackService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == SeekRescue.ACTION) return seekRescue.seek(args)
             val song = coordinator.currentSong
             when (customCommand.customAction) {
-                ACTION_LIKE -> if (song != null) scope.launch { deps.reactions.toggleLike(song) }
+                ACTION_LIKE -> if (song != null) {
+                    // Иконка — сразу, не дожидаясь сохранения реакции (оно может ждать сети).
+                    currentReaction = if (currentReaction == Reaction.Liked) Reaction.None else Reaction.Liked
+                    updateLayout()
+                    scope.launch { deps.reactions.toggleLike(song) }
+                }
                 // Тот же путь, что в приложении: дизлайк → правило волны в PlaybackCoordinator (следующий трек).
                 ACTION_DISLIKE -> if (song != null) scope.launch { deps.reactions.toggleDislike(song) }
                 else -> return super.onCustomCommand(session, controller, customCommand, args)
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
-            return super.onCustomCommand(session, controller, customCommand, args)
         }
 
         override fun onAddMediaItems(

@@ -59,6 +59,8 @@ data class WaveSettings(
     val seed: WaveSeed = WaveSeed.Everything,
     /** Режим волны с главной («Бодрое», «Спокойное», …) — id пресета; `null` — обычная «Моя волна». */
     val preset: String? = null,
+    /** «Похожие по звучанию»: волна по треку только из похожих по звуку (анализ bodrod). */
+    val soundOnly: Boolean = false,
 ) {
     val yearRange: IntRange? get() = decade?.let { it..(it + 9) }
 
@@ -67,6 +69,7 @@ data class WaveSettings(
 
     companion object {
         /** Волна, подобранная от трека: звучание, исполнитель, жанр, похожие. */
-        fun byTrack(song: Song): WaveSettings = WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre))
+        fun byTrack(song: Song, soundOnly: Boolean = false): WaveSettings =
+            WaveSettings(seed = WaveSeed.Track(song.id, song.title, song.artistId, song.genre), soundOnly = soundOnly)
     }
 }

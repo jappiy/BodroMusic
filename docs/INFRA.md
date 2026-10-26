@@ -294,6 +294,10 @@ bodrod 0.22.0–0.23.0 (тексты песен `.lrc`/`.txt` рядом с тр
 `LYRICS_NIGHTLY_MINUTES`, `BLURB_LLM_PROVIDER` (`none` | `anthropic` | `ollama`), `BLURB_LLM_MODEL`, `BLURB_LLM_URL`,
 `ANTHROPIC_API_KEY` / `/secrets/anthropic_api_key`; база `9f5de2f` не менялась) —
 [`033-pravki-2026-10-25.md`](history/033-pravki-2026-10-25.md). Установлен 2026-10-25 (`/api/health` → 0.23.0).
+bodrod 0.24.0 (честные «Популярное»/«Новое», отчёт анализа) — [`034`](history/034-home-report-background.md), установлен 2026-10-25.
+bodrod 0.25.0 (обложки папкам Lidarr из общей цепочки `COVER_PROVIDERS`, если в Cover Art Archive нет; аудит обложек
+`GET /api/v1/library/covers`; только код, база `9f5de2f` не менялась, новых переменных нет) —
+[`043-cover-audit.md`](history/043-cover-audit.md).
 
 ---
 

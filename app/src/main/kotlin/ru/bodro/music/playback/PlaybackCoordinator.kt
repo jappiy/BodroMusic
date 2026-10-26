@@ -21,6 +21,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.bodro.music.core.domain.player.SleepTimerOption
 import ru.bodro.music.core.domain.reaction.WaveQueueRules
+import ru.bodro.music.core.domain.scrobble.PlayContext
+import ru.bodro.music.core.domain.scrobble.PlayOutcome
 import ru.bodro.music.core.domain.scrobble.ScrobbleTracker
 import ru.bodro.music.core.domain.wave.WaveEngine
 import ru.bodro.music.core.model.QueueSnapshot
@@ -161,6 +163,14 @@ class PlaybackCoordinator(
     // region Player.Listener
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+            mediaItem?.mediaId != null &&
+            mediaItem.mediaId == sessionSong?.id
+        ) {
+            // Тот же трек переоткрыт (перемотка в потоке без длины, SeekRescue): сессия прослушивания продолжается.
+            schedulePersist()
+            return
+        }
         finishSession(userSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
         if (player.isPlaying) startSession()
         val song = MediaItemFactory.songOf(mediaItem)
@@ -268,12 +278,24 @@ class PlaybackCoordinator(
         val accountId = sessionAccountId ?: return
         val session = tracker.finish(userSkipped) ?: return
         sessionSong = null
-        scope.launch(Dispatchers.IO + NonCancellable) { deps.history.record(accountId, song, session) }
-        if (session.listenedMs >= MIN_FEEDBACK_MS || session.skippedEarly) {
-            val full = session.durationMs > 0 && session.listenedMs >= session.durationMs * FULL_PLAY_RATIO
-            val event = if (full) "completed" else "skipped"
+        val context = playContext()
+        scope.launch(Dispatchers.IO + NonCancellable) { deps.history.record(accountId, song, session, context) }
+        // Рекомендациям — только явные сигналы: полное прослушивание и ранний пропуск; частичное — нейтрально.
+        val event = when (session.outcome) {
+            PlayOutcome.Full -> "completed"
+            PlayOutcome.EarlySkip -> "skipped"
+            PlayOutcome.Partial -> null
+        }
+        if (event != null && (session.listenedMs >= MIN_FEEDBACK_MS || session.skippedEarly)) {
             deps.pool.track(song, event, feedbackContext(song), session.listenedMs, session.durationMs.takeIf { it > 0 })
         }
+    }
+
+    /** Вес пропуска зависит от того, откуда играл трек ([PlayContext]). */
+    private fun playContext(): PlayContext = when (deps.sources.source.value) {
+        is QueueSource.WaveSource -> PlayContext.Wave
+        is QueueSource.PlaylistSource, is QueueSource.AlbumSource, is QueueSource.ArtistSource, QueueSource.LikedSource -> PlayContext.Own
+        is QueueSource.CustomSource -> PlayContext.Other
     }
 
     private fun startTicks() {
@@ -436,6 +458,5 @@ class PlaybackCoordinator(
         const val HEALTHY_PLAYBACK_MS = 5_000L
         const val RECENT_FOR_WAVE = 200
         const val MIN_FEEDBACK_MS = 1_000L
-        const val FULL_PLAY_RATIO = 0.8
     }
 }

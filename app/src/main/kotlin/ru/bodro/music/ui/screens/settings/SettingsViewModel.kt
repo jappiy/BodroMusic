@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +13,7 @@ import ru.bodro.music.data.offline.OfflineStore
 import ru.bodro.music.data.offline.OfflineUsage
 import ru.bodro.music.data.settings.AppSettings
 import ru.bodro.music.data.settings.SettingsRepository
+import ru.bodro.music.di.AppScope
 import ru.bodro.music.di.Clock
 import ru.bodro.music.playback.PlayerCache
 
@@ -21,6 +23,7 @@ class SettingsViewModel @Inject constructor(
     private val cache: PlayerCache,
     private val offline: OfflineStore,
     private val clock: Clock,
+    @AppScope private val appScope: CoroutineScope,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings> = repository.settings
 
@@ -34,8 +37,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { _offlineUsage.value = runCatching { offline.usage() }.getOrNull() }
     }
 
+    /**
+     * Запись настроек — в области приложения, а не экрана: уход с экрана (свайп «назад») сразу после изменения
+     * раньше отменял незавершённую запись DataStore, и значение терялось.
+     */
     fun update(transform: (AppSettings) -> AppSettings) {
-        viewModelScope.launch { repository.update(transform) }
+        appScope.launch { repository.update(transform) }
     }
 
     fun refreshCacheSize() {

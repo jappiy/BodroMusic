@@ -18,28 +18,48 @@ class GlowRhythmTest {
         SpectrumFrame(FloatArray(AudioSpectrum.BANDS), energy, energy = energy, beats = beats)
 
     @Test
-    fun `energy rises fast and falls slowly`() {
+    fun `energy rises smoothly and falls slower`() {
         val rhythm = NebulaRhythm()
         repeat(6) { rhythm.update(frame(0.9f), 1 / 60f, playing = true) } // 100 мс громко
+        assertTrue("за 100 мс — без скачка: ${rhythm.energy}", rhythm.energy < 0.45f)
+        repeat(24) { rhythm.update(frame(0.9f), 1 / 60f, playing = true) } // ещё 400 мс
         val peak = rhythm.energy
-        assertTrue("за 100 мс подъём почти полный: $peak", peak > 0.6f)
+        assertTrue("за 0,5 с подъём заметный: $peak", peak > 0.7f)
         repeat(6) { rhythm.update(frame(0f), 1 / 60f, playing = true) } // 100 мс тишины
-        assertTrue("спад медленнее подъёма: ${rhythm.energy}", rhythm.energy > peak * 0.6f)
-        repeat(120) { rhythm.update(frame(0f), 1 / 60f, playing = false) } // 2 с паузы
-        assertTrue("на паузе пульсация затухает", rhythm.energy < 0.01f)
+        assertTrue("спад медленнее подъёма: ${rhythm.energy}", rhythm.energy > peak * 0.8f)
+        repeat(300) { rhythm.update(frame(0f), 1 / 60f, playing = false) } // 5 с паузы
+        assertTrue("на паузе отклик затухает", rhythm.energy < 0.01f)
     }
 
     @Test
-    fun `beat pulse jumps on a new beat and decays with tau 180 ms`() {
+    fun `beat pulse rises without a jump, decays and is rate limited`() {
         val rhythm = NebulaRhythm()
         rhythm.update(frame(0.5f, beats = 3), 1 / 60f, playing = true)
         assertTrue("первый кадр — только запоминаем счётчик", rhythm.beat == 0f)
         rhythm.update(frame(0.5f, beats = 4), 1 / 60f, playing = true)
-        assertEquals(1f, rhythm.beat, 0.001f)
-        repeat(11) { rhythm.update(frame(0.5f, beats = 4), 1 / 60f, playing = true) } // ~183 мс
-        assertEquals(0.37f, rhythm.beat, 0.05f)
+        assertTrue("без скачка за кадр: ${rhythm.beat}", rhythm.beat in 0.05f..0.4f)
+        var max = rhythm.beat
+        repeat(30) {
+            rhythm.update(frame(0.5f, beats = 4), 1 / 60f, playing = true)
+            max = maxOf(max, rhythm.beat)
+        }
+        assertTrue("импульс мягкий: $max", max < 0.8f)
+        assertTrue("за 0,5 с гаснет: ${rhythm.beat}", rhythm.beat < max * 0.6f)
+        // Доли каждые 100 мс (10 в секунду) — импульсов не больше 3 в секунду (WCAG 2.3.1).
+        val limited = NebulaRhythm()
+        var pulses = 0
+        var last = 0f
+        var rising = false
+        for (frameIndex in 0 until 60) {
+            limited.update(frame(0.5f, beats = 1 + frameIndex / 6), 1 / 60f, playing = true)
+            val up = limited.beat > last + 1e-4f
+            if (up && !rising) pulses++
+            rising = up
+            last = limited.beat
+        }
+        assertTrue("импульсов за секунду: $pulses", pulses <= 3)
         rhythm.update(frame(0.5f, beats = 5), 1 / 60f, playing = true, pulse = false)
-        assertTrue("экономный режим — без пульсации", rhythm.beat < 0.37f)
+        assertTrue("спокойный режим — без пульсации", rhythm.beat < max)
     }
 
     @Test
@@ -50,7 +70,7 @@ class GlowRhythmTest {
             loud.update(frame(1f), 1 / 60f, playing = true)
             paused.update(frame(0f), 1 / 60f, playing = false)
         }
-        assertTrue("громко: ${loud.phase}, пауза: ${paused.phase}", loud.phase - 7f > (paused.phase - 7f) * 4)
+        assertTrue("громко: ${loud.phase}, пауза: ${paused.phase}", loud.phase - 7f > (paused.phase - 7f) * 3)
     }
 
     @Test

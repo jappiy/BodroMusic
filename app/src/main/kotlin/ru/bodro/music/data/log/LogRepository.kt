@@ -39,6 +39,9 @@ enum class PlayerEvent {
     Sync,
     Wave,
     Session,
+
+    /** Открытие потока трека и перемотка: URL без токенов, формат, кэш или сеть, известна ли длина. */
+    Stream,
 }
 
 data class LogFilter(

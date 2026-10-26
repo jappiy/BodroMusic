@@ -6,7 +6,7 @@
 |---|---|---|
 | `:core:model` | Kotlin/JVM | Модели: `Song`, `Album`, `Artist`, `Playlist`, `Lyrics`, `QueueSnapshot`, `WaveSettings`… |
 | `:core:subsonic` | Kotlin/JVM | `SubsonicClient` (OkHttp + kotlinx.serialization), `SubsonicAuth`, `SecretMasker`, `NavidromeLogInterceptor`, `ServerSelector` (LAN/WAN), `LrcParser` |
-| `:core:domain` | Kotlin/JVM | `ScrobbleTracker`, `ScrobbleQueue`, `ReactionRules`, `WaveEngine` + `WaveSource`/`LocalWaveSource`, `ChangelogParser`, `QualityBadges`, `PseudoWaveform`, `SleepTimer` |
+| `:core:domain` | Kotlin/JVM | `ScrobbleTracker`, `ListenRules`, `ScrobbleQueue`, `ReactionRules`, `WaveEngine` + `WaveSource`/`LocalWaveSource`, `TrackWavePlanner`, `ChangelogParser`, `QualityBadges`, `PseudoWaveform`, `SleepTimer` |
 | `:app` | Android | Compose UI, Hilt, Room, DataStore, Media3 (`MediaLibraryService`), WorkManager, Tink |
 
 Чистая логика вынесена в JVM-модули: она тестируется без эмулятора и без Android SDK
@@ -27,7 +27,7 @@
 - `playback`: `PlaybackService` (`MediaLibraryService`), `PlayerConnection` (MediaController → `StateFlow`), `QueuePersister`, `WaveQueueManager`, `ScrobbleController`, `StreamDataSourceFactory` (ResolvingDataSource + SimpleCache, `prefetch`), `StreamPrefetcher` (начало следующих треков в кэш), `SleepTimerController`.
 - `ui`: тема, компоненты, экраны (Главная, Коллекция, Поиск, Настройки, Плеер, Волна, Альбом, Исполнитель, Плейлист, Логи, История версий…).
 
-## Схема Room (все таблицы с `accountId`)
+## Схема Room (все таблицы с `accountId`; версия 3 с app 0.30.0, автомиграции 1→2→3)
 
 | Таблица | Поля |
 |---|---|
@@ -36,7 +36,7 @@
 | `liked_tracks` | accountId, songId, songJson, updatedAt |
 | `pending_reactions` | accountId, target, targetId, serverState, desiredState, updatedAt |
 | `pending_scrobbles` | id, accountId, songId, timestamp, attempts — UNIQUE(accountId, songId, timestamp) |
-| `play_history` | id, accountId, songId, artistId, albumId, genre, playedAt, listenedMs, skippedEarly |
+| `play_history` | id, accountId, songId, artistId, albumId, genre, playedAt, listenedMs, skippedEarly, durationMs, outcome (`PlayOutcome`), context (`PlayContext`) |
 | `queue_state` | accountId (PK), snapshotJson, currentIndex, positionMs, updatedAt |
 | `search_history` | accountId, query, updatedAt |
 | `log_entries` | id, accountId, timestamp, type (network/player), category, endpoint, serverKind, url, httpCode, subsonicStatus, errorCode, message, durationMs, size, headers, body |

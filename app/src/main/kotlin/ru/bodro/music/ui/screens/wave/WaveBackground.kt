@@ -24,6 +24,9 @@ import kotlin.math.sin
  */
 @Composable
 fun WaveBackground(colors: List<Color>, modifier: Modifier = Modifier, animate: Boolean = true, base: Color = Color(0xFF0B0B0C)) {
+    // Системное «Убрать анимацию» — неподвижный кадр.
+    @Suppress("NAME_SHADOWING")
+    val animate = animate && ru.bodro.music.ui.components.rememberSystemAnimations()
     val transition = rememberInfiniteTransition(label = "wave")
     val phase by if (animate) {
         transition.animateFloat(
@@ -36,8 +39,9 @@ fun WaveBackground(colors: List<Color>, modifier: Modifier = Modifier, animate: 
         transition.animateFloat(0f, 0f, infiniteRepeatable(tween(1)), label = "static")
     }
     val pulse by transition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = if (animate) 1.1f else 0.85f,
+        // Мягкое «дыхание» ±4 % за 6 с (до 0.30.0 — ±12 %).
+        initialValue = 0.96f,
+        targetValue = if (animate) 1.04f else 0.96f,
         animationSpec = infiniteRepeatable(tween(6_000), RepeatMode.Reverse),
         label = "pulse",
     )

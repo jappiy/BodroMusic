@@ -12,6 +12,7 @@ import posixpath
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
 DISLIKE_RATING = 1
 _OPTIONAL_COLUMNS = (
@@ -116,6 +117,63 @@ class NavidromeDb:
 
     def _not_missing(self, conn: sqlite3.Connection) -> str:
         return "mf.missing = 0" if "missing" in self._media_columns(conn) else "1 = 1"
+
+    def cover_stats(self) -> dict[str, Any]:
+        """Сколько альбомов, треков и исполнителей без картинки (аудит обложек, `GET /api/v1/library/covers`).
+
+        Альбом без обложки — ни картинки в его папках (`folder.image_files`, Navidrome 0.55+; раньше —
+        `album.image_files`), ни вшитой (`embed_art_path`). Треки — из таких альбомов без своей вшитой обложки.
+        По верхней папке (`library`, `_discovery`, …) — где их больше всего.
+        """
+        with self._connect() as conn:
+            album_cols = {r["name"] for r in conn.execute("PRAGMA table_info(album)")}
+            tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            missing_album = "a.missing = 0" if "missing" in album_cols else "1 = 1"
+            folder_ids = "a.folder_ids" if "folder_ids" in album_cols else "NULL"
+            image_files = "a.image_files" if "image_files" in album_cols else "NULL"
+            albums = conn.execute(
+                f"SELECT a.id, a.embed_art_path, {folder_ids} AS folder_ids, {image_files} AS image_files "
+                f"FROM album a WHERE {missing_album}"
+            ).fetchall()
+            folder_images: dict[str, bool] = {}
+            if "folder" in tables:
+                for r in conn.execute("SELECT id, image_files FROM folder"):
+                    folder_images[r["id"]] = (r["image_files"] or "") not in ("", "[]")
+            without: set[str] = set()
+            for a in albums:
+                has = bool(a["embed_art_path"]) or (a["image_files"] or "") not in ("", "[]")
+                if not has and a["folder_ids"]:
+                    try:
+                        ids = json.loads(a["folder_ids"])
+                    except ValueError:
+                        ids = []
+                    has = any(folder_images.get(i) for i in ids)
+                if not has:
+                    without.add(a["id"])
+            nm = self._not_missing(conn)
+            songs_total = conn.execute(f"SELECT COUNT(*) FROM media_file mf WHERE {nm}").fetchone()[0]
+            by_folder: dict[str, int] = {}
+            songs_without = 0
+            for r in conn.execute(f"SELECT mf.album_id, mf.path, mf.has_cover_art FROM media_file mf WHERE {nm}"):
+                if r["album_id"] in without and not r["has_cover_art"]:
+                    songs_without += 1
+                    top = (r["path"] or "").replace("\\", "/").split("/")[0] or "?"
+                    by_folder[top] = by_folder.get(top, 0) + 1
+            artist_cols = {r["name"] for r in conn.execute("PRAGMA table_info(artist)")}
+            missing_artist = "missing = 0" if "missing" in artist_cols else "1 = 1"
+            artists, artists_without = conn.execute(
+                "SELECT COUNT(*), SUM(CASE WHEN COALESCE(small_image_url, '') = '' THEN 1 ELSE 0 END) "
+                f"FROM artist WHERE {missing_artist}"
+            ).fetchone()
+        return {
+            "albums": len(albums),
+            "albumsWithoutCover": len(without),
+            "songs": songs_total,
+            "songsWithoutCover": songs_without,
+            "artists": artists or 0,
+            "artistsWithoutImage": artists_without or 0,
+            "byFolder": dict(sorted(by_folder.items(), key=lambda kv: -kv[1])),
+        }
 
     def users(self) -> list[NdUser]:
         with self._connect() as conn:

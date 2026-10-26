@@ -4,15 +4,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import ru.bodro.music.core.domain.scrobble.PlayOutcome
 import ru.bodro.music.core.domain.wave.LocalWaveSource
 import ru.bodro.music.core.domain.wave.PoolMixer
+import ru.bodro.music.core.domain.wave.TrackWaveCandidate
+import ru.bodro.music.core.domain.wave.TrackWavePlanner
+import ru.bodro.music.core.domain.wave.TrackWaveSource
 import ru.bodro.music.core.domain.wave.WaveCharacter
 import ru.bodro.music.core.domain.wave.WaveEngine
 import ru.bodro.music.core.domain.wave.WaveLibrary
@@ -39,6 +47,7 @@ import ru.bodro.music.data.log.PlayerEvent
 import ru.bodro.music.data.reco.PoolRepository
 import ru.bodro.music.data.reco.SoundRepository
 import ru.bodro.music.data.settings.SettingsRepository
+import ru.bodro.music.di.AppScope
 import ru.bodro.music.di.Clock
 
 /** Доступ к медиатеке для волны поверх SubsonicClient (с коротким кэшем). */
@@ -99,10 +108,12 @@ class WaveRepository @Inject constructor(
     private val sound: SoundRepository,
     private val downloads: DownloadsRepository,
     private val clock: Clock,
+    @AppScope private val appScope: CoroutineScope,
 ) {
     private val random = Random(clock.now())
     private val mutex = Mutex()
     private var serverWave: Pair<Long, Boolean>? = null
+    private val externalBySeed = LinkedHashMap<String, Deferred<List<TrackWaveCandidate>>>()
     private val _coverage = MutableStateFlow<WaveCoverage?>(null)
 
     /** Сколько треков под текущий режим (по ответу bodrod); `lowCoverage` — предложить докачать похожее. */
@@ -117,7 +128,8 @@ class WaveRepository @Inject constructor(
         val liked = reactions.likedSongs().ifEmpty { runCatching { library.starred().songs }.getOrDefault(emptyList()) }
         val disliked = reactions.dislikedSongs()
         val historyItems = history.items(now - HISTORY_WINDOW_MS)
-        return WaveProfileBuilder.build(liked, disliked, historyItems, now, settings.current.skipStatsResetAt)
+        val cooldownMs = settings.current.waveSkipCooldownDays * DAY_MS
+        return WaveProfileBuilder.build(liked, disliked, historyItems, now, settings.current.skipStatsResetAt, cooldownMs)
     }
 
     /** Следующая порция волны (20 треков). */
@@ -126,8 +138,14 @@ class WaveRepository @Inject constructor(
         currentSong: Song?,
         queue: List<Song>,
         batchSize: Int = WaveEngine.BATCH_SIZE,
-    ): List<Song> = mutex.withLock {
-        serverBatch(settings, currentSong, queue, batchSize)?.let { return@withLock it }
+    ): List<Song> {
+        // Волна по треку — отдельный быстрый путь и без общего замка: «следующий» не ждёт подбора «Моей волны».
+        settings.trackSeed?.let { return trackBatch(settings, it, currentSong, queue, batchSize) }
+        return mutex.withLock { generalBatch(settings, currentSong, queue, batchSize) }
+    }
+
+    private suspend fun generalBatch(settings: WaveSettings, currentSong: Song?, queue: List<Song>, batchSize: Int): List<Song> {
+        serverBatch(settings, currentSong, queue, batchSize)?.let { return it }
         val resolved = resolveDecade(settings)
         val profile = profile()
         // Дизлайкнутые прямо сейчас (ещё не в Room) тоже исключаем.
@@ -147,38 +165,146 @@ class WaveRepository @Inject constructor(
             nowMs = clock.now(),
             random = Random(random.nextLong()),
         )
-        val raw = withSoundAlike(resolved, engine.nextBatch(request), queue, wanted).filter { state.of(it) != Reaction.Disliked }
+        val raw = engine.nextBatch(request).filter { state.of(it) != Reaction.Disliked }
         val familiar = sound.arrange(raw, mood, batchSize, currentSong)
         val batch = withPool(familiar, resolved, fullProfile, queue, preset?.character)
         log.event(PlayerEvent.Wave, "Волна (${resolved.mode}, ${resolved.seed::class.simpleName}): +${batch.size} треков")
-        batch
+        return batch
     }
 
     /**
-     * Волна по треку: к кандидатам движка (исполнитель, жанр, похожие исполнители) подмешиваются похожие по звучанию
-     * треки библиотеки (bodrod с анализом), через один, — дальше [SoundArranger] выстраивает их плавно.
+     * «Волна по треку» и «Похожие по звучанию» ([TrackWavePlanner]): только похожее на трек-семя. Быстрые источники
+     * (звучание bodrod, тот же исполнитель) — сразу, каждый не дольше [LOCAL_TIMEOUT_MS]; внешние (Last.fm через bodrod,
+     * похожие исполнители Navidrome) запускаются в фоне один раз на семя и попадают в волну, как только готовы, —
+     * первая порция ждёт их не дольше [EXTERNAL_WAIT_MS]. Случайных треков нет: если похожих мало, круг честно
+     * расширяется жанром семени, и это пишется в журнал. Для каждого трека в журнале — источник и скор.
      */
-    private suspend fun withSoundAlike(settings: WaveSettings, engineSongs: List<Song>, queue: List<Song>, wanted: Int): List<Song> {
-        val seed = settings.trackSeed ?: return engineSongs
-        if (!sound.isSupported()) return engineSongs
-        val played = queue.mapTo(mutableSetOf()) { it.id } + seed.songId
-        val alike = runCatching { sound.similar(Song(id = seed.songId, title = seed.title)) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrDefault(emptyList())
-            .filter { it.id !in played }
-            .shuffled(random)
-            .take(wanted / 2)
-        if (alike.isEmpty()) return engineSongs
-        val rest = engineSongs.filter { s -> s.id !in played && alike.none { it.id == s.id } }
-        val mixed = mutableListOf<Song>()
-        val a = alike.iterator()
-        val b = rest.iterator()
-        while (mixed.size < wanted && (a.hasNext() || b.hasNext())) {
-            if (a.hasNext()) mixed += a.next()
-            if (b.hasNext() && mixed.size < wanted) mixed += b.next()
+    private suspend fun trackBatch(
+        settings: WaveSettings,
+        seed: WaveSeed.Track,
+        currentSong: Song?,
+        queue: List<Song>,
+        batchSize: Int,
+    ): List<Song> = coroutineScope {
+        val startedAt = clock.now()
+        val seedSong = (currentSong?.takeIf { it.id == seed.songId } ?: queue.firstOrNull { it.id == seed.songId })
+            ?: Song(id = seed.songId, title = seed.title, artistId = seed.artistId, genre = seed.genre)
+        val external = if (settings.soundOnly) null else externalCandidates(seedSong)
+        val local = async { localCandidates(seedSong, settings.soundOnly) }
+        val profileJob = async { profile() }
+        val ready = local.await().toMutableList()
+        // Внешние: в первой порции — что успело, в следующих — всё.
+        if (external != null) {
+            val waited = if (external.isCompleted) external.await() else withTimeoutOrNull(EXTERNAL_WAIT_MS) { external.await() }
+            ready += waited.orEmpty()
         }
-        return mixed
+        val state = reactions.state.value
+        val profile = profileJob.await().let { it.copy(dislikedSongIds = it.dislikedSongIds + state.dislikedIds) }
+        var candidates = ready.filter { state.of(it.song) != Reaction.Disliked }
+        var batch = TrackWavePlanner.select(seedSong, candidates, profile, queue, batchSize, clock.now(), Random(random.nextLong()))
+        if (batch.picks.size < batchSize && !settings.soundOnly) {
+            // Похожих мало — честно расширяем круг жанром семени (не случайными треками).
+            candidates = candidates + genreCandidates(seedSong)
+            batch = TrackWavePlanner.select(seedSong, candidates, profile, queue, batchSize, clock.now(), Random(random.nextLong()))
+        }
+        val bySource = batch.picks.groupingBy { it.source.label }.eachCount().entries.joinToString { "${it.key} ${it.value}" }
+        val notes = listOfNotNull(
+            "расширение круга: жанр «${seedSong.genre}»".takeIf { batch.expanded },
+            "кулдаун ослаблен — похожих мало".takeIf { batch.cooldownRelaxed },
+            "внешние источники ещё грузятся".takeIf { external != null && !external.isCompleted },
+        ).joinToString("; ")
+        val title = if (settings.soundOnly) "Похожие по звучанию" else "Волна по треку"
+        log.event(
+            PlayerEvent.Wave,
+            "$title «${seed.title}»: +${batch.picks.size} за ${clock.now() - startedAt} мс ($bySource)" +
+                if (notes.isNotEmpty()) "; $notes" else "",
+            isError = batch.picks.isEmpty(),
+            details = batch.picks.mapIndexed { i, p ->
+                "${i + 1}. ${p.song.artist.orEmpty()} — ${p.song.title} · ${p.source.label} · " +
+                    String.format(java.util.Locale.ROOT, "%.2f", p.score)
+            }.joinToString("\n").ifEmpty { "Кандидатов: ${candidates.size}" },
+        )
+        batch.songs
     }
+
+    /** Быстрые источники: похожие по звучанию (bodrod) и тот же исполнитель. */
+    private suspend fun localCandidates(seed: Song, soundOnly: Boolean): List<TrackWaveCandidate> = coroutineScope {
+        val bySound = async {
+            timed {
+                if (!sound.isSupported()) return@timed emptyList()
+                val alike = sound.similar(seed)
+                alike.mapIndexed { i, s -> TrackWaveCandidate(s, TrackWaveSource.Sound, rankScore(i, alike.size)) }
+            }
+        }
+        val byArtist = async {
+            val artistId = seed.artistId
+            if (soundOnly || artistId == null) {
+                emptyList()
+            } else {
+                timed {
+                    library.artistSongs(artistId, ARTIST_SONGS).shuffled(random).map {
+                        TrackWaveCandidate(it, TrackWaveSource.SameArtist, 1.0)
+                    }
+                }
+            }
+        }
+        listOf(bySound, byArtist).awaitAll().flatten()
+    }
+
+    /** Внешние источники для семени — один запуск на трек, в фоне приложения (переживает отмену порции). */
+    private fun externalCandidates(seed: Song): Deferred<List<TrackWaveCandidate>> = synchronized(externalBySeed) {
+        externalBySeed[seed.id]?.let { return it }
+        val job = appScope.async {
+            coroutineScope {
+                val lastFm = async {
+                    timed(EXTERNAL_TIMEOUT_MS) {
+                        if (!downloads.isConfigured || seed.artist.isNullOrBlank()) return@timed emptyList()
+                        val ids = downloads.similarTracks(seed.artist.orEmpty(), seed.title, seed.id)
+                            .filter { it.source != "sound" }
+                            .mapNotNull { it.librarySongId }
+                            .distinct()
+                        val songs = SubsonicWaveLibrary(client, library, reactions) { random }.songs(ids)
+                        songs.mapIndexed { i, s -> TrackWaveCandidate(s, TrackWaveSource.LastFm, rankScore(i, songs.size)) }
+                    }
+                }
+                val artists = async {
+                    val artistId = seed.artistId
+                    if (artistId == null) {
+                        emptyList()
+                    } else {
+                        timed(EXTERNAL_TIMEOUT_MS) {
+                            client.getSimilarSongs2(artistId, SIMILAR_ARTIST_SONGS)
+                                .filter { it.artistId != artistId }
+                                .map { TrackWaveCandidate(it, TrackWaveSource.SimilarArtists, 1.0) }
+                        }
+                    }
+                }
+                listOf(lastFm, artists).awaitAll().flatten()
+            }
+        }
+        externalBySeed[seed.id] = job
+        if (externalBySeed.size > MAX_SEEDS) externalBySeed.remove(externalBySeed.keys.first())
+        job
+    }
+
+    private suspend fun genreCandidates(seed: Song): List<TrackWaveCandidate> {
+        val genre = seed.genre?.takeIf { it.isNotBlank() } ?: return emptyList()
+        return timed { library.songsByGenre(genre, offset = 0, count = GENRE_SONGS) }
+            .shuffled(random)
+            .map { TrackWaveCandidate(it, TrackWaveSource.Genre, 1.0) }
+    }
+
+    /** Источник с ограничением по времени; ошибка или таймаут — пусто (итог порции — в журнале). */
+    private suspend fun <T> timed(timeoutMs: Long = LOCAL_TIMEOUT_MS, block: suspend () -> List<T>): List<T> = try {
+        withTimeoutOrNull(timeoutMs) { block() }.orEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** Скор по месту в выдаче источника: первый 1,0, последний 0,5. */
+    private fun rankScore(index: Int, size: Int): Double = if (size <= 1) 1.0 else 1.0 - 0.5 * index / (size - 1)
 
     /** Подбирает ли волну bodrod (0.19.0+, режимы и темпоритм). Ответ запоминается на учётку. */
     private suspend fun serverSupported(): Boolean {
@@ -232,13 +358,16 @@ class WaveRepository @Inject constructor(
         val ids = queue.map { it.id }.takeLast(MAX_RECENT).toSet()
         if (ids.isEmpty()) return emptyList()
         val state = reactions.state.value
-        val plays = history.items(clock.now() - SESSION_WINDOW_MS).filter { it.songId in ids }.associateBy { it.songId }
+        val plays = history.items(clock.now() - SESSION_WINDOW_MS).filter {
+            it.songId in ids
+        }.distinctBy { it.songId }.associateBy { it.songId }
         return queue.filter { it.id in ids }.mapNotNull { song ->
             when {
                 state.of(song) == Reaction.Disliked -> WaveSessionEvent(song.id, "dislike")
                 state.of(song) == Reaction.Liked && plays.containsKey(song.id) -> WaveSessionEvent(song.id, "like")
-                plays[song.id]?.skippedEarly == true -> WaveSessionEvent(song.id, "skip")
-                plays.containsKey(song.id) -> WaveSessionEvent(song.id, "complete")
+                plays[song.id]?.outcome == PlayOutcome.EarlySkip -> WaveSessionEvent(song.id, "skip")
+                // Частичное прослушивание — нейтрально: серверу не сообщаем.
+                plays[song.id]?.outcome == PlayOutcome.Full -> WaveSessionEvent(song.id, "complete")
                 else -> null
             }
         }
@@ -319,5 +448,13 @@ class WaveRepository @Inject constructor(
         val LOCAL_MODES = setOf(WaveMode.TrackMix, WaveMode.AlbumMix, WaveMode.DecadeMix)
         const val MOOD_OVERSAMPLE = 3
         const val HISTORY_WINDOW_MS = 120L * 24 * 60 * 60 * 1000
+        const val DAY_MS = 24L * 60 * 60 * 1000
+        const val LOCAL_TIMEOUT_MS = 4_000L
+        const val EXTERNAL_TIMEOUT_MS = 12_000L
+        const val EXTERNAL_WAIT_MS = 1_500L
+        const val ARTIST_SONGS = 40
+        const val GENRE_SONGS = 60
+        const val SIMILAR_ARTIST_SONGS = 40
+        const val MAX_SEEDS = 8
     }
 }

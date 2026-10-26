@@ -47,6 +47,7 @@ import ru.bodro.music.core.model.Reaction
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.theme.LocalPlayerColors
 
 /**
@@ -104,7 +105,7 @@ fun MiniPlayer(
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             with(sharedScope) {
                 CoverImage(
-                    song.coverArt,
+                    song.coverChain(),
                     Modifier
                         .sharedElement(rememberSharedContentState("player-cover"), visibilityScope)
                         .size(44.dp),
@@ -150,12 +151,12 @@ fun MiniPlayer(
                     )
                 }
             }
-            IconButton(onClick = onNext, enabled = state.hasNext, modifier = Modifier.size(40.dp).testTag("mini-next")) {
-                Icon(
-                    Icons.Rounded.SkipNext,
-                    contentDescription = stringResource(R.string.action_next),
-                    tint = if (state.hasNext) content else content.copy(alpha = 0.4f),
-                )
+            IconButton(onClick = onNext, modifier = Modifier.size(40.dp).testTag("mini-next")) {
+                if (state.skipPending) {
+                    CircularProgressIndicator(Modifier.size(20.dp), color = content, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.action_next), tint = content)
+                }
             }
         }
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f

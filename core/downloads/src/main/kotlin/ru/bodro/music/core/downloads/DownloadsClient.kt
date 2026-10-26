@@ -164,6 +164,9 @@ class DownloadsClient(
     /** Сводка последнего запуска и карантин (bodrod 0.16.0+). */
     suspend fun maintenanceSummary(): MaintenanceSummary = get(listOf("api", "v1", "maintenance", "summary"))
 
+    /** Альбомы, треки и исполнители без картинки (bodrod 0.25.0+). */
+    suspend fun coverStats(): CoverStats = get(listOf("api", "v1", "library", "covers"))
+
     suspend fun maintenanceRuns(limit: Int = 20): List<MaintenanceRun> =
         get(listOf("api", "v1", "maintenance", "runs"), listOf("limit" to limit.toString()))
 

@@ -57,7 +57,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -84,7 +83,7 @@ import ru.bodro.music.ui.app.LocalNavigator
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
-import ru.bodro.music.ui.components.shimmerAlpha
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.screens.player.sourceTitle
 import ru.bodro.music.ui.screens.wave.NebulaBackground
 import ru.bodro.music.ui.theme.BodroYellow
@@ -352,7 +351,7 @@ private fun NowPlayingBlock(
                 )
                 Spacer(Modifier.height(if (compact) 10.dp else 16.dp))
                 CoverImage(
-                    current.coverArt,
+                    current.coverChain(),
                     Modifier.size(if (compact) COVER_COMPACT.dp else COVER_SIZE.dp),
                     sizeHint = 200.dp,
                     shape = RoundedCornerShape(14.dp),
@@ -488,12 +487,12 @@ private fun TrackBlurb(blurbs: Section<List<String>>, modifier: Modifier = Modif
                     }
                     Spacer(Modifier.size(12.dp))
                     if (text == LOADING) {
-                        val alpha = shimmerAlpha()
+                        // Статично: мерцающий белый текст на главной убран (0.30.0).
                         Text(
                             stringResource(R.string.wave_blurb_loading),
                             style = style,
-                            color = Color.White,
-                            modifier = Modifier.graphicsLayer { this.alpha = 0.45f + alpha * 2f }.testTag("wave-blurb-loading"),
+                            color = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.testTag("wave-blurb-loading"),
                         )
                     } else {
                         Text(text, style = style, color = Color.White.copy(alpha = 0.86f), modifier = Modifier.testTag("wave-fact"))

@@ -35,6 +35,7 @@ import ru.bodro.music.ui.app.LocalAppActions
 import ru.bodro.music.ui.app.LocalNowPlayingId
 import ru.bodro.music.ui.app.LocalReactions
 import ru.bodro.music.ui.app.SongMenuContext
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.util.formatDuration
 
 /**
@@ -67,7 +68,13 @@ fun SongRow(
     ) {
         when {
             showCover -> Box {
-                CoverImage(song.coverArt, Modifier.size(48.dp), sizeHint = 48.dp, shape = RoundedCornerShape(10.dp), kind = CoverKind.Song)
+                CoverImage(
+                    song.coverChain(),
+                    Modifier.size(48.dp),
+                    sizeHint = 48.dp,
+                    shape = RoundedCornerShape(10.dp),
+                    kind = CoverKind.Song,
+                )
                 if (playing) {
                     Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = accent, modifier = Modifier.align(Alignment.Center))
                 }

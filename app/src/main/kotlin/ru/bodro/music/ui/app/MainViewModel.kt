@@ -29,6 +29,7 @@ import ru.bodro.music.data.account.ConnectionManager
 import ru.bodro.music.data.account.SessionState
 import ru.bodro.music.data.reco.SoundRepository
 import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.data.repository.LyricsRepository
 import ru.bodro.music.data.repository.PlaylistRepository
 import ru.bodro.music.data.repository.ReactionRepository
 import ru.bodro.music.data.repository.ReactionState
@@ -55,6 +56,7 @@ class MainViewModel @Inject constructor(
     private val palette: CoverPaletteRepository,
     private val library: LibraryRepository,
     private val sound: SoundRepository,
+    lyrics: LyricsRepository,
 ) : ViewModel(), AppActions {
     val session: StateFlow<SessionState> = connection.session
     val settings: StateFlow<AppSettings> = settingsRepository.settings
@@ -76,6 +78,12 @@ class MainViewModel @Inject constructor(
 
     private val _messages = Channel<UiMessage>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
+
+    init {
+        // Наличие текста проверяется при каждой смене трека — иконка в плеере готова до открытия панели.
+        lyrics.start()
+        viewModelScope.launch { player.messages.collect { showMessage(context.getString(it)) } }
+    }
 
     fun connectPlayer() = player.connect()
 
@@ -123,7 +131,21 @@ class MainViewModel @Inject constructor(
 
     /** Волна (режим, микс, «по треку»): подбирается от трека, который сейчас в плеере, — переход без скачка. */
     override fun startWave(settings: WaveSettings) {
-        player.startWave(settings, from = player.state.value.currentSong, onError = ::showWaveError)
+        val seed = settings.trackSeed
+        if (seed == null) {
+            player.startWave(settings, from = player.state.value.currentSong, onError = ::showWaveError)
+            return
+        }
+        viewModelScope.launch {
+            val song = player.state.value.queue.firstOrNull { it.id == seed.songId }
+                ?: runCatching { library.song(seed.songId) }.getOrNull()
+                ?: Song(id = seed.songId, title = seed.title, artistId = seed.artistId, genre = seed.genre)
+            player.startTrackWave(song, settings.soundOnly, onError = ::showWaveError)
+        }
+    }
+
+    override fun startTrackWave(song: Song) {
+        player.startTrackWave(song, onError = ::showWaveError)
     }
 
     /** Главная: «следующий» вне волны — очередь переходит на волну от текущего трека. */
@@ -140,19 +162,17 @@ class MainViewModel @Inject constructor(
         showMessage(text)
     }
 
+    /**
+     * «Похожие по звучанию»: трек играет сразу, похожие по звуку подбирает сервис плеера (как волну по треку, но только
+     * из анализа звучания). Раньше очередь запускалась только после загрузки всех похожих — секунды тишины.
+     */
     override fun playSimilar(song: Song) {
         viewModelScope.launch {
-            val similar = if (sound.isSupported()) runCatching { sound.similar(song) }.getOrDefault(emptyList()) else null
-            when {
-                similar == null -> showMessage(context.getString(R.string.similar_sound_unsupported))
-                similar.isEmpty() -> showMessage(context.getString(R.string.similar_sound_empty))
-                else -> player.play(
-                    listOf(song) + similar,
-                    0,
-                    QueueSource.CustomSource(context.getString(R.string.similar_sound_title, song.title)),
-                    false,
-                )
+            if (!sound.isSupported()) {
+                showMessage(context.getString(R.string.similar_sound_unsupported))
+                return@launch
             }
+            player.startTrackWave(song, soundOnly = true, onError = ::showWaveError)
         }
     }
 

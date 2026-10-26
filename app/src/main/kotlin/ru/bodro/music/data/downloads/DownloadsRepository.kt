@@ -163,6 +163,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun maintenanceSummary(): MaintenanceSummary = client.maintenanceSummary()
 
+    suspend fun coverStats(): ru.bodro.music.core.downloads.CoverStats = client.coverStats()
+
     suspend fun runMaintenance() = client.runMaintenance()
 
     suspend fun restoreFromQuarantine(id: Long) = client.restoreFromQuarantine(id)

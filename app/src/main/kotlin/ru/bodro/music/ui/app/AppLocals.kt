@@ -29,6 +29,9 @@ interface AppActions {
 
     fun startWave(settings: WaveSettings)
 
+    /** «Волна по треку»: [song] играет сразу, похожие догружаются следом. */
+    fun startTrackWave(song: Song) = startWave(WaveSettings.byTrack(song))
+
     /** Главная вне волны: перевести очередь на волну от [song] ([skip] — сразу к первому треку волны). */
     fun continueWithWave(song: Song, skip: Boolean) {}
 

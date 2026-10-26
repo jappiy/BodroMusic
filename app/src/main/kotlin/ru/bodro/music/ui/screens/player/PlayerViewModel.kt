@@ -4,17 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import ru.bodro.music.core.domain.player.SleepTimerOption
 import ru.bodro.music.core.model.Lyrics
 import ru.bodro.music.data.reco.PoolRepository
-import ru.bodro.music.data.repository.LibraryRepository
+import ru.bodro.music.data.repository.LyricsAvailability
+import ru.bodro.music.data.repository.LyricsRepository
 import ru.bodro.music.playback.PlayerConnection
 import ru.bodro.music.playback.PlayerUiState
 
@@ -29,7 +26,7 @@ sealed interface LyricsState {
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val player: PlayerConnection,
-    private val library: LibraryRepository,
+    private val lyricsRepository: LyricsRepository,
     pool: PoolRepository,
 ) : ViewModel() {
     val state: StateFlow<PlayerUiState> = player.state
@@ -39,34 +36,26 @@ class PlayerViewModel @Inject constructor(
         .map { it.songIds }
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), pool.visibility.value.songIds)
 
-    private val _lyrics = MutableStateFlow<LyricsState>(LyricsState.Missing)
-    val lyrics: StateFlow<LyricsState> = _lyrics.asStateFlow()
+    /** Текст текущего трека: проверяется заранее при смене трека ([LyricsRepository]), не только при открытии панели. */
+    val lyricsAvailability: StateFlow<LyricsAvailability> = lyricsRepository.current
 
-    private var lyricsJob: kotlinx.coroutines.Job? = null
-    private var lyricsEnabled = false
+    val lyrics: StateFlow<LyricsState> = lyricsRepository.current
+        .map { it.toState() }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, lyricsRepository.current.value.toState())
 
     init {
-        viewModelScope.launch {
-            player.state.map { it.currentSong }.distinctUntilChanged { a, b -> a?.id == b?.id }.collect {
-                if (lyricsEnabled) loadLyrics()
-            }
-        }
+        lyricsRepository.start()
     }
 
-    /** Текст грузим только когда открыта панель текста. */
+    /** Панель текста открыта — если прошлый запрос не удался, повторить. */
     fun onLyricsVisible(visible: Boolean) {
-        lyricsEnabled = visible
-        if (visible) loadLyrics()
+        if (visible) lyricsRepository.refresh()
     }
 
-    private fun loadLyrics() {
-        val song = player.state.value.currentSong ?: return
-        lyricsJob?.cancel()
-        _lyrics.value = LyricsState.Loading
-        lyricsJob = viewModelScope.launch {
-            val result = runCatching { library.lyrics(song) }.getOrNull()
-            _lyrics.value = result?.let { LyricsState.Loaded(it) } ?: LyricsState.Missing
-        }
+    private fun LyricsAvailability.toState(): LyricsState = when (this) {
+        LyricsAvailability.Loading -> LyricsState.Loading
+        LyricsAvailability.Missing -> LyricsState.Missing
+        is LyricsAvailability.Available -> LyricsState.Loaded(lyrics)
     }
 
     fun togglePlay() = player.togglePlay()

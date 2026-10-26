@@ -38,7 +38,15 @@ class MediaItemFactory @Inject constructor(private val covers: CoverArtUrls) {
         .setTrackNumber(song.track)
         .setDiscNumber(song.discNumber)
         .setRecordingYear(song.year)
-        .setArtworkUri(song.coverArt?.let { covers.url(CoverArtRef(it, ARTWORK_SIZE)) }?.let(Uri::parse))
+        // Уведомление и экран блокировки: своя обложка трека, без неё — обложка альбома (Navidrome и сам берёт
+        // обложку альбома для `mf-…`, но у трека из старой сохранённой очереди coverArt может не быть).
+        .setArtworkUri(
+            (
+                song.coverArt ?: song.albumId?.let {
+                    "al-$it"
+                }
+                )?.let { covers.url(CoverArtRef(it, ARTWORK_SIZE)) }?.let(Uri::parse),
+        )
         .setIsPlayable(true)
         .setIsBrowsable(false)
         .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
@@ -48,6 +56,9 @@ class MediaItemFactory @Inject constructor(private val covers: CoverArtUrls) {
     companion object {
         const val SCHEME = "bodro"
         const val EXTRA_SONG = "ru.bodro.music.song"
+
+        /** Параметр URI «переоткрыть поток» ([SeekRescue]); на id трека и ключ кэша не влияет. */
+        const val REOPEN_PARAM = "reopen"
         private const val ARTWORK_SIZE = 600
 
         fun songUri(songId: String): Uri = Uri.Builder().scheme(SCHEME).authority("song").appendPath(songId).build()

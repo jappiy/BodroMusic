@@ -1,5 +1,6 @@
 package ru.bodro.music.ui.screens.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,8 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -53,12 +56,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -294,7 +295,42 @@ fun PlaybackSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hi
             delay(OFFLINE_REFRESH_MS)
         }
     }
-    Scaffold(topBar = { BodroTopBar(stringResource(R.string.settings_playback), onBack) }) { padding ->
+    // Размер кэша редактируется в поле; несохранённое значение сохраняется по «Сохранить», «Готово» на клавиатуре
+    // и при выходе с экрана (кнопка или свайп «назад»). Неверное значение при выходе — диалог.
+    var cacheText by rememberSaveable(settings.cacheSizeMb) { mutableStateOf(settings.cacheSizeMb.toString()) }
+    val cacheValue = cacheText.toIntOrNull()
+    val cacheValid = cacheValue != null && cacheValue in AppSettings.MIN_CACHE_MB..AppSettings.MAX_CACHE_MB
+    val cacheDirty = cacheText != settings.cacheSizeMb.toString()
+    var confirmExit by rememberSaveable { mutableStateOf(false) }
+    val saveCache = {
+        if (cacheValid && cacheDirty && cacheValue != null) viewModel.update { it.copy(cacheSizeMb = cacheValue) }
+    }
+    val leave = {
+        when {
+            !cacheDirty -> onBack()
+            cacheValid -> {
+                saveCache()
+                onBack()
+            }
+            else -> confirmExit = true
+        }
+    }
+    BackHandler(enabled = cacheDirty, onBack = leave)
+    if (confirmExit) {
+        AlertDialog(
+            onDismissRequest = { confirmExit = false },
+            title = { Text(stringResource(R.string.settings_unsaved_title)) },
+            text = { Text(stringResource(R.string.settings_unsaved_invalid, AppSettings.MIN_CACHE_MB, AppSettings.MAX_CACHE_MB)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmExit = false
+                    onBack()
+                }) { Text(stringResource(R.string.settings_discard)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmExit = false }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+    Scaffold(topBar = { BodroTopBar(stringResource(R.string.settings_playback), leave) }) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
             ChoiceGroup(stringResource(R.string.settings_quality), AppSettings.QUALITIES, settings.quality, {
                 qualityLabel(it)
@@ -317,7 +353,20 @@ fun PlaybackSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hi
                 settings.downloadLiked,
                 { v -> viewModel.update { it.copy(downloadLiked = v) } },
             )
-            CacheSizeField(settings.cacheSizeMb) { size -> viewModel.update { it.copy(cacheSizeMb = size) } }
+            CacheSizeField(cacheText, cacheValue, cacheValid, onChange = { cacheText = it }, onDone = saveCache)
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = saveCache, enabled = cacheDirty && cacheValid, modifier = Modifier.testTag("cache-size-save")) {
+                    Text(stringResource(R.string.settings_save))
+                }
+                if (!cacheDirty) {
+                    Text(
+                        stringResource(R.string.settings_saved),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                }
+            }
             Text(
                 stringResource(R.string.settings_cache_restart_hint) +
                     (used?.let { "\n" + stringResource(R.string.settings_cache_used, formatBytes(it)) } ?: ""),
@@ -346,20 +395,13 @@ fun PlaybackSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hi
     }
 }
 
-/** Размер кэша вводится вручную (в мегабайтах); сохраняется по «Готово» на клавиатуре или при уходе с поля. */
+/** Размер кэша в мегабайтах. Сохраняет экран ([onDone] — «Готово» на клавиатуре, кнопка «Сохранить», выход). */
 @Composable
-private fun CacheSizeField(currentMb: Int, onSave: (Int) -> Unit) {
-    var text by remember(currentMb) { mutableStateOf(currentMb.toString()) }
-    val value = text.toIntOrNull()
-    val valid = value != null && value in AppSettings.MIN_CACHE_MB..AppSettings.MAX_CACHE_MB
+private fun CacheSizeField(text: String, value: Int?, valid: Boolean, onChange: (String) -> Unit, onDone: () -> Unit) {
     val focus = LocalFocusManager.current
-    val save = {
-        if (value != null && valid && value != currentMb) onSave(value)
-        if (!valid) text = currentMb.toString()
-    }
     OutlinedTextField(
         value = text,
-        onValueChange = { input -> text = input.filter(Char::isDigit).take(6) },
+        onValueChange = { input -> onChange(input.filter(Char::isDigit).take(6)) },
         label = { Text(stringResource(R.string.settings_cache_size)) },
         suffix = { Text(stringResource(R.string.unit_mb)) },
         supportingText = {
@@ -375,13 +417,12 @@ private fun CacheSizeField(currentMb: Int, onSave: (Int) -> Unit) {
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = {
-            save()
+            onDone()
             focus.clearFocus()
         }),
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-            .onFocusChanged { if (!it.isFocused) save() }
             .testTag("cache-size-field"),
     )
 }
@@ -491,6 +532,18 @@ fun WaveSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVi
                 modifier = Modifier.padding(top = 4.dp).testTag("discovery-slider"),
             )
             WaveHint(R.string.settings_wave_discovery_hint, top = 0.dp)
+            Text(stringResource(R.string.settings_skip_cooldown), style = MaterialTheme.typography.titleMedium)
+            WaveChips(Modifier.padding(top = 8.dp)) {
+                AppSettings.SKIP_COOLDOWN_OPTIONS.forEach { days ->
+                    FilterChip(
+                        selected = settings.waveSkipCooldownDays == days,
+                        onClick = { viewModel.update { it.copy(waveSkipCooldownDays = days) } },
+                        label = { Text(stringResource(R.string.settings_skip_cooldown_days, days), maxLines = 1, softWrap = false) },
+                        modifier = Modifier.testTag("skip-cooldown-$days"),
+                    )
+                }
+            }
+            WaveHint(R.string.settings_skip_cooldown_summary, top = 0.dp)
             OutlinedButton(onClick = viewModel::resetSkipStats) {
                 Text(stringResource(R.string.settings_wave_reset_skips))
             }
@@ -670,7 +723,7 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                 stringResource(
                     R.string.settings_background_animation,
                 ),
-                BackgroundAnimation.entries,
+                listOf(BackgroundAnimation.Off, BackgroundAnimation.Eco, BackgroundAnimation.Full),
                 settings.backgroundAnimation,
                 { mode ->
                     stringResource(

@@ -29,8 +29,9 @@
 Пробный режим (`MAINTENANCE_DRY_RUN`) ничего не меняет и ничего не запоминает: два пробных запуска подряд дают
 одинаковый отчёт. Отметки «не найдено» хранят версию набора источников и сбрасываются при его смене.
 Папки Lidarr (если задан `LIDARR_MUSIC_DIR`): файлы не переносятся и не убираются (Lidarr скачал бы их снова),
-теги не меняются. Разрешено одно — `cover.jpg` в папку альбома без обложки из Cover Art Archive по MBID релиза
-(теги файла, база Navidrome, затем Lidarr). Пропуски по этому правилу — не проблема: в отчёт и сводку не попадают.
+теги не меняются. Разрешено одно — `cover.jpg` в папку альбома без обложки: из Cover Art Archive по MBID релиза
+(теги файла, база Navidrome, затем Lidarr), а если там нет — из общей цепочки `COVER_PROVIDERS` (с 0.25.0).
+Пропуски по этому правилу — не проблема: в отчёт и сводку не попадают.
 Не исправленное считается по причинам (`open_<причина>`, `REASONS`) — вместе с уже известным с прошлых запусков,
 хотя в отчёт оно повторно не пишется.
 Убранное лежит в карантине `QUARANTINE_DIR` `QUARANTINE_DAYS` дней, его можно вернуть из приложения.
@@ -88,7 +89,7 @@ REASONS = {
     "tags_unreadable": "Файл не читается — возможно, повреждён",
     "tags_not_found": "Нет тегов, надёжного совпадения в источниках нет",
     "cover_not_found": "Нет обложки, в источниках не найдена",
-    "lidarr_cover_not_found": "Папка Lidarr без обложки: нет MBID релиза или обложки в Cover Art Archive",
+    "lidarr_cover_not_found": "Папка Lidarr без обложки: нет ни в Cover Art Archive, ни в источниках обложек",
     "mismatch": "Чужой релиз в папке исполнителя",
     "encoding_manual": "Битая кодировка тегов: восстановить не удалось, нужна ручная проверка",
 }
@@ -1133,7 +1134,13 @@ class MaintenanceService:
         )
 
     async def _fix_lidarr_cover(self, ctx: RunContext, folder: Path, items: list[LibraryFile]) -> None:
-        """Папка Lidarr: теги и файлы не меняем, только `cover.jpg` из Cover Art Archive по MBID релиза."""
+        """Папка Lidarr: теги и файлы не меняем, только `cover.jpg`.
+
+        Сначала Cover Art Archive по MBID релиза (как сделал бы сам Lidarr). Нет MBID или обложки там нет — общая
+        цепочка `COVER_PROVIDERS` (Яндекс, Deezer, iTunes, MusicBrainz, Discogs, Last.fm) по исполнителю и альбому.
+        До bodrod 0.25.0 второго шага не было, и папки Lidarr без MBID оставались без обложки навсегда
+        (на 2026-10-26 — 257 папок).
+        """
         if await asyncio.to_thread(_has_image, folder) or any(f.song.has_cover_art for f in items):
             return
         if all(f.song.has_cover_art is None for f in items) and await asyncio.to_thread(
@@ -1141,7 +1148,7 @@ class MaintenanceService:
         ):
             return
         key = f"cover:{folder}"
-        signature = f"{len(items)}|caa"
+        signature = f"{len(items)}|caa+{self.cover_version}"
         if self._known(ctx, key, signature):
             return
         sample = items[0]
@@ -1155,12 +1162,11 @@ class MaintenanceService:
                 ctx.run_id, KIND_COVER, False, details, artist=artist, album=album, path=self._rel(folder)
             )
 
+        found: tuple[bytes, str] | None = None
+        source = "Cover Art Archive"
+        planned = False
         mbids = await self._album_mbids(ctx, folder, items)
-        if not mbids:
-            report("Папка Lidarr без обложки: MBID релиза нет ни в тегах, ни в Lidarr")
-            return
-        if not ctx.dry_run and self._fetch_cover is not None:
-            found: tuple[bytes, str] | None = None
+        if mbids and not ctx.dry_run and self._fetch_cover is not None:
             for kind, mbid in mbids:
                 try:
                     found = await self._fetch_cover(f"https://coverartarchive.org/{kind}/{mbid}/front-1200")
@@ -1169,9 +1175,18 @@ class MaintenanceService:
                     continue
                 if found is not None:
                     break
-            if found is None:
-                report("Папка Lidarr без обложки: в Cover Art Archive её нет")
+        elif mbids:
+            planned = True  # пробный режим: Cover Art Archive не запрашиваем
+        if found is None and not planned:
+            cover = await self._find_cover(ctx, artist, sample.title, album, sample.song.duration_s, need_album=True)
+            if cover is None:
+                sources = ", ".join(SOURCE_NAMES.get(p.name, p.name) for p in self.cover_chain) or "нет источников"
+                why = "MBID релиза нет ни в тегах, ни в Lidarr" if not mbids else "в Cover Art Archive её нет"
+                report(f"Папка Lidarr без обложки: {why}; в источниках не найдена ({sources})")
                 return
+            data, source = cover
+            found = data
+        if found is not None and not ctx.dry_run:
             image, mime = found
             name = "cover.png" if mime == "image/png" else "cover.jpg"
             await asyncio.to_thread((folder / name).write_bytes, image)
@@ -1183,8 +1198,8 @@ class MaintenanceService:
             not ctx.dry_run,
             _say(
                 ctx,
-                "Добавлена обложка папки Lidarr (Cover Art Archive)",
-                "Будет добавлена обложка папки Lidarr (Cover Art Archive)",
+                f"Добавлена обложка папки Lidarr ({source})",
+                f"Будет добавлена обложка папки Lidarr ({source})",
             ),
             artist=artist,
             album=album,

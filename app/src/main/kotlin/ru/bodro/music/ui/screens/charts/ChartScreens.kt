@@ -71,9 +71,12 @@ import ru.bodro.music.data.settings.SettingsRepository
 import ru.bodro.music.ui.app.ChartRoute
 import ru.bodro.music.ui.app.LocalAppActions
 import ru.bodro.music.ui.components.BodroTopBar
+import ru.bodro.music.ui.components.CoverImage
+import ru.bodro.music.ui.components.CoverKind
 import ru.bodro.music.ui.components.EmptyState
 import ru.bodro.music.ui.components.ErrorState
 import ru.bodro.music.ui.components.LoadingState
+import ru.bodro.music.ui.image.librarySongCover
 import ru.bodro.music.ui.screens.search.RemoteImage
 import ru.bodro.music.ui.util.UiError
 import ru.bodro.music.ui.util.formatTime
@@ -277,7 +280,13 @@ private fun ChartRow(entry: ChartEntry, onPlay: () -> Unit, onDownload: () -> Un
             Text(entry.position.toString(), style = MaterialTheme.typography.titleMedium)
             Movement(entry)
         }
-        RemoteImage(entry.coverUrl, Modifier.size(48.dp), RoundedCornerShape(10.dp), Icons.Rounded.MusicNote)
+        val songId = entry.songId
+        if (entry.coverUrl.isNullOrBlank() && songId != null) {
+            // Обложки источника чарта нет, а трек скачан — обложка из библиотеки.
+            CoverImage(listOf(librarySongCover(songId)), Modifier.size(48.dp), 48.dp, RoundedCornerShape(10.dp), CoverKind.Song)
+        } else {
+            RemoteImage(entry.coverUrl, Modifier.size(48.dp), RoundedCornerShape(10.dp), Icons.Rounded.MusicNote)
+        }
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(entry.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(

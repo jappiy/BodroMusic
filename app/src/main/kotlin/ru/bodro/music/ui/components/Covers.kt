@@ -18,7 +18,12 @@ import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,8 +37,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import ru.bodro.music.core.model.Song
 import ru.bodro.music.ui.image.CoverArtRef
 import ru.bodro.music.ui.image.CoverArtUrls
+import ru.bodro.music.ui.image.coverChain
 
 val LocalCoverArtUrls = staticCompositionLocalOf<CoverArtUrls> { error("CoverArtUrls not provided") }
 
@@ -53,22 +62,64 @@ fun CoverImage(
     shape: Shape = RoundedCornerShape(12.dp),
     kind: CoverKind = CoverKind.Album,
     contentDescription: String? = null,
+) = CoverImage(listOfNotNull(coverArtId), modifier, sizeHint, shape, kind, contentDescription)
+
+/** Обложка трека с цепочкой «трек → альбом → исполнитель → заглушка» ([coverChain]). */
+@Composable
+fun SongCover(
+    song: Song,
+    modifier: Modifier = Modifier,
+    sizeHint: Dp = 48.dp,
+    shape: Shape = RoundedCornerShape(10.dp),
+    contentDescription: String? = null,
+) = CoverImage(song.coverChain(), modifier, sizeHint, shape, CoverKind.Song, contentDescription)
+
+/**
+ * Единый компонент обложки: пробует [coverIds] по порядку (следующий — если предыдущий не загрузился), затем
+ * [remoteUrl] (внешний адрес, например из Яндекса или Last.fm), затем заглушка. Пока грузится — та же заглушка, без
+ * мигания: из кэша памяти картинка приходит сразу, из сети — с плавным появлением. Сервер ещё не выбран (старт) —
+ * запрос повторяется, когда адрес станет известен.
+ */
+@Composable
+fun CoverImage(
+    coverIds: List<String>,
+    modifier: Modifier = Modifier,
+    sizeHint: Dp = 160.dp,
+    shape: Shape = RoundedCornerShape(12.dp),
+    kind: CoverKind = CoverKind.Album,
+    contentDescription: String? = null,
+    remoteUrl: String? = null,
 ) {
     val context = LocalContext.current
     val urls = LocalCoverArtUrls.current
+    val server by urls.server.collectAsState()
     val px = with(LocalDensity.current) { sizeHint.roundToPx() }
+    val sources = remember(coverIds, remoteUrl) { coverIds.distinct() + listOfNotNull(remoteUrl?.takeIf { it.isNotBlank() }) }
+    var index by remember(sources, server) { mutableIntStateOf(0) }
     Box(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
-        if (coverArtId == null) {
+        val source = sources.getOrNull(index)
+        if (source == null) {
             CoverPlaceholder(kind)
         } else {
-            val request = remember(coverArtId, px) { urls.request(context, CoverArtRef(coverArtId, px)) }
+            val isRemote = source == remoteUrl && index >= coverIds.distinct().size
+            val request = remember(source, px, server) {
+                if (isRemote) {
+                    ImageRequest.Builder(context).data(source).crossfade(true).build()
+                } else {
+                    urls.request(context, CoverArtRef(source, px))
+                }
+            }
             SubcomposeAsyncImage(
                 model = request,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
                 loading = { CoverPlaceholder(kind) },
-                error = { CoverPlaceholder(kind) },
+                error = {
+                    CoverPlaceholder(kind)
+                    // Не загрузилось — следующий источник цепочки (без сервера не перебираем: дождёмся адреса).
+                    if (server != null || isRemote) SideEffect { if (index < sources.size) index++ }
+                },
             )
         }
     }

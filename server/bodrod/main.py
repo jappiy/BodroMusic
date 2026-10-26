@@ -615,6 +615,14 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
         replaced = {old: by_path[path] for old, path in kept_paths.items() if path in by_path}
         return LibraryCheck(missing=[i for i in gone if i not in replaced], replaced=replaced)
 
+    @app.get("/api/v1/library/covers")
+    async def library_covers(user: User, svc: Svc) -> dict[str, Any]:
+        """Аудит обложек: альбомы, треки и исполнители без картинки — по базе Navidrome."""
+        db = svc.navidrome_db
+        if db is None:
+            raise HTTPException(409, "Не настроено: задайте NAVIDROME_DB")
+        return await asyncio.to_thread(db.cover_stats)
+
     @app.get("/api/v1/requests", response_model=list[DownloadRequestOut], response_model_by_alias=True)
     async def list_requests(
         user: User, svc: Svc, limit: Annotated[int, Query(ge=1, le=500)] = 100

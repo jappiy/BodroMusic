@@ -19,7 +19,7 @@ class WaveProfileBuilderTest {
         assertEquals(3, profile.artistDislikes["ar-6"])
         assertEquals(NOW - DAY, profile.lastPlayedAt["s-9-1"])
         assertTrue("skips are not plays", "s-8-1" !in profile.lastPlayedAt)
-        assertEquals(1, profile.artistSkips["ar-8"])
+        assertEquals(1.0, profile.artistSkips["ar-8"])
         assertEquals("ar-5", profile.topArtistIds.first())
         assertTrue("ar-9" in profile.topArtistIds)
     }

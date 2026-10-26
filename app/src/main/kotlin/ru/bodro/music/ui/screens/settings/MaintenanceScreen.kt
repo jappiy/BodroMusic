@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.bodro.music.R
+import ru.bodro.music.core.downloads.CoverStats
 import ru.bodro.music.core.downloads.EncodingFix
 import ru.bodro.music.core.downloads.MaintenanceCount
 import ru.bodro.music.core.downloads.MaintenanceRun
@@ -65,6 +66,8 @@ data class MaintenanceUi(
     val loading: Boolean = true,
     val status: MaintenanceStatus? = null,
     val summary: MaintenanceSummary = MaintenanceSummary(),
+    /** Аудит обложек; `null` — bodrod старше 0.25.0 или нет базы Navidrome. */
+    val covers: CoverStats? = null,
     val starting: Boolean = false,
     val error: UiError? = null,
 )
@@ -118,7 +121,10 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
     private suspend fun reload() {
         val status = downloads.maintenanceStatus()
         val summary = downloads.maintenanceSummary()
-        _state.update { it.copy(loading = false, status = status, summary = summary, error = null) }
+        val covers = runCatching {
+            downloads.coverStats()
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+        _state.update { it.copy(loading = false, status = status, summary = summary, covers = covers, error = null) }
         if (status.running) pollWhileRunning()
     }
 
@@ -198,6 +204,27 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
                         SectionTitle(stringResource(R.string.maintenance_encoding_manual, summary.encodingManual.size))
                     }
                     items(summary.encodingManual, key = { "enc-manual-$it" }) { path -> Hint(path) }
+                }
+                state.covers?.let { covers ->
+                    item(key = "covers") {
+                        Column {
+                            SectionTitle(stringResource(R.string.maintenance_covers_title))
+                            Hint(
+                                stringResource(
+                                    R.string.maintenance_covers_summary,
+                                    covers.albumsWithoutCover,
+                                    covers.albums,
+                                    covers.songsWithoutCover,
+                                    covers.songs,
+                                    covers.artistsWithoutImage,
+                                    covers.artists,
+                                ),
+                            )
+                            covers.byFolder.entries.firstOrNull()?.let { (folder, count) ->
+                                Hint(stringResource(R.string.maintenance_covers_folders, folder, count))
+                            }
+                        }
+                    }
                 }
                 item(key = "quarantine-header") {
                     Column {

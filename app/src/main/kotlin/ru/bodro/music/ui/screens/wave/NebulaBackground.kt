@@ -44,19 +44,23 @@ import ru.bodro.music.playback.SpectrumFrame
 
 /**
  * Фон главной — «туманность» (ориентир — «Моя волна» Яндекс Музыки): плотный дымный слой в цвете обложки
- * с тонкими светлыми прожилками, заметно течёт, слегка пульсирует в ритм; верхние ~45 % экрана — туманность,
- * ниже — плавное затухание в чёрный под кнопками.
+ * с тонкими светлыми прожилками, медленно течёт; верхние ~45 % экрана — туманность, ниже — плавное затухание в
+ * чёрный под кнопками.
+ *
+ * Без вспышек (0.30.0, WCAG 2.3.1): отклик на доли смягчён в разы (яркость ±3 %, масштаб ±0,6 %), доля нарастает
+ * за ~80 мс, а не скачком, и не чаще [NebulaRhythm.MIN_BEAT_INTERVAL_S] (≤ 3 раз в секунду); прожилки смешаны с белым
+ * на 30 % вместо 60 %, громкость меняет яркость не больше чем на 4 %.
  *
  * - Android 13+ — AGSL ([RuntimeShader], fBm с двойным искажением координат). Рисуется в слой половинного
  *   разрешения и растягивается с билинейной фильтрацией. Раньше Android 13 и на программном холсте — градиенты.
  * - Палитра ([nebulaPalette]) — от доминантного цвета обложки; смена трека — переход за [PALETTE_MS] мс.
  * - Ритм — из PCM плеера ([AudioSpectrum], без микрофона): энергия с AGC и доли ([NebulaRhythm]); кадр берётся
  *   с задержкой вывода звука, поэтому совпадает с тем, что слышно (и в Bluetooth-наушниках).
- * - [mode]: Полный — каждый кадр; Экономный (и системное энергосбережение) — 30 кадров/с без пульсации;
- *   Выкл — неподвижный кадр.
+ * - [mode] («Анимация плеера»): Полная — каждый кадр, мягкий отклик на ритм; Спокойная (по умолчанию, и при
+ *   энергосбережении) — 30 кадров/с, без отклика на доли, громкость влияет втрое слабее; Выкл — неподвижный кадр.
  * - Системный масштаб анимации 0 («Отключить анимацию», параметры разработчика) фон не замораживает: кадры идут
  *   через [withFrameNanos], который масштаб не трогает. Это осознанно считается «уменьшить движение» — 15 кадров/с,
- *   течение вдвое медленнее, без пульсации. Остановить совсем — «Анимация фона: Выкл».
+ *   течение вдвое медленнее, без отклика на звук совсем. Остановить совсем — «Анимация плеера: Выкл».
  * - Кадров нет, когда фон не виден: приложение свёрнуто или экран погашен (не RESUMED), [active] = false
  *   (главную закрыл полноэкранный плеер) или вкладка другая (фон убран из композиции).
  */
@@ -111,7 +115,12 @@ fun NebulaBackground(
                     playing,
                     pulse = !eco,
                 )
-                energy = rhythm.energy
+                // Спокойная — громкость втрое слабее, «уменьшить движение» — без отклика на звук.
+                energy = rhythm.energy * when {
+                    reducedMotion -> 0f
+                    eco -> CALM_ENERGY
+                    else -> 1f
+                }
                 beat = rhythm.beat
                 phase = rhythm.phase
             }
@@ -151,9 +160,9 @@ fun NebulaBackground(
 private fun Context.powerSaving(): Boolean = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
 /**
- * Ритм для фона из кадров звука: [energy] — громкость (подъём ~50 мс, спад ~400 мс), [beat] — 1 на долю
- * с затуханием τ ≈ 180 мс, [phase] — фаза течения: скорость 1,4 + 1,6·энергия при воспроизведении, 0,5 на паузе,
- * смена скорости плавная.
+ * Ритм для фона из кадров звука: [energy] — громкость (подъём ~250 мс, спад ~800 мс), [beat] — мягкий импульс на долю:
+ * нарастает за ~80 мс, гаснет за ~300 мс, не чаще раза в [MIN_BEAT_INTERVAL_S] (≤ 3 в секунду — WCAG 2.3.1);
+ * [phase] — фаза течения: скорость 1,2 + 0,8·энергия при воспроизведении, 0,5 на паузе, смена скорости плавная.
  */
 internal class NebulaRhythm {
     var energy = 0f
@@ -164,14 +173,23 @@ internal class NebulaRhythm {
         private set
     private var speed = PAUSE_SPEED
     private var lastBeats = -1
+    private var beatTarget = 0f
+    private var sinceBeat = Float.MAX_VALUE
 
     fun update(frame: SpectrumFrame, dt: Float, playing: Boolean, pulse: Boolean = true) {
         if (dt <= 0f) return
         val target = if (playing) frame.energy else 0f
         energy += (target - energy) * smoothing(dt, if (target > energy) ATTACK_S else RELEASE_S)
-        beat *= exp(-dt / BEAT_TAU_S)
-        val newBeat = lastBeats >= 0 && frame.beats > lastBeats
-        if (newBeat && playing && pulse) beat = 1f
+        sinceBeat += dt
+        val newBeat = lastBeats >= 0 && frame.beats > lastBeats && sinceBeat >= MIN_BEAT_INTERVAL_S
+        if (newBeat && playing && pulse) {
+            beatTarget = 1f
+            sinceBeat = 0f
+        }
+        if (!pulse) beatTarget = 0f
+        // Без скачка: импульс плавно поднимается к цели, цель гаснет.
+        beat += (beatTarget - beat) * smoothing(dt, if (beatTarget > beat) BEAT_ATTACK_S else BEAT_RELEASE_S)
+        beatTarget *= exp(-dt / BEAT_HOLD_S)
         if (frame.beats != 0 || lastBeats < 0) lastBeats = frame.beats
         val targetSpeed = if (playing) PLAY_SPEED + ENERGY_SPEED * energy else PAUSE_SPEED
         speed += (targetSpeed - speed) * smoothing(dt, SPEED_TAU_S)
@@ -180,20 +198,25 @@ internal class NebulaRhythm {
 
     private fun smoothing(dt: Float, tau: Float): Float = 1f - exp(-dt / tau)
 
-    private companion object {
-        const val ATTACK_S = 0.05f
-        const val RELEASE_S = 0.4f
-        const val BEAT_TAU_S = 0.18f
-        const val SPEED_TAU_S = 0.6f
-        const val PLAY_SPEED = 1.4f
-        const val ENERGY_SPEED = 1.6f
-        const val PAUSE_SPEED = 0.5f
+    companion object {
+        /** Не чаще трёх импульсов в секунду (WCAG 2.3.1 «Три вспышки»). */
+        const val MIN_BEAT_INTERVAL_S = 0.34f
+        private const val ATTACK_S = 0.25f
+        private const val RELEASE_S = 0.8f
+        private const val BEAT_ATTACK_S = 0.08f
+        private const val BEAT_RELEASE_S = 0.25f
+        private const val BEAT_HOLD_S = 0.12f
+        private const val SPEED_TAU_S = 1.2f
+        private const val PLAY_SPEED = 1.2f
+        private const val ENERGY_SPEED = 0.8f
+        private const val PAUSE_SPEED = 0.5f
     }
 }
 
 /**
  * Палитра туманности от доминантного цвета обложки: B — тот же оттенок, насыщеннее, яркость ~0,8; A = B × 0,45
- * (тёмный дым); C = B, смешанный с белым на 60 % (прожилки). Почти серые обложки — мягкий, а не кислотный цвет.
+ * (тёмный дым); C = B, смешанный с белым на 30 % (прожилки; до 0.30.0 — 60 %, давало вспышки белым). Почти серые
+ * обложки — мягкий, а не кислотный цвет.
  */
 internal fun nebulaPalette(dominant: Color): List<Color> {
     val hsv = FloatArray(3)
@@ -202,7 +225,7 @@ internal fun nebulaPalette(dominant: Color): List<Color> {
     hsv[2] = 0.8f
     val b = Color(android.graphics.Color.HSVToColor(hsv))
     val a = Color(b.red * 0.45f, b.green * 0.45f, b.blue * 0.45f)
-    val c = lerp(b, Color.White, 0.6f)
+    val c = lerp(b, Color.White, 0.3f)
     return listOf(a, b, c)
 }
 
@@ -256,7 +279,7 @@ half4 main(float2 fc) {
     float2 uv = fc / uRes;
     float asp = uRes.x / uRes.y;
     float2 p = float2((uv.x - 0.5) * asp, uv.y - 0.35) * 1.8;
-    p *= 1.0 - 0.025 * uBeat;
+    p *= 1.0 - 0.006 * uBeat;
     float t = uTime;
     float2 q = float2(fbm4(p + float2(t * 0.05, t * 0.07)),
                       fbm4(p + float2(5.2 - t * 0.06, 1.3 + t * 0.04)));
@@ -265,9 +288,9 @@ half4 main(float2 fc) {
     float f = fbm5(p + 2.0 * r);
     float smoke = clamp(0.35 + (f - 0.5) * 1.3, 0.0, 1.0);
     float rid = 1.0 - abs(2.0 * fbm5(p * 1.4 + 2.2 * r + float2(t * 0.03, 0.0)) - 1.0);
-    float fil = pow(rid, 14.0 - 5.0 * uEnergy);
-    float3 col = mix(uColA, uColB, smoke) + uColC * fil * (0.35 + 0.35 * uEnergy + 0.3 * uBeat);
-    col *= 0.9 + 0.12 * uEnergy + 0.15 * uBeat;
+    float fil = pow(rid, 14.0 - 2.0 * uEnergy);
+    float3 col = mix(uColA, uColB, smoke) + uColC * fil * (0.25 + 0.10 * uEnergy + 0.06 * uBeat);
+    col *= 0.92 + 0.04 * uEnergy + 0.03 * uBeat;
     col = 1.0 - exp(-col * 1.6);
     float fade = pow(clamp(1.0 - (uv.y - uFadeStart) / uFadeLen, 0.0, 1.0), 1.6);
     return half4(half3(col * fade), 1.0);
@@ -280,7 +303,7 @@ half4 main(float2 fc) {
 private fun DrawScope.drawGradientNebula(a: Color, b: Color, c: Color, phase: Float, energy: Float, beat: Float) {
     val w = size.width
     val h = size.height
-    val scale = 1f + 0.04f * beat + 0.05f * energy
+    val scale = 1f + 0.008f * beat + 0.015f * energy
     listOf(a, b, b, c).forEachIndexed { index, color ->
         val angle = phase * (0.12f + 0.05f * index) + index * 1.7f
         val cx = w * (0.5f + 0.34f * cos(angle))
@@ -308,6 +331,7 @@ private const val MAX_DT = 0.1f
 private const val ECO_FRAME_S = 1f / 30f
 private const val REDUCED_FRAME_S = 1f / 15f
 private const val REDUCED_SPEED = 0.5f
+private const val CALM_ENERGY = 0.33f
 private const val START_PHASE = 7f
 private const val FADE_START = 0.42f
 private const val FADE_LEN = 0.33f

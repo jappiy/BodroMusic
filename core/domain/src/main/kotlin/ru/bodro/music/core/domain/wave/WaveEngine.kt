@@ -12,7 +12,8 @@ import ru.bodro.music.core.model.WaveSettings
  * - трек, игравший за последние 7 дней, не повторяется (лайкнутый — не чаще раза в 2 дня);
  * - не больше [MAX_ARTIST_RUN] треков одного исполнителя подряд (с учётом хвоста очереди);
  * - исполнитель с ≥ 3 дизлайками и 0 лайков получает вес в 5 раз меньше;
- * - ранние пропуски понижают вес исполнителя и жанра.
+ * - ранние пропуски понижают вес исполнителя и жанра (с весом контекста); пропущенный в волне трек не
+ *   возвращается [WaveProfile.skipCooldownMs], после 3 пропусков без полного прослушивания его вес ниже.
  *
  * Детерминирован: вся случайность — из [WaveRequest.random].
  */
@@ -76,10 +77,11 @@ class WaveEngine(
         val profile = request.profile
         if (song.id in profile.dislikedSongIds || song.isDislikedOnServer) return false
         if (!matchesFilters(song, request.settings)) return false
-        val lastPlayed = profile.lastPlayedAt[song.id] ?: return true
+        val skipped = profile.lastSkippedAt[song.id]?.let { request.nowMs - it < profile.skipCooldownMs } == true
+        val lastPlayed = profile.lastPlayedAt[song.id]
         val liked = song.id in profile.likedSongIds || song.starred
         val cooldown = if (liked) LIKED_COOLDOWN_MS else COOLDOWN_MS
-        return request.nowMs - lastPlayed >= cooldown
+        return !skipped && (lastPlayed == null || request.nowMs - lastPlayed >= cooldown)
     }
 
     private fun matchesFilters(song: Song, settings: WaveSettings): Boolean {
@@ -96,13 +98,14 @@ class WaveEngine(
             val dislikes = profile.artistDislikes[artistId] ?: 0
             val likes = profile.artistLikes[artistId] ?: 0
             if (dislikes >= ARTIST_DISLIKE_THRESHOLD && likes == 0) weight /= ARTIST_DISLIKE_PENALTY
-            val skips = profile.artistSkips[artistId] ?: 0
+            val skips = profile.artistSkips[artistId] ?: 0.0
             weight *= maxOf(MIN_SKIP_FACTOR, 1.0 / (1.0 + ARTIST_SKIP_STEP * skips))
         }
         song.genre?.let { genre ->
-            val skips = profile.genreSkips[genre] ?: 0
+            val skips = profile.genreSkips[genre] ?: 0.0
             weight *= maxOf(MIN_SKIP_FACTOR, 1.0 / (1.0 + GENRE_SKIP_STEP * skips))
         }
+        if ((profile.songEarlySkips[song.id] ?: 0) >= WaveProfile.REPEATED_SKIPS) weight *= WaveProfile.REPEATED_SKIP_FACTOR
         return weight
     }
 

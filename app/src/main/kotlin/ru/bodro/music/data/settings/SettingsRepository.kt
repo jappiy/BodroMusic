@@ -29,7 +29,10 @@ import ru.bodro.music.di.AppScope
 
 enum class ThemeMode { System, Light, Dark }
 
-/** Анимированный фон главной: полный (60 кадров/с), экономный (30 кадров/с, без пульсации) или выключен. */
+/**
+ * Анимация плеера (фон главной): полная — течение и мягкий отклик на доли, спокойная (по умолчанию) — медленное
+ * течение без пульсации, 30 кадров/с; выкл — неподвижный кадр. Имя `Eco` сохранено для совместимости настроек.
+ */
 enum class BackgroundAnimation { Full, Eco, Off }
 
 data class AppSettings(
@@ -55,7 +58,9 @@ data class AppSettings(
     /** Пропуски раньше этого момента не учитываются волной («Сбросить статистику пропусков»). */
     val skipStatsResetAt: Long = 0,
     /** Анимированный фон главной (туманность в цветах обложки, реагирует на звук). */
-    val backgroundAnimation: BackgroundAnimation = BackgroundAnimation.Full,
+    val backgroundAnimation: BackgroundAnimation = BackgroundAnimation.Eco,
+    /** Пропущенный в волне трек не возвращается в неё столько дней. */
+    val waveSkipCooldownDays: Int = DEFAULT_SKIP_COOLDOWN_DAYS,
     /** Выбранный режим волны на главной (id режима, пусто — «Моя волна»). Свой у каждой учётки. */
     val waveModeId: String = "",
     /** Язык волны: `ru`, `en`, `none` (без слов) или пусто — любой. Свой у каждой учётки. */
@@ -67,6 +72,8 @@ data class AppSettings(
         const val DEFAULT_DISCOVERY = 0.2f
         const val MIN_CACHE_MB = 100
         const val MAX_CACHE_MB = 100_000
+        const val DEFAULT_SKIP_COOLDOWN_DAYS = 7
+        val SKIP_COOLDOWN_OPTIONS = listOf(1, 3, 7, 14, 30)
 
         /** Варианты качества в настройках. */
         val QUALITIES = listOf(StreamQuality.Original, StreamQuality.Kbps128)
@@ -102,7 +109,8 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.resume] = updated.resumeOnStart
             prefs[Keys.downloadLiked] = updated.downloadLiked
             prefs[Keys.logLevel] = updated.logLevel.name
-            prefs[Keys.backgroundMode] = updated.backgroundAnimation.name
+            prefs[Keys.playerAnimation] = updated.backgroundAnimation.name
+            prefs[Keys.skipCooldown] = updated.waveSkipCooldownDays
             // Волна и чарты — свои у каждой учётки: пишутся под той учёткой, для которой были прочитаны
             // (при переключении учётки значения старой не попадают в новую).
             if (updated.activeAccountId == before.activeAccountId) {
@@ -136,11 +144,16 @@ class SettingsRepository @Inject constructor(
             resumeOnStart = this[Keys.resume] ?: true,
             downloadLiked = this[Keys.downloadLiked] ?: false,
             logLevel = enumOr(this[Keys.logLevel], NetworkLogLevel.Normal),
-            // До 0.28.0 — переключатель вкл/выкл (ключ background_animation).
+            // С 0.30.0 — «Анимация плеера» (ключ player_animation), по умолчанию спокойная; прежний «Выкл» сохраняется.
             backgroundAnimation = enumOr(
-                this[Keys.backgroundMode],
-                if (this[Keys.backgroundAnimation] == false) BackgroundAnimation.Off else BackgroundAnimation.Full,
+                this[Keys.playerAnimation],
+                if (this[Keys.backgroundAnimation] == false || this[Keys.backgroundMode] == BackgroundAnimation.Off.name) {
+                    BackgroundAnimation.Off
+                } else {
+                    BackgroundAnimation.Eco
+                },
             ),
+            waveSkipCooldownDays = this[Keys.skipCooldown] ?: AppSettings.DEFAULT_SKIP_COOLDOWN_DAYS,
             waveDiscoveryShare = perAccount(Keys.discovery) ?: AppSettings.DEFAULT_DISCOVERY,
             waveCharacter = enumOr(perAccount(Keys.character), WaveCharacter.Mix),
             waveMood = enumOr(perAccount(Keys.mood), WaveMood.Any),
@@ -175,6 +188,8 @@ class SettingsRepository @Inject constructor(
         val activeAccount = longPreferencesKey("active_account")
         val backgroundAnimation = booleanPreferencesKey("background_animation")
         val backgroundMode = stringPreferencesKey("background_mode")
+        val playerAnimation = stringPreferencesKey("player_animation")
+        val skipCooldown = intPreferencesKey("wave_skip_cooldown_days")
         val waveMode = PerAccount(stringPreferencesKey("wave_mode"), ::stringPreferencesKey)
         val waveLanguage = PerAccount(stringPreferencesKey("wave_language"), ::stringPreferencesKey)
 

@@ -13,3 +13,5 @@
 | 3 | Движок кандидатов | [03-candidate-engine.md](03-candidate-engine.md) |
 | 4 | Чарты | [04-charts.md](04-charts.md) |
 | 5 | Анализ звучания | [05-audio-analysis.md](05-audio-analysis.md) |
+
+Правило засчитывания прослушиваний и пропусков (скроббл, сигналы волны, кулдаун) — [listening-rules.md](listening-rules.md).

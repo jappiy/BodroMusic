@@ -60,6 +60,7 @@ import ru.bodro.music.core.domain.player.SleepTimerState
 import ru.bodro.music.playback.PlayerUiState
 import ru.bodro.music.ui.components.CoverImage
 import ru.bodro.music.ui.components.CoverKind
+import ru.bodro.music.ui.image.coverChain
 import ru.bodro.music.ui.util.formatMs
 
 /** Очередь: тап — перейти, перетаскивание за ручку (долгое нажатие) — порядок, крестик — удалить. */
@@ -149,7 +150,7 @@ fun QueueSheet(
                     )
                     Box {
                         CoverImage(
-                            song.coverArt,
+                            song.coverChain(),
                             Modifier.size(44.dp),
                             sizeHint = 44.dp,
                             shape = RoundedCornerShape(8.dp),

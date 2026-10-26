@@ -113,10 +113,10 @@
     <string name="wave_start">Запустить волну</string>
     <string name="wave_start_hint">Музыка под вас — по лайкам и прослушиваниям</string>
     <string name="wave_more_settings">Жанры, эпохи и миксы →</string>
-    <string name="settings_background_animation">Анимированный фон</string>
-    <string name="settings_background_animation_summary">Туманность в цветах обложки на главной: течёт и пульсирует в ритм музыки. Экономный — 30 кадров в секунду и без пульсации (так же при включённом энергосбережении).</string>
-    <string name="background_animation_full">Полный</string>
-    <string name="background_animation_eco">Экономный</string>
+    <string name="settings_background_animation">Анимация плеера</string>
+    <string name="settings_background_animation_summary">Туманность в цветах обложки на главной. Спокойная — медленное течение без пульсации и вспышек. Полная — мягкий отклик на ритм (не чаще 3 раз в секунду, без резких скачков яркости). При системной настройке «Убрать анимацию» и энергосбережении — всегда спокойная.</string>
+    <string name="background_animation_full">Полная</string>
+    <string name="background_animation_eco">Спокойная</string>
     <string name="background_animation_off">Выкл</string>
     <string name="wave_empty">Не удалось собрать волну: мало данных. Послушайте что-нибудь и поставьте лайки.</string>
     <string name="wave_group_mood">Настроение</string>
@@ -685,4 +685,21 @@
     <string name="maintenance_encoding_revert">Отменить</string>
     <string name="maintenance_encoding_reverted">отменено</string>
     <string name="maintenance_encoding_revert_done">Исходные теги возвращены</string>
+    <string name="wave_next_timeout">Похожие треки пока не нашлись — попробуйте ещё раз или включите другую волну</string>
+    <string name="player_seek_unavailable">Перемотка в этом потоке недоступна: сервер не сообщил длину файла</string>
+    <string name="player_lyrics_available">Текст песни</string>
+    <string name="player_lyrics_missing">Текста нет</string>
+    <string name="player_lyrics_loading">Ищем текст…</string>
+    <string name="settings_save">Сохранить</string>
+    <string name="settings_saved">Сохранено</string>
+    <string name="settings_unsaved_title">Сохранить изменения?</string>
+    <string name="settings_unsaved_invalid">Размер кэша должен быть от %1$d до %2$d МБ. Выйти без сохранения?</string>
+    <string name="settings_discard">Не сохранять</string>
+    <string name="settings_skip_cooldown">Пропущенный трек в волне</string>
+    <string name="settings_skip_cooldown_summary">Трек, который вы переключили в первые 30 с (или до 20 %), не вернётся в волну столько дней. Вес трека снижается только после трёх таких пропусков подряд без полного прослушивания. Пропуски в своих плейлистах и альбомах почти не учитываются.</string>
+    <string name="settings_skip_cooldown_days">%1$d дн.</string>
+    <string name="similar_artist_in_library">%1$s · В библиотеке</string>
+    <string name="maintenance_covers_title">Обложки в библиотеке</string>
+    <string name="maintenance_covers_summary">Альбомов без обложки: %1$d из %2$d (треков: %3$d из %4$d). Исполнителей без фото: %5$d из %6$d.</string>
+    <string name="maintenance_covers_folders">Больше всего — в папке «%1$s»: %2$d</string>
 </resources>
