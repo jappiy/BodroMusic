@@ -293,6 +293,7 @@ class MaintenanceService:
         self._lock = lock or asyncio.Lock()
         self._task: asyncio.Task[Any] | None = None
         self.running = False
+        self._schedule_changed = asyncio.Event()
         """Сбор текстов (`LyricsService`): последний шаг регламента, после снятия блокировки файлов."""
         self.lyrics: Any = None
         store.fail_unfinished_runs()
@@ -315,10 +316,18 @@ class MaintenanceService:
 
     # region Расписание
 
+    @property
+    def schedule(self) -> str:
+        return self._store.get_value("maintenance.schedule", self._settings.maintenance_at)
+
+    def set_schedule(self, schedule: str) -> None:
+        self._store.set_value("maintenance.schedule", schedule)
+        self._schedule_changed.set()
+
     def next_run_at(self, now: float | None = None) -> float:
         """Ближайшее время запуска (секунды epoch, местное время контейнера)."""
         current = dt.datetime.fromtimestamp(now if now is not None else time.time())
-        hours, _, minutes = self._settings.maintenance_at.partition(":")
+        hours, _, minutes = self.schedule.partition(":")
         target = current.replace(hour=int(hours or 4), minute=int(minutes or 0), second=0, microsecond=0)
         if target <= current:
             target += dt.timedelta(days=1)
@@ -326,7 +335,14 @@ class MaintenanceService:
 
     async def run_forever(self) -> None:
         while True:
-            await asyncio.sleep(max(1.0, self.next_run_at() - time.time()))
+            self._schedule_changed.clear()
+            try:
+                await asyncio.wait_for(
+                    self._schedule_changed.wait(), timeout=max(1.0, self.next_run_at() - time.time())
+                )
+                continue
+            except TimeoutError:
+                pass
             try:
                 await self.run("schedule")
             except Exception:  # noqa: BLE001 — цикл не должен умирать

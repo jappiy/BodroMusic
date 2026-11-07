@@ -190,6 +190,8 @@ class DownloadsRepository @Inject constructor(
 
     suspend fun maintenanceStatus(): MaintenanceStatus = client.maintenanceStatus()
 
+    suspend fun updateMaintenanceSchedule(schedule: String): MaintenanceStatus = client.updateMaintenanceSchedule(schedule)
+
     suspend fun maintenanceSummary(): MaintenanceSummary = client.maintenanceSummary()
 
     suspend fun coverStats(): ru.bodro.music.core.downloads.CoverStats = client.coverStats()

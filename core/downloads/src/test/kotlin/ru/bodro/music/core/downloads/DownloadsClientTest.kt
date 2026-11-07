@@ -15,6 +15,18 @@ import org.junit.Test
 import ru.bodro.music.core.subsonic.SubsonicAuth
 
 class DownloadsClientTest {
+    @Test
+    fun `maintenance schedule sends time and reads updated status`() = runTest {
+        server.enqueue(json("""{"enabled":true,"running":false,"dryRun":false,"schedule":"06:30","nextRunAt":1234}"""))
+        val status = client().updateMaintenanceSchedule("06:30")
+        val request = server.takeRequest()
+        assertEquals("PUT", request.method)
+        assertEquals("/bodrod/api/v1/maintenance/schedule", request.url.encodedPath)
+        assertEquals("""{"schedule":"06:30"}""", request.body!!.utf8())
+        assertEquals("06:30", status.schedule)
+        assertEquals(1234L, status.nextRunAt)
+    }
+
     private lateinit var server: MockWebServer
     private val http = OkHttpClient.Builder().readTimeout(2, TimeUnit.SECONDS).build()
 

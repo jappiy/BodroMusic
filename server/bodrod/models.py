@@ -228,6 +228,10 @@ class MaintenanceRunOut(ApiModel):
     finished_at: int | None = None
 
 
+class MaintenanceScheduleUpdate(ApiModel):
+    schedule: str = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$", min_length=5, max_length=5)
+
+
 class MaintenanceStatus(ApiModel):
     enabled: bool
     running: bool

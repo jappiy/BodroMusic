@@ -73,6 +73,7 @@ from .models import (
     MaintenanceActionOut,
     MaintenanceActionsPage,
     MaintenanceRunOut,
+    MaintenanceScheduleUpdate,
     MaintenanceStatus,
     MaintenanceSummary,
     PlaylistAudit,
@@ -883,11 +884,19 @@ def create_app(services: Services | None = None, run_worker: bool = True) -> Fas
             enabled=True,
             running=maintenance.running,
             dry_run=svc.settings.maintenance_dry_run,
-            schedule=svc.settings.maintenance_at,
+            schedule=maintenance.schedule,
             next_run_at=int(maintenance.next_run_at() * 1000),
             quarantine_days=svc.settings.quarantine_days,
             last_run=run_out(runs[0]) if runs else None,
         )
+
+    @app.put("/api/v1/maintenance/schedule", response_model=MaintenanceStatus, response_model_by_alias=True)
+    async def maintenance_schedule(
+        body: MaintenanceScheduleUpdate, maintenance: Maintenance, svc: Svc, user: User
+    ) -> MaintenanceStatus:
+        maintenance.set_schedule(body.schedule)
+        log.info("%s изменил время обслуживания библиотеки: %s", user.username, body.schedule)
+        return await maintenance_status(maintenance, svc)
 
     @app.get("/api/v1/maintenance/runs", response_model=list[MaintenanceRunOut], response_model_by_alias=True)
     async def maintenance_runs(

@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +70,7 @@ data class MaintenanceUi(
     /** Аудит обложек; `null` — bodrod старше 0.25.0 или нет базы Navidrome. */
     val covers: CoverStats? = null,
     val starting: Boolean = false,
+    val savingSchedule: Boolean = false,
     val error: UiError? = null,
 )
 
@@ -99,6 +101,17 @@ class MaintenanceViewModel @Inject constructor(private val downloads: DownloadsR
             runCatching { downloads.runMaintenance() }.onFailure(onError)
             runCatching { reload() }
             _state.update { it.copy(starting = false) }
+        }
+    }
+
+    fun saveSchedule(schedule: String, onDone: (Throwable?) -> Unit) {
+        if (_state.value.savingSchedule) return
+        _state.update { it.copy(savingSchedule = true) }
+        viewModelScope.launch {
+            val result = runCatching { downloads.updateMaintenanceSchedule(schedule) }
+            result.onSuccess { status -> _state.update { it.copy(status = status) } }
+            _state.update { it.copy(savingSchedule = false) }
+            onDone(result.exceptionOrNull())
         }
     }
 
@@ -166,6 +179,13 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
                 item(key = "summary") {
                     Summary(status, starting = state.starting) {
                         viewModel.runNow { e -> actions.showMessage(e.toUiError().text(context)) }
+                    }
+                }
+                item(key = "schedule") {
+                    ScheduleSetting(status.schedule, state.savingSchedule) { schedule ->
+                        viewModel.saveSchedule(schedule) { e ->
+                            actions.showMessage(e?.toUiError()?.text(context) ?: context.getString(R.string.maintenance_schedule_saved))
+                        }
                     }
                 }
                 summary.run?.let { run ->
@@ -254,6 +274,27 @@ fun MaintenanceScreen(onBack: () -> Unit, viewModel: MaintenanceViewModel = hilt
             },
             dismissButton = { TextButton(onClick = { pending = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
+    }
+}
+
+@Composable
+private fun ScheduleSetting(schedule: String, saving: Boolean, onSave: (String) -> Unit) {
+    var value by remember(schedule) { mutableStateOf(schedule) }
+    val valid = value.matches(Regex("([01][0-9]|2[0-3]):[0-5][0-9]"))
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = { value = it },
+            label = { Text(stringResource(R.string.maintenance_schedule_title)) },
+            supportingText = { Text(stringResource(R.string.maintenance_schedule_hint)) },
+            singleLine = true,
+            isError = !valid,
+            enabled = !saving,
+            modifier = Modifier.fillMaxWidth().testTag("maintenance-schedule"),
+        )
+        TextButton(onClick = { onSave(value) }, enabled = valid && value != schedule && !saving) {
+            Text(stringResource(R.string.maintenance_schedule_save))
+        }
     }
 }
 

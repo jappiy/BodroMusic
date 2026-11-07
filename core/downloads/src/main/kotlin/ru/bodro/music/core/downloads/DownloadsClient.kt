@@ -208,6 +208,9 @@ class DownloadsClient(
 
     suspend fun maintenanceStatus(): MaintenanceStatus = get(listOf("api", "v1", "maintenance"))
 
+    suspend fun updateMaintenanceSchedule(schedule: String): MaintenanceStatus =
+        send("PUT", listOf("api", "v1", "maintenance", "schedule"), mapOf("schedule" to schedule))
+
     /** Сводка последнего запуска и карантин (bodrod 0.16.0+). */
     suspend fun maintenanceSummary(): MaintenanceSummary = get(listOf("api", "v1", "maintenance", "summary"))
 

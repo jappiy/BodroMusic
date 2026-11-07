@@ -739,4 +739,8 @@
         <item quantity="many">%1$d треков чарта, которых нет в библиотеке, встанут в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
         <item quantity="other">%1$d трека чарта, которых нет в библиотеке, встанут в очередь загрузки. Уже качающиеся не дублируются, упавшие ранее — повторятся.</item>
     </plurals>
+    <string name="maintenance_schedule_title">Время ежедневного обслуживания</string>
+    <string name="maintenance_schedule_hint">ЧЧ:ММ, например 06:30. По времени сервера; настройка общая для всех пользователей.</string>
+    <string name="maintenance_schedule_save">Сохранить время</string>
+    <string name="maintenance_schedule_saved">Время обслуживания сохранено</string>
 </resources>
