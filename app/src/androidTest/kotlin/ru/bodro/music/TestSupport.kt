@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
@@ -51,5 +53,7 @@ fun ComposeTestRule.login(server: FakeNavidrome, user: String = FakeNavidrome.US
     onNodeWithTag("login-local").performTextInput(server.baseUrl)
     onNodeWithTag("login-username").performTextInput(user)
     onNodeWithTag("login-password").performTextInput(password)
-    onNodeWithTag("login-submit").performClick()
+    onNodeWithTag("login-password").performImeAction()
+    waitForIdle()
+    onNodeWithTag("login-submit").performScrollTo().performClick()
 }

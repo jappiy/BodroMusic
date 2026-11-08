@@ -1,6 +1,6 @@
 # BodroMusic — резюме проекта для передачи
 
-Состояние на 2026-11-08. Задание 051: настраиваемое время обслуживания — реализация готова, релиз и установка проверяются. Предыдущее состояние на 2026-10-26 (задания 044–050: перенос лайков из Яндекс Музыки, «Похожие» двумя секциями со
+Состояние на 2026-11-08. Задание 051: настраиваемое время обслуживания — реализация готова, релиз v0.32.0 опубликован, установка NAS проверяется. Предыдущее состояние на 2026-10-26 (задания 044–050: перенос лайков из Яндекс Музыки, «Похожие» двумя секциями со
 скачиванием, текст песни под размер экрана, динамические «В стиле», «Удалить все» только у «Не нравится всем»,
 «Скачать недостающие» в чарте, контраст иконок поверх динамического фона). Документ для следующего агента или разработчика: что сделано, где что лежит,
 как собирать и проверять, что осталось.
@@ -66,12 +66,12 @@
 
 - Репозиторий: `jappiy/BodroMusic` (раньше назывался `invest`, переименован).
 - Рабочая ветка: **`claude/new-session-fi1p6v`** — весь код здесь, в основную ветку **не слит**, PR не открыт.
-- Текущая версия приложения: **0.32.0** (`versionCode 33`, релиз пока не опубликован), задаётся в `app/build.gradle.kts`.
-  Версия сервиса загрузок bodrod: **0.27.0** (ещё не установлен; `server/bodrod/__init__.py`, `server/pyproject.toml`; код на NAS
-  скопирован 2026-10-26, установка «Остановить» → «Создать» — за владельцем; до неё на NAS работает 0.24.0).
+- Текущая версия приложения: **0.32.0** (`versionCode 33`), задаётся в `app/build.gradle.kts`.
+  Версия сервиса загрузок bodrod: **0.27.0** (`server/bodrod/__init__.py`, `server/pyproject.toml`; код скопирован на NAS 2026-11-08,
+  пересборка ещё не выполнена; `/api/health` подтвердил работающую версию 0.26.0).
   Воркер анализа звучания: **0.3.1** (`analyzer/`; на NAS — 0.3.0).
-- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.31.0
-  (`BodroMusic-0.31.0.apk` — release с R8; `BodroMusic-0.31.0-debug.apk` — debug, ставится рядом).
+- Последний предварительный релиз с APK: https://github.com/jappiy/BodroMusic/releases/tag/v0.32.0
+  (`BodroMusic-0.32.0.apk` — release с R8; `BodroMusic-0.32.0-debug.apk` — debug, ставится рядом). Оба APK в `dist/`, подпись проверена.
 - Эталоны владельца (скриншоты и видео Яндекс Музыки): `docs/refs/<дата>/`.
 - Установка bodrod и анализатора на NAS — только по [`docs/DEPLOY.md`](DEPLOY.md): образ `bodrod:local` собирается
   на NAS из скопированной папки, теги GHCR в YAML не пишутся.
@@ -222,12 +222,12 @@ ffmpeg (любые форматы, 120 с трека), анализ — в до�
 Если release падает, а debug нет, — смотреть правила в `app/proguard-rules.pro`.
 
 ### Тесты
-- Unit: **203** — `core:subsonic` 55, `core:domain` 85 (в т. ч. `StyleArtistsTest`, `TrackWavePlannerTest`, `ListenRulesTest`,
-  `WaveSkipRulesTest`, `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 12,
+- Unit: **204** — `core:subsonic` 55, `core:domain` 85 (в т. ч. `StyleArtistsTest`, `TrackWavePlannerTest`, `ListenRulesTest`,
+  `WaveSkipRulesTest`, `PoolMixerTest`, `SoundArrangerTest`), `core:downloads` 13,
   `app` 51 (в т. ч. `ContrastTest`; Robolectric + Room in-memory + MockWebServer + Turbine/MockK).
 - Воркер анализа (`analyzer/tests`): 11 — цикл воркера без Essentia, NaN/inf → null, ошибка трека не останавливает пачку;
   дочерний процесс (краш, зависание, перезапуск); декодирование ffmpeg (3 теста, без ffmpeg пропускаются — идут в CI).
-- Сервер (`server/tests`, pytest): **255** (задание 044 — `test_likes_import.py`, `test_images.py`, пачка заявок в
+- Сервер (`server/tests`, pytest): **260** (задание 044 — `test_likes_import.py`, `test_images.py`, пачка заявок в
   `test_api.py`; задание 043 — обложки Lidarr из цепочки и `cover_stats` в
   `test_maintenance.py`; задание 034 — отчёт и громкость в `test_wave.py`; задания 027, 029 — `test_encoding.py`, `test_facts.py`; задание 024 — `test_similar.py`; задание 023 — `test_wave.py`; задание 022 — `test_facts.py`; задание 020 — `test_playlists.py`; задание 019 — сводка и обложки Lidarr в `test_maintenance.py`; задание 018 — `test_reco_fixes.py`; рекомендации: `test_harvest.py`, `test_pool.py`, `test_engine.py`,
   `test_charts.py`, `test_analysis.py`, `test_navidrome_paths.py`; токены Яндекса — `test_yandex_tokens.py`; в т. ч. `test_sources.py` — цепочка источников на подделках Яндекса и
